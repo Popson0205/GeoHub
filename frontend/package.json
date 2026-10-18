@@ -10,10 +10,15 @@
     "typecheck": "tsc --noEmit",
     "cap:sync": "npm run build && npx cap sync",
     "cap:android": "npx cap open android",
-    "test:sync": "vite-node scripts/sync-test.ts"
+    "test:sync": "vite-node scripts/sync-test.ts",
+    "test:digitize": "vite-node scripts/digitize-test.ts"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",
+    "@turf/buffer": "^7.4.0",
+    "@turf/difference": "^7.4.0",
+    "@turf/line-intersect": "^7.4.0",
+    "@turf/union": "^7.4.0",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
     "maplibre-gl": "^4.7.1",

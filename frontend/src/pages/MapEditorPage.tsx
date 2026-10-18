@@ -4,12 +4,16 @@ import MapView, { type Bbox, type MapFeature, type MapImagery } from "../compone
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
 import { extOf, NEEDS_BOUNDS_EXTS, RASTER_EXTS } from "../lib/fileTypes";
-import { uuid } from "../lib/forms";
+import { bboxOf, uuid } from "../lib/forms";
+import { cutByLine, mergeGeometries, splitLineAtPoint, translate } from "../lib/geoops";
 import { MAP_IMPORT_EXTS, readMapFile } from "../lib/geoImport";
 import { useAsync } from "../lib/hooks";
-import { GEOMETRY_LABEL, type GeoFeature, type Geometry, type GeometryType, type ImageryAsset, type Props, type TileSource } from "../lib/types";
+import {
+  addNew, commit, effective, mergeInto, newHistory, redo, removeFeature, replaceWithPieces, reset, setGeometry, setProperties, summarize, undo,
+  type Edit, type Edits, type History,
+} from "../lib/staging";
+import { GEOMETRY_LABEL, type GeoFeature, type Geometry, type GeometryType, type ImageryAsset, type Position, type Props, type TileSource } from "../lib/types";
 
-const DRAFT_ID = "__draft";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ESRI: Omit<TileSource, "id"> = {
   name: "Esri World Imagery", type: "xyz", maxzoom: 19, attribution: "Esri, Maxar, Earthstar Geographics",
@@ -26,6 +30,25 @@ const PRESETS: { label: string; geometry: GeometryType; tags: Record<string, str
 ];
 const COMMON_KEYS = ["name", "building", "highway", "landuse", "natural", "amenity", "waterway", "surface", "source", "note"];
 
+/** What the person is doing on the map. Draw tools and Split/Cut stay on until they pick another tool or press Esc. */
+type Tool = "select" | "point" | "line" | "area" | "reshape" | "move" | "split" | "cut";
+const DRAW_GEOMETRY: Partial<Record<Tool, GeometryType>> = { point: "Point", line: "LineString", area: "Polygon", cut: "LineString" };
+const TOOL_LABEL: Record<Tool, string> = { select: "Select", point: "Point", line: "Line", area: "Area", reshape: "Reshape", move: "Move", split: "Split", cut: "Cut" };
+const TOOL_KEY: Record<Tool, string> = { select: "V", point: "P", line: "L", area: "A", reshape: "R", move: "M", split: "S", cut: "C" };
+const TOOL_HELP: Record<Tool, string> = {
+  select: "Click a feature to select it. Hold Shift (or turn on Multi-select) to select several.",
+  point: "Click the map to add points. The tool stays on; press Esc when you are done.",
+  line: "Click to add points, then double-click or press Enter to finish the line. The tool stays on for the next one.",
+  area: "Click to add corners, then double-click or press Enter to finish the area. The tool stays on for the next one.",
+  reshape: "Drag a point to move it. Drag a small midpoint to add a point. Right-click or double-click a point to remove it.",
+  move: "Drag a selected feature to move it. Several selected features move together.",
+  split: "Click a line where you want to cut it in two.",
+  cut: "Draw a line across the features you want to cut, then double-click or press Enter. Cuts the selected features, or everything the line crosses if nothing is selected.",
+};
+const EMPTY: GeoFeature[] = [];
+const DUPLICATE_OFFSET = 0.00015;                 // degrees, roughly 16 m, so a copy does not sit exactly on the original
+const draftKey = (mapId: string) => `geohub:map-draft:${mapId}`;
+
 type Tag = { k: string; v: string };
 const toTags = (p: Props): Tag[] => Object.entries(p).map(([k, v]) => ({ k, v: String(v ?? "") }));
 /** Back to properties. Values the user did not touch keep their original type (numbers stay numbers). */
@@ -37,6 +60,30 @@ function fromTags(rows: Tag[], orig: Props): Props {
     out[key] = key in orig && String(orig[key] ?? "") === v ? orig[key] : v;
   }
   return out;
+}
+const hasDuplicateKeys = (rows: Tag[]) => { const keys = rows.map((t) => t.k.trim()).filter(Boolean); return new Set(keys).size !== keys.length; };
+const typeText = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Editable list of tag rows. Enter in a value starts a new row, so tagging many features stays on the keyboard. */
+function TagRows({ rows, onChange }: { rows: Tag[]; onChange: (rows: Tag[]) => void }) {
+  const [focusRow, setFocusRow] = useState(-1);
+  const add = () => { setFocusRow(rows.length); onChange([...rows, { k: "", v: "" }]); };
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {rows.map((t, i) => (
+        <div className="row" key={i}>
+          <input aria-label="Tag name" list="tag-keys" placeholder="name" value={t.k} autoFocus={i === focusRow} style={{ flex: "0 0 42%", minWidth: 0 }}
+            onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, k: e.target.value } : x)))} />
+          <input aria-label={`Value for ${t.k || "tag"}`} placeholder="value" value={t.v} className="grow" style={{ minWidth: 0 }}
+            onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))}
+            onKeyDown={(e) => { if (e.key === "Enter" && i === rows.length - 1) { e.preventDefault(); add(); } }} />
+          <Button small variant="ghost" aria-label="Remove tag" onClick={() => onChange(rows.filter((_, j) => j !== i))}>×</Button>
+        </div>
+      ))}
+      <Button small onClick={add}>Add tag</Button>
+      {hasDuplicateKeys(rows) && <span className="tag-error" role="alert">Two tags have the same name. Change one of them.</span>}
+    </div>
+  );
 }
 
 export default function MapEditorPage() {
@@ -61,27 +108,46 @@ export default function MapEditorPage() {
   const imgRef = useRef<HTMLInputElement>(null);
   const dataRef = useRef<HTMLInputElement>(null);
 
-  // drawing and editing
-  const [drawing, setDrawing] = useState<GeometryType | null>(null);
-  const [draft, setDraft] = useState<Geometry | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [geom, setGeom] = useState<Geometry | null>(null);            // geometry of the selected feature, possibly reshaped
-  const [editShape, setEditShape] = useState(false);
-  const [tags, setTags] = useState<Tag[]>([]);
+  // ---------------- digitizing ----------------
+  // Everything the person does is staged in `hist` (with undo/redo). Nothing reaches the server until "Save all".
+  const [tool, setTool] = useState<Tool>("select");
+  const [hist, setHist] = useState<History>(newHistory);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);              // rows shown for the one selected feature
+  const [tagsRev, setTagsRev] = useState(0);                // bump to rebuild those rows from the feature (undo, presets, ...)
+  const [bulkTags, setBulkTags] = useState<Tag[]>([]);      // rows applied to every selected feature at once
+  const [newTags, setNewTags] = useState<Tag[]>([]);        // tags given to each new feature as it is drawn
+  const [snap, setSnap] = useState(true);
+  const [multi, setMulti] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [working, setWorking] = useState(false);            // a merge or cut is running
   const [name, setName] = useState<string | null>(null);
+  const restoredFor = useRef<string | null>(null);
 
-  const selected = data?.features.find((f) => f.id === selectedId) ?? null;
-  const editing = !!draft || !!selected;
-  const shown: Geometry | null = draft ?? geom;
-  const dirty = !!draft || (!!selected && (JSON.stringify(geom) !== JSON.stringify(selected.geometry) ||
-    JSON.stringify(fromTags(tags, selected.properties)) !== JSON.stringify(selected.properties)));
+  const server = data?.features ?? EMPTY;
+  const serverRef = useRef(server);
+  serverRef.current = server;
+  const histRef = useRef(hist);
+  histRef.current = hist;
+  const edits = hist.present;
+  const work = useMemo(() => effective(server, edits), [server, edits]);
+  const byId = useMemo(() => new Map(work.map((f) => [f.id, f])), [work]);
+  const sel = useMemo(() => selectedIds.filter((id) => byId.has(id)), [selectedIds, byId]);
+  const primary = sel.length === 1 ? byId.get(sel[0]) ?? null : null;
+  const primaryId = primary?.id ?? null;
+  const counts = useMemo(() => summarize(edits), [edits]);
+  const dirty = counts.total > 0;
+  const drawGeom = DRAW_GEOMETRY[tool] ?? null;
 
-  const mapFeatures: MapFeature[] = useMemo(() => {
-    const list: MapFeature[] = (data?.features ?? []).map((f) => ({ id: f.id, geometry: f.id === selectedId && geom ? geom : f.geometry, properties: f.properties }));
-    if (draft) list.push({ id: DRAFT_ID, geometry: draft, pending: true });
-    return list;
-  }, [data?.features, selectedId, geom, draft]);
+  /** Record a change (one undo step). `key` merges a burst of similar changes, such as typing in a tag, into one step. */
+  function stage(next: Edits, key: string | null = null) {
+    const h = commit(histRef.current, next, key);
+    histRef.current = h;
+    setHist(h);
+  }
+  const now = () => histRef.current.present;
+
+  const mapFeatures: MapFeature[] = useMemo(() => work.map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, state: f.state })), [work]);
 
   const sources = data?.map.sources ?? [];
   const imagery: MapImagery[] = useMemo(() => {
@@ -100,58 +166,234 @@ export default function MapEditorPage() {
     return () => clearInterval(t);
   }, [data?.layers.imagery.length, mapId, setData]);
 
+  // Start clean when moving to another map.
+  useEffect(() => { setHist(newHistory()); setSelectedIds([]); setTool("select"); }, [mapId]);
+
+  // Keep the tag rows in step with the one selected feature.
+  useEffect(() => { setTags(primary ? toTags(primary.properties) : []); setBulkTags([]); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primaryId, tagsRev, sel.length > 1]);
+
+  // Unsaved work survives a refresh, a crash or leaving the page: it is kept on this device and offered back.
+  useEffect(() => {
+    if (!data || data.map.id !== mapId || restoredFor.current === mapId) return;
+    restoredFor.current = mapId;
+    try {
+      const raw = localStorage.getItem(draftKey(mapId));
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Edits;
+      const kept: Edits = {};
+      for (const [id, e] of Object.entries(saved)) {
+        if (e.kind === "new") kept[id] = e;
+        else { const f = data.features.find((x) => x.id === id); if (f && f.version === e.base.version) kept[id] = { ...e, base: f } as Edit; }
+      }
+      const n = summarize(kept).total;
+      if (n) { histRef.current = reset(kept); setHist(histRef.current); toast(`Restored ${typeText(n, "unsaved change", "unsaved changes")} from your last visit.`, "info"); }
+      else localStorage.removeItem(draftKey(mapId));
+    } catch { /* storage unavailable or damaged: start clean */ }
+  }, [data, mapId, toast]);
+  useEffect(() => {
+    if (restoredFor.current !== mapId) return;
+    try { if (summarize(edits).total) localStorage.setItem(draftKey(mapId), JSON.stringify(edits)); else localStorage.removeItem(draftKey(mapId)); } catch { /* ignore */ }
+  }, [edits, mapId]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // Keyboard shortcuts (not while typing in a field). MapView handles Enter, Backspace and Esc while a shape is being drawn.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && k === "z") { e.preventDefault(); if (e.shiftKey) redoAct(); else undoAct(); }
+      else if (mod && k === "y") { e.preventDefault(); redoAct(); }
+      else if (mod && k === "s") { e.preventDefault(); void saveAll(); }
+      else if (mod || e.altKey) return;
+      else if (e.key === "Delete" || (e.key === "Backspace" && !drawGeom)) { if (sel.length) { e.preventDefault(); removeSelected(); } }      // Backspace removes the last point while drawing instead
+      else if (e.key === "Escape") { if (tool !== "select") setTool("select"); else setSelectedIds([]); }
+      else { const hit = (Object.keys(TOOL_KEY) as Tool[]).find((x) => TOOL_KEY[x].toLowerCase() === k); if (hit) { e.preventDefault(); chooseTool(hit); } }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   if (loading) return <Loading label="Loading map…" />;
   if (error != null || !data) return <div className="container"><ErrorState error={error} onRetry={reload} /></div>;
 
-  // ---------------- selection and saving ----------------
-  function clearSelection() { setDraft(null); setDrawing(null); setSelectedId(null); setGeom(null); setEditShape(false); setTags([]); }
-  function select(id: string | null) {
-    if (draft) return;
-    if (id === selectedId) return;
-    if (dirty && !window.confirm("Discard your unsaved changes?")) return;
-    const f = data!.features.find((x) => x.id === id);
-    setSelectedId(f ? f.id : null); setGeom(f ? f.geometry : null); setEditShape(false); setTags(f ? toTags(f.properties) : []);
+  // ---------------- tools and selection ----------------
+  function chooseTool(t: Tool) {
+    if (t === "reshape" && sel.length !== 1) toast("Select one feature, then drag its points.", "info");
+    if (t === "move" && !sel.length) toast("Select a feature, then drag it. You can also drag any feature directly.", "info");
+    setTool(t);
+  }
+  function onSelect(id: string | null, additive?: boolean) {
+    const add = !!additive || multi;
+    if (!id) { if (!add) setSelectedIds([]); return; }
+    setSelectedIds((s) => (add ? (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]) : [id]));
+  }
+  function undoAct() { const h = undo(histRef.current); histRef.current = h; setHist(h); setTagsRev((r) => r + 1); }
+  function redoAct() { const h = redo(histRef.current); histRef.current = h; setHist(h); setTagsRev((r) => r + 1); }
+
+  // ---------------- editing (all staged, nothing is saved yet) ----------------
+  function onDraw(g: Geometry) {
+    if (tool === "cut") { void cutWith(g); return; }
+    const id = uuid();
+    stage(addNew(now(), id, g, fromTags(newTags, {})));
+    setSelectedIds([id]);                           // the new feature is selected so its tags can be filled in, and the tool stays on
+  }
+  function onGeometryChange(g: Geometry) { if (primaryId) stage(setGeometry(now(), serverRef.current, primaryId, g)); }
+  function onMove(ids: string[], dx: number, dy: number) {
+    let next = now();
+    for (const id of ids) { const f = byId.get(id); if (f) next = setGeometry(next, serverRef.current, id, translate(f.geometry, dx, dy)); }
+    stage(next);
+  }
+  function updateTags(rows: Tag[]) {
+    setTags(rows);
+    if (!primary || hasDuplicateKeys(rows)) return;        // wait until the clash is fixed
+    stage(setProperties(now(), serverRef.current, primary.id, fromTags(rows, primary.properties)), `tags:${primary.id}`);
   }
   function applyPreset(p: (typeof PRESETS)[number]) {
-    setTags((t) => {
-      const next = [...t];
-      for (const [k, v] of Object.entries(p.tags)) { const i = next.findIndex((r) => r.k === k); if (i >= 0) next[i] = { k, v }; else next.push({ k, v }); }
-      return next;
-    });
+    let next = now();
+    for (const id of sel) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...p.tags }); }
+    stage(next);
+    setTagsRev((r) => r + 1);
   }
-  async function save() {
-    const rows = tags.filter((t) => t.k.trim() || t.v.trim());
-    const keys = rows.map((t) => t.k.trim());
-    if (rows.some((t) => !t.k.trim())) { toast("Every tag needs a name.", "error"); return; }
-    if (new Set(keys).size !== keys.length) { toast("Two tags have the same name.", "error"); return; }
+  function applyBulk() {
+    if (hasDuplicateKeys(bulkTags)) { toast("Two tags have the same name.", "error"); return; }
+    const add = fromTags(bulkTags.filter((t) => t.k.trim()), {});
+    if (!Object.keys(add).length) { toast("Add at least one tag first.", "error"); return; }
+    let next = now();
+    for (const id of sel) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...add }); }
+    stage(next);
+    toast(`Tags added to ${typeText(sel.length, "feature", "features")}.`, "success");
+  }
+  function removeSelected() {
+    if (!sel.length) return;
+    let next = now();
+    for (const id of sel) next = removeFeature(next, serverRef.current, id);
+    stage(next);
+    setSelectedIds([]);
+  }
+  function duplicateSelected() {
+    let next = now();
+    const ids: string[] = [];
+    for (const id of sel) { const f = byId.get(id); if (!f) continue; const nid = uuid(); ids.push(nid); next = addNew(next, nid, translate(f.geometry, DUPLICATE_OFFSET, -DUPLICATE_OFFSET), { ...f.properties }); }
+    stage(next);
+    setSelectedIds(ids);
+  }
+  function splitAt(id: string, pos: Position) {
+    const f = byId.get(id);
+    if (!f) return;
+    if (f.geometry.type !== "LineString") { toast("Split works on lines. Use Cut to divide an area.", "error"); return; }
+    const pieces = splitLineAtPoint(f.geometry, pos);
+    if (!pieces) { toast("Click along the line, not at its very end.", "error"); return; }
+    const r = replaceWithPieces(now(), serverRef.current, id, pieces, uuid);
+    stage(r.edits);
+    setSelectedIds(r.ids);
+  }
+  async function cutWith(g: Geometry) {
+    if (g.type !== "LineString") return;
+    setWorking(true);
+    try {
+      const cb = bboxOf([g])!;
+      const candidates = (sel.length ? sel.map((id) => byId.get(id)!).filter(Boolean) : work).filter((f) => {
+        if (f.geometry.type === "Point") return false;
+        const b = bboxOf([f.geometry])!;
+        return !(b[0] > cb[2] || b[2] < cb[0] || b[1] > cb[3] || b[3] < cb[1]);
+      });
+      let next = now();
+      let cut = 0;
+      const ids: string[] = [];
+      for (const f of candidates) {
+        const pieces = await cutByLine(f.geometry, g);
+        if (!pieces) { if (sel.includes(f.id)) ids.push(f.id); continue; }
+        const r = replaceWithPieces(next, serverRef.current, f.id, pieces, uuid);
+        next = r.edits; ids.push(...r.ids); cut++;
+      }
+      if (!cut) { toast(sel.length ? "The line did not cut the selected features. Draw it all the way across, from outside to outside." : "The line did not cross any feature from edge to edge.", "error"); return; }
+      stage(next);
+      setSelectedIds(ids);
+      toast(`Cut ${typeText(cut, "feature", "features")}.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not cut.", "error"); }
+    finally { setWorking(false); }
+  }
+  async function mergeSelected() {
+    const feats = sel.map((id) => byId.get(id)!).filter(Boolean);
+    setWorking(true);
+    try {
+      const r = await mergeGeometries(feats.map((f) => f.geometry));
+      if ("error" in r) { toast(r.error, "error"); return; }
+      stage(mergeInto(now(), serverRef.current, feats.map((f) => f.id), r.geometry));
+      setSelectedIds([feats[0].id]);
+      toast(`Merged ${feats.length} features into one.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Could not merge.", "error"); }
+    finally { setWorking(false); }
+  }
+  function discardAll() {
+    if (!window.confirm(`Throw away ${typeText(counts.total, "unsaved change", "unsaved changes")}?`)) return;
+    stage({});
+    setSelectedIds([]);
+  }
+
+  // ---------------- saving: one click sends everything ----------------
+  async function saveAll() {
+    if (saving || !dirty) return;
+    if (hasDuplicateKeys(tags)) { toast("Two tags on the selected feature have the same name. Fix that first.", "error"); return; }
     setSaving(true);
     try {
       const api = await loadApi();
-      if (draft) {
-        const created = await api.createMapFeature(mapId, { id: uuid(), geometry: draft, properties: fromTags(rows, {}) });
-        setData({ ...data!, features: [...data!.features, created], map: { ...data!.map, feature_count: data!.map.feature_count + 1 } });
-        clearSelection();
-        setSelectedId(created.id); setGeom(created.geometry); setTags(toTags(created.properties));
-        toast("Feature saved.", "success");
-      } else if (selected && geom) {
-        const updated = await api.updateMapFeature(mapId, selected.id, { geometry: geom, properties: fromTags(rows, selected.properties), base_version: selected.version });
-        setData({ ...data!, features: data!.features.map((f) => (f.id === updated.id ? updated : f)) });
-        setGeom(updated.geometry); setTags(toTags(updated.properties)); setEditShape(false);
-        toast("Changes saved.", "success");
+      type Job = { id: string; edit: Edit; run: () => Promise<GeoFeature | null> };
+      const jobs: Job[] = Object.entries(edits).map(([id, edit]) => ({
+        id, edit,
+        run: async () => {
+          if (edit.kind === "new") return api.createMapFeature(mapId, { id, geometry: edit.geometry, properties: edit.properties });
+          if (edit.kind === "mod") return api.updateMapFeature(mapId, id, { geometry: edit.geometry, properties: edit.properties, base_version: edit.base.version });
+          await api.deleteMapFeature(mapId, id);
+          return null;
+        },
+      }));
+      const results: { job: Job; ok: boolean; value?: GeoFeature | null; error?: unknown }[] = [];
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(5, jobs.length) }, async () => {
+        while (next < jobs.length) {
+          const job = jobs[next++];
+          try { results.push({ job, ok: true, value: await job.run() }); } catch (error) { results.push({ job, ok: false, error }); }
+        }
+      }));
+
+      // Fold what succeeded into the saved list; whatever failed stays staged so nothing is lost.
+      let saved = serverRef.current;
+      const remaining: Edits = {};
+      let made = 0, removed = 0;
+      for (const r of results) {
+        if (!r.ok) { remaining[r.job.id] = r.job.edit; continue; }
+        const e = r.job.edit;
+        if (e.kind === "new" && r.value) { saved = [...saved, r.value]; made++; }
+        else if (e.kind === "mod" && r.value) saved = saved.map((f) => (f.id === r.job.id ? r.value! : f));
+        else if (e.kind === "del") { saved = saved.filter((f) => f.id !== r.job.id); removed++; }
+      }
+      const failed = results.filter((r) => !r.ok);
+      setData((d) => (d ? { ...d, features: saved, map: { ...d.map, feature_count: Math.max(0, d.map.feature_count + made - removed) } } : d));
+      serverRef.current = saved;
+      histRef.current = reset(remaining);
+      setHist(histRef.current);
+      setTagsRev((r) => r + 1);
+      const okCount = results.length - failed.length;
+      if (!failed.length) toast(`Saved ${typeText(okCount, "change", "changes")}.`, "success");
+      else {
+        const first = failed[0].error;
+        toast(`Saved ${okCount}. ${failed.length} could not be saved and ${failed.length === 1 ? "is" : "are"} still waiting: ${first instanceof Error ? first.message : "unknown error"}`, "error");
+        if (failed.some((f) => f.error instanceof ApiError && f.error.status === 409)) setTagsRev((r) => r + 1);
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save.", "error");
-      if (e instanceof ApiError && e.status === 409) await reload();
     } finally { setSaving(false); }
-  }
-  async function remove(f: GeoFeature) {
-    if (!window.confirm("Delete this feature?")) return;
-    try {
-      await (await loadApi()).deleteMapFeature(mapId, f.id);
-      setData({ ...data!, features: data!.features.filter((x) => x.id !== f.id), map: { ...data!.map, feature_count: Math.max(0, data!.map.feature_count - 1) } });
-      clearSelection();
-      toast("Feature deleted.", "success");
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
   }
 
   // ---------------- imagery ----------------
@@ -242,7 +484,7 @@ export default function MapEditorPage() {
       if (!parsed.length) throw new Error("No points, lines or areas were found in this file.");
       const r = await (await loadApi()).importMapFeatures(mapId, parsed);
       toast(`Imported ${r.imported} feature${r.imported === 1 ? "" : "s"}${r.rejected ? `, ${r.rejected} skipped (${r.errors[0]?.message ?? "invalid"})` : ""}.`, r.imported ? "success" : "error");
-      clearSelection();
+      setSelectedIds([]);
       await reload();
     } catch (e) { toast(e instanceof Error ? e.message : "Import failed.", "error"); }
     finally { setBusy(""); if (dataRef.current) dataRef.current.value = ""; }
@@ -265,31 +507,61 @@ export default function MapEditorPage() {
     catch (e) { toast(e instanceof Error ? e.message : "Could not rename the map.", "error"); }
   }
 
-  const geomType = shown?.type;
-  const presets = PRESETS.filter((p) => p.geometry === geomType);
+  const presetGeoms = new Set<GeometryType>(sel.map((id) => byId.get(id)!.geometry.type));
+  const presets = PRESETS.filter((p) => presetGeoms.has(p.geometry));
+  const drawPresets = PRESETS.filter((p) => p.geometry === drawGeom);
   const tileAssets = data.assets;
+  const summaryBits = [counts.created && `${counts.created} new`, counts.modified && `${counts.modified} edited`, counts.deleted && `${counts.deleted} deleted`].filter(Boolean).join(" · ");
+  const toolBtn = (t: Tool, extra?: { disabled?: boolean }) => (
+    <Button key={t} small variant={tool === t ? "primary" : "default"} aria-pressed={tool === t} title={`${TOOL_LABEL[t]} (${TOOL_KEY[t]})`} disabled={extra?.disabled} onClick={() => chooseTool(tool === t && t !== "select" ? "select" : t)}>{TOOL_LABEL[t]}</Button>
+  );
+  const saveLabel = dirty ? `Save all (${counts.total})` : "Save all";
 
   return (
     <div className="editor" style={{ flex: 1 }}>
       <aside className="side left" aria-label="Map tools and imagery">
         <div className="stack">
-          <Link to="/maps" className="field-hint">← All maps</Link>
+          <Link to="/maps" className="field-hint" onClick={(e) => { if (dirty && !window.confirm("You have unsaved changes. They are kept on this device, but are not saved to the map yet. Leave anyway?")) e.preventDefault(); }}>← All maps</Link>
           <input aria-label="Map name" value={name ?? data.map.name} onChange={(e) => setName(e.target.value)} onBlur={rename}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ font: "600 16px var(--font-ui)" }} />
-          <span className="field-hint">{data.features.length} feature{data.features.length === 1 ? "" : "s"}</span>
+          <span className="field-hint">{data.features.length} saved feature{data.features.length === 1 ? "" : "s"}</span>
+        </div>
+
+        <div className="changes" role="region" aria-label="Unsaved changes">
+          <strong>{dirty ? "Unsaved changes" : "Everything is saved"}</strong>
+          {dirty && <span className="field-hint">{summaryBits}</span>}
+          <div className="row">
+            <Button className="grow" variant="primary" busy={saving} disabled={!dirty} onClick={() => void saveAll()}>{saveLabel}</Button>
+            <Button disabled={!dirty || saving} onClick={discardAll}>Discard</Button>
+          </div>
         </div>
 
         <div className="stack">
           <h2>Draw</h2>
-          <div className="toolbar">
-            {(["Point", "LineString", "Polygon"] as GeometryType[]).map((t) => (
-              <Button key={t} variant={drawing === t ? "primary" : "default"} disabled={!!draft || (!!drawing && drawing !== t)}
-                onClick={() => { if (selected && dirty && !window.confirm("Discard your unsaved changes?")) return; clearSelection(); setDrawing(t); }}>
-                {GEOMETRY_LABEL[t][0].toUpperCase() + GEOMETRY_LABEL[t].slice(1)}
-              </Button>
-            ))}
+          <div className="tool-grid">{(["point", "line", "area"] as Tool[]).map((t) => toolBtn(t))}</div>
+          {drawGeom && tool !== "cut" && (
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="field-hint">Tags for each new feature</span>
+              <div className="chips">{drawPresets.map((p) => <Button key={p.label} small onClick={() => setNewTags(toTags(p.tags))}>{p.label}</Button>)}</div>
+              <TagRows rows={newTags} onChange={setNewTags} />
+            </div>
+          )}
+        </div>
+
+        <div className="stack">
+          <h2>Edit</h2>
+          <div className="tool-grid">
+            {(["select", "reshape", "move", "split", "cut"] as Tool[]).map((t) => toolBtn(t))}
+            <Button small disabled={sel.length < 2 || working} busy={working} title="Merge selected lines or areas into one" onClick={() => void mergeSelected()}>Merge</Button>
           </div>
-          <span className="field-hint">Pick a tool, then click the map. Select a feature to change its tags or reshape it.</span>
+          <div className="tool-grid">
+            <Button small disabled={!sel.length} onClick={duplicateSelected}>Duplicate</Button>
+            <Button small variant="danger" disabled={!sel.length} title="Delete (Del)" onClick={removeSelected}>Delete</Button>
+            <Button small disabled={!hist.past.length} title="Undo (Ctrl+Z)" onClick={undoAct}>Undo</Button>
+          </div>
+          <span className="field-hint">{TOOL_HELP[tool]}</span>
+          <label className="check"><input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />Snap to nearby points</label>
+          <label className="check"><input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} />Multi-select (tap to add)</label>
         </div>
 
         <div className="stack">
@@ -365,33 +637,69 @@ export default function MapEditorPage() {
           </label>
           <span className="field-hint">GeoJSON, KML or GPX. Points, lines and areas are added to this map.</span>
           <Button onClick={exportData} disabled={!data.features.length}>Export GeoJSON</Button>
+          {dirty && <span className="field-hint">The export has saved features only. Save your changes first to include them.</span>}
         </div>
       </aside>
 
       <MapView
         features={mapFeatures}
-        selectedId={draft ? DRAFT_ID : selectedId}
-        drawMode={drawing}
-        onDraw={(g) => { setDraft(g); setDrawing(null); setTags([]); setGeom(null); }}
-        onCancelDraw={() => setDrawing(null)}
-        onSelect={select}
+        selectedIds={sel}
+        drawMode={drawGeom}
+        onDraw={onDraw}
+        onCancelDraw={() => setTool("select")}
+        hint={tool === "cut" ? "Draw a cutting line across the feature, then double-click or press Enter." : undefined}
+        onSelect={onSelect}
+        snap={snap}
+        moveMode={tool === "move"}
+        onMove={onMove}
+        pickMode={tool === "split"}
+        onPick={splitAt}
         imagery={imagery}
         showBase={showBase}
-        editGeometry={editShape && !draft ? geom : null}
-        onGeometryChange={(g) => setGeom(g)}
+        editGeometry={tool === "reshape" && primary ? primary.geometry : null}
+        onGeometryChange={onGeometryChange}
         flyTo={flyTo}
         fitKey={mapId}
         label="Map"
-      />
+      >
+        <div className="map-bar" role="toolbar" aria-label="Edit actions">
+          <Button small variant="ghost" disabled={!hist.past.length} onClick={undoAct} title="Undo (Ctrl+Z)">↶ Undo</Button>
+          <Button small variant="ghost" disabled={!hist.future.length} onClick={redoAct} title="Redo (Ctrl+Shift+Z)">↷ Redo</Button>
+          <Button small variant="primary" busy={saving} disabled={!dirty} onClick={() => void saveAll()} title="Save all (Ctrl+S)">{saveLabel}</Button>
+        </div>
+      </MapView>
 
       <aside className="side right" aria-label="Feature details" aria-live="polite">
-        {!editing && <div className="state"><strong>Nothing selected</strong>Choose Point, Line or Area to draw, or click a feature on the map.</div>}
-        {editing && shown && (
+        <datalist id="tag-keys">{COMMON_KEYS.map((k) => <option key={k} value={k} />)}</datalist>
+        {!sel.length && (
+          <div className="state"><strong>Nothing selected</strong>
+            {drawGeom && tool !== "cut" ? "Click the map to draw. Each new feature is selected so you can tag it, and the tool stays on." : "Pick Point, Line or Area to draw, or click a feature on the map."}
+          </div>
+        )}
+        {sel.length > 1 && (
+          <>
+            <div><h2>Selection</h2><strong>{typeText(sel.length, "feature", "features")} selected</strong></div>
+            {presets.length > 0 && (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="field-hint">Add a quick tag to all of them</span>
+                <div className="chips">{presets.map((p) => <Button key={p.label} small onClick={() => applyPreset(p)}>{p.label}</Button>)}</div>
+              </div>
+            )}
+            <div className="stack" style={{ gap: 8 }}>
+              <h2>Tags for all</h2>
+              <TagRows rows={bulkTags} onChange={setBulkTags} />
+              <Button variant="primary" disabled={!bulkTags.some((t) => t.k.trim())} onClick={applyBulk}>Add to {sel.length} features</Button>
+            </div>
+            <span className="field-hint">Merge joins lines that meet end to end, or areas that touch. The first one you selected keeps its tags.</span>
+            <Button onClick={() => setSelectedIds([])}>Clear selection</Button>
+          </>
+        )}
+        {primary && (
           <>
             <div>
-              <h2>{draft ? "New feature" : "Selected feature"}</h2>
-              <strong>{GEOMETRY_LABEL[shown.type]}</strong>
-              {selected && <div className="meta" style={{ fontSize: 13, color: "var(--muted)" }}>Version {selected.version}{dirty ? " · unsaved changes" : ""}</div>}
+              <h2>Selected feature</h2>
+              <strong>{GEOMETRY_LABEL[primary.geometry.type]}</strong>
+              <div className="meta" style={{ fontSize: 13, color: "var(--muted)" }}>{primary.state === "new" ? "New · not saved yet" : primary.state === "mod" ? "Edited · not saved yet" : "Saved"}</div>
             </div>
             {presets.length > 0 && (
               <div className="stack" style={{ gap: 6 }}>
@@ -401,29 +709,18 @@ export default function MapEditorPage() {
             )}
             <div className="stack" style={{ gap: 8 }}>
               <h2>Tags</h2>
-              <datalist id="tag-keys">{COMMON_KEYS.map((k) => <option key={k} value={k} />)}</datalist>
               {tags.length === 0 && <span className="field-hint">No tags yet. Add a name, type or any note.</span>}
-              {tags.map((t, i) => (
-                <div className="row" key={i}>
-                  <input aria-label="Tag name" list="tag-keys" placeholder="name" value={t.k} style={{ flex: "0 0 42%", minWidth: 0 }} onChange={(e) => setTags((r) => r.map((x, j) => (j === i ? { ...x, k: e.target.value } : x)))} />
-                  <input aria-label={`Value for ${t.k || "tag"}`} placeholder="value" value={t.v} className="grow" style={{ minWidth: 0 }} onChange={(e) => setTags((r) => r.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))} />
-                  <Button small variant="ghost" aria-label="Remove tag" onClick={() => setTags((r) => r.filter((_, j) => j !== i))}>×</Button>
-                </div>
-              ))}
-              <Button small onClick={() => setTags((r) => [...r, { k: "", v: "" }])}>Add tag</Button>
+              <TagRows rows={tags} onChange={updateTags} />
             </div>
-            {selected && (
-              <div className="stack" style={{ gap: 6 }}>
-                <h2>Shape</h2>
-                <Button variant={editShape ? "primary" : "default"} onClick={() => setEditShape((v) => !v)}>{editShape ? "Done reshaping" : "Reshape"}</Button>
-                {editShape && <span className="field-hint">Drag a point to move it. Drag a small midpoint to add a point. Right-click or double-click a point to remove it. Save when you are done.</span>}
-              </div>
-            )}
+            <div className="stack" style={{ gap: 6 }}>
+              <h2>Shape</h2>
+              <Button variant={tool === "reshape" ? "primary" : "default"} onClick={() => chooseTool(tool === "reshape" ? "select" : "reshape")}>{tool === "reshape" ? "Done reshaping" : "Reshape"}</Button>
+              {tool === "reshape" && <span className="field-hint">{TOOL_HELP.reshape}</span>}
+            </div>
             <div className="row" style={{ marginTop: "auto" }}>
-              <Button className="grow" onClick={() => { if (dirty && !window.confirm("Discard your unsaved changes?")) return; clearSelection(); }}>{draft ? "Cancel" : "Close"}</Button>
-              <Button className="grow" variant="primary" busy={saving} disabled={!dirty} onClick={save}>Save</Button>
+              <Button className="grow" onClick={() => setSelectedIds([])}>Deselect</Button>
+              <Button className="grow" variant="danger" onClick={removeSelected}>Delete</Button>
             </div>
-            {selected && <Button variant="danger" small onClick={() => remove(selected)}>Delete feature</Button>}
           </>
         )}
       </aside>

@@ -81,3 +81,25 @@ Set the `VITE_*` variables in the Pages settings.
 - The editor loads all features as GeoJSON. Switch to the backend's vector tiles (`GET /projects/{id}/layers`) once datasets get large.
 - The default basemap is OpenStreetMap's public tile server, which is not meant for heavy production use. Set `VITE_BASEMAP_URL`.
 - Map and screens were type-checked and built, but have not been through browser testing on real devices yet.
+
+
+## Digitizing in the map editor
+
+Edits are **staged**, not saved one by one. Draw as many features as you like, tag them, reshape, split, merge, move or delete, and nothing is sent until you press **Save all** (or Ctrl+S). The tool you picked stays on the whole time.
+
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Select | V | Click a feature. Shift-click (or turn on Multi-select) for several. |
+| Point / Line / Area | P / L / A | Stays on after each feature. Double-click or Enter finishes a line or area. Backspace removes the last point. |
+| Reshape | R | Drag points, drag a midpoint to add one, right-click or double-click a point to remove it. |
+| Move | M | Drag the selected features. |
+| Split | S | Click a line to cut it in two at that spot. |
+| Cut | C | Draw a line across lines or areas to cut them. Cuts the selection, or whatever the line crosses. |
+| Merge | | Joins selected lines (end to end) or areas (touching or overlapping). |
+| Duplicate, Delete | Del | Act on the selection. |
+
+* **Tags for each new feature**: pick a preset (Building, Road, ...) or type tags once under Draw, and every new feature gets them. With several features selected, "Tags for all" adds tags to all of them.
+* **Undo / Redo** (Ctrl+Z, Ctrl+Shift+Z) cover every staged step. New features are amber, edited ones blue, saved ones green.
+* **Snapping** to nearby points while drawing and dragging (on by default).
+* Unsaved work is kept on the device and restored if the page is refreshed or closed. If some changes fail to save (for example someone else edited the feature), the rest are saved and the failed ones stay staged.
+* The logic lives in `src/lib/staging.ts` (edit history) and `src/lib/geoops.ts` (split, merge, move). `npm run test:digitize` checks both. Cutting and merging areas load Turf on first use only.
