@@ -81,7 +81,8 @@ export interface Bundle { forms: Form[]; features: Feature[]; cursor: string }
 // ---- imagery, hub ----
 export interface ImageryAsset {
   id: string;
-  project_id: string;
+  project_id?: string;
+  map_id?: string;
   name: string;
   status: "uploading" | "processing" | "ready" | "failed";
   bounds?: [number, number, number, number];
@@ -122,41 +123,21 @@ export interface FeatureCollection {
   features: { type: "Feature"; id: string; geometry: Geometry; properties: Props }[];
 }
 
-// ---- maps (the free-form web-mapping workspace, independent of collection projects) ----
-export type MapRole = "owner" | "editor" | "viewer";
-export type LayerGeometry = "point" | "line" | "area" | "any";
-export type LayerFieldType = "text" | "number" | "choice" | "date" | "checkbox";
-export interface LayerField { id: string; label: string; type: LayerFieldType; choices?: string[] }
-export interface MapDoc {
+// ---- standalone mapping workspaces (independent of projects and forms) ----
+/** Imagery added by URL, e.g. https://host/{z}/{x}/{y}.png */
+export interface TileSource { id: string; name: string; type: "xyz"; url: string; maxzoom?: number; attribution?: string }
+export interface WorkMap {
   id: string;
   name: string;
   description: string;
-  role: MapRole;
-  layer_count: number;
+  sources: TileSource[];
   feature_count: number;
   updated_at: string;
 }
-export interface MapLayer { id: string; map_id: string; name: string; geometry_type: LayerGeometry; fields: LayerField[]; position: number }
-export interface MapFeature {
-  id: string; // client-generated UUID
-  map_id: string;
-  layer_id: string;
-  geometry: Geometry;
-  properties: Props;
-  version: number;
-  updated_at: string;
+/** A feature drawn in a map. `properties` are free-form tags (like OpenStreetMap), no form needed. */
+export interface GeoFeature { id: string; geometry: Geometry; properties: Props; version: number }
+export interface MapLayers {
+  /** Uploaded imagery that is ready, with signed tile URLs. */
+  imagery: { id: string; name: string; bounds?: [number, number, number, number]; url: string }[];
 }
-export interface ImagerySource {
-  id: string;
-  map_id: string;
-  name: string;
-  /** XYZ template with {z}/{x}/{y}. The browser loads tiles straight from the provider. */
-  url_template: string;
-  attribution: string;
-  min_zoom: number;
-  max_zoom: number;
-  tile_size: 256 | 512;
-}
-export interface NewImagerySource { name: string; url_template: string; attribution?: string; min_zoom?: number; max_zoom?: number; tile_size?: 256 | 512 }
-export interface NewMapLayer { name: string; geometry_type: LayerGeometry; fields: LayerField[] }
-export interface NewMapFeature { id: string; layer_id: string; geometry: Geometry; properties: Props }
+export interface MapImportResult { imported: number; rejected: number; errors: { row: number; message: string }[] }

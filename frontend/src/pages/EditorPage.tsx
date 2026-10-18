@@ -172,11 +172,11 @@ export default function EditorPage() {
   return (
     <div className="editor" style={{ flex: 1 }}>
       <aside className="side left" aria-label="Layers and tools">
-        <div><h2>Project</h2><strong>{data.project.name}</strong></div>
+        <div><h2>Collected data</h2><strong>{data.project.name}</strong><Link to="/collect" className="field-hint">← All projects</Link></div>
         <div className="stack">
           <h2>Add to a form</h2>
           {forms.length === 0 ? (
-            <div className="state"><span>No published forms yet.</span><Link to={`/projects/${projectId}/forms`}>Create a form</Link></div>
+            <div className="state"><span>No published forms yet.</span><Link to={`/collect/${projectId}/forms`}>Create a form</Link></div>
           ) : (
             <>
               <div className="field"><label htmlFor="af">Form</label>
@@ -185,7 +185,7 @@ export default function EditorPage() {
                 </select></div>
               <div className="toolbar">
                 <Button variant="primary" disabled={drawing || !!draft} onClick={() => { select(null); setDrawing(true); }}>Add {GEOMETRY_LABEL[activeForm!.geometry_type]}</Button>
-                <Link className="btn" to={`/projects/${projectId}/forms`}>Forms</Link>
+                <Link className="btn" to={`/collect/${projectId}/forms`}>Forms</Link>
               </div>
             </>
           )}

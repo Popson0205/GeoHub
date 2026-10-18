@@ -19,13 +19,13 @@ export default function FormsPage() {
     setBusy(true);
     try {
       const f = await (await loadApi()).createForm(projectId, name.trim(), geom);
-      nav(`/projects/${projectId}/forms/${f.id}`);
+      nav(`/collect/${projectId}/forms/${f.id}`);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create the form.", "error"); setBusy(false); }
   }
 
   return (
     <div className="container" style={{ width: "100%" }}>
-      <div className="page-head"><h1>Forms</h1><span className="grow" /><Link className="btn" to={`/projects/${projectId}/editor`}>Back to editor</Link></div>
+      <div className="page-head"><h1>Forms</h1><span className="grow" /><Link className="btn" to="/collect">Back to projects</Link></div>
       <form className="card" onSubmit={create} style={{ maxWidth: 560, marginBottom: 24 }}>
         <h2>New form</h2>
         <div className="field"><label htmlFor="fn">Name</label><input id="fn" required value={name} onChange={(e) => setName(e.target.value)} placeholder="For example, Water point" /></div>
@@ -44,7 +44,7 @@ export default function FormsPage() {
           <div className="list-item" key={f.id}>
             <div className="grow"><strong>{f.name}</strong><small>{GEOMETRY_LABEL[f.geometry_type]} · {f.fields.length} fields · version {f.version}</small></div>
             <span className={`badge ${f.status === "published" ? "badge-ok" : "badge-warn"}`}>{f.status === "published" ? "Published" : "Draft"}</span>
-            <Link className="btn btn-sm" to={`/projects/${projectId}/forms/${f.id}`}>Edit</Link>
+            <Link className="btn btn-sm" to={`/collect/${projectId}/forms/${f.id}`}>Edit</Link>
           </div>
         ))}
       </div>

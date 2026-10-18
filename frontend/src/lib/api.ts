@@ -2,7 +2,7 @@ import { config } from "./config";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
-  ImagerySource, MapDoc, MapFeature, MapLayer, NewImagerySource, NewMapFeature, NewMapLayer,
+  GeoFeature, MapImportResult, MapLayers, TileSource, WorkMap,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
 
@@ -48,28 +48,30 @@ export interface Api {
   /** XYZ tile URL template for a ready imagery asset, or null when tiles are unavailable. */
   imageryTileUrl(id: string): string | null;
 
+  // ---- standalone mapping workspaces ----
+  listMaps(): Promise<WorkMap[]>;
+  getMap(id: string): Promise<WorkMap>;
+  createMap(name: string, description?: string): Promise<WorkMap>;
+  updateMap(id: string, patch: { name?: string; description?: string; sources?: TileSource[] }): Promise<WorkMap>;
+  deleteMap(id: string): Promise<void>;
+  listMapFeatures(mapId: string): Promise<GeoFeature[]>;
+  createMapFeature(mapId: string, f: { id: string; geometry: Geometry; properties: Props }): Promise<GeoFeature>;
+  updateMapFeature(mapId: string, id: string, patch: { geometry?: Geometry; properties?: Props; base_version?: number }): Promise<GeoFeature>;
+  deleteMapFeature(mapId: string, id: string): Promise<void>;
+  importMapFeatures(mapId: string, features: { geometry: Geometry; properties: Props }[]): Promise<MapImportResult>;
+  /** GeoJSON file of everything drawn in the map. */
+  exportMap(mapId: string): Promise<Blob>;
+  /** Uploaded imagery (GeoTIFF etc.) of a map, with signed tile URLs for the ones that are ready. */
+  listMapImagery(mapId: string): Promise<{ assets: ImageryAsset[]; layers: MapLayers }>;
+  uploadMapImagery(mapId: string, file: File, bounds?: [number, number, number, number]): Promise<ImageryAsset>;
+  deleteImagery(id: string): Promise<void>;
+
   listDatasets(q?: string): Promise<Dataset[]>;
   getDataset(slug: string): Promise<Dataset>;
   datasetFeatures(slug: string): Promise<FeatureCollection>;
   publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<Dataset>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
   getJob(id: string): Promise<Job>;
-
-  // ---- Maps workspace (independent of projects and forms) ----
-  listMaps(): Promise<MapDoc[]>;
-  getMap(id: string): Promise<MapDoc>;
-  createMap(name: string, description?: string): Promise<MapDoc>;
-  deleteMap(id: string): Promise<void>;
-  listMapLayers(mapId: string): Promise<MapLayer[]>;
-  createMapLayer(mapId: string, input: NewMapLayer): Promise<MapLayer>;
-  deleteMapLayer(id: string): Promise<void>;
-  listMapFeatures(mapId: string): Promise<MapFeature[]>;
-  createMapFeature(mapId: string, f: NewMapFeature): Promise<MapFeature>;
-  updateMapFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }): Promise<MapFeature>;
-  deleteMapFeature(id: string): Promise<void>;
-  listImagerySources(mapId: string): Promise<ImagerySource[]>;
-  addImagerySource(mapId: string, input: NewImagerySource): Promise<ImagerySource>;
-  deleteImagerySource(id: string): Promise<void>;
 }
 
 const TOKEN_KEY = "geohub.access";
@@ -113,9 +115,13 @@ const toFeature = (f: Wire): Feature => ({
   updated_at: f.updated_at, deleted: f.deleted_at ? true : undefined,
 });
 const toImagery = (i: Wire): ImageryAsset => ({
-  id: i.id, project_id: i.project_id, name: i.name, status: i.status, error: i.error ?? undefined,
+  id: i.id, project_id: i.project_id ?? undefined, map_id: i.map_id ?? undefined, name: i.name, status: i.status, error: i.error ?? undefined,
   bounds: i.bounds && i.bounds.length === 4 ? (i.bounds as [number, number, number, number]) : undefined,
 });
+const toMap = (m: Wire): WorkMap => ({
+  id: m.id, name: m.name, description: m.description ?? "", sources: m.sources ?? [], feature_count: m.feature_count ?? 0, updated_at: m.updated_at,
+});
+const toGeo = (f: Wire): GeoFeature => ({ id: f.id, geometry: f.geometry, properties: f.properties ?? {}, version: f.version });
 const toDataset = (d: Wire): Dataset => ({
   slug: d.slug, project_id: d.project_id ?? "", title: d.title, description: d.description,
   license: LICENSE_FROM_API[d.license as keyof typeof LICENSE_FROM_API] ?? (d.license as License),
@@ -302,9 +308,12 @@ class HttpApi implements Api {
     }
     return toJob(await this.req<Wire>("POST", `/projects/${projectId}/import`, fd));
   }
-  async uploadImagery(projectId: string, file: File, bounds?: [number, number, number, number]) {
+  uploadImagery(projectId: string, file: File, bounds?: [number, number, number, number]) {
+    return this.uploadImageryTo(`/projects/${projectId}/imagery`, file, bounds);
+  }
+  private async uploadImageryTo(path: string, file: File, bounds?: [number, number, number, number]) {
     // Multipart upload straight to object storage: the API hands out one presigned URL per part.
-    const init = await this.req<Wire>("POST", `/projects/${projectId}/imagery`, { name: file.name, filename: file.name, size: file.size, ...(bounds ? { bounds, crs: "EPSG:4326" } : {}) });
+    const init = await this.req<Wire>("POST", path, { name: file.name, filename: file.name, size: file.size, ...(bounds ? { bounds, crs: "EPSG:4326" } : {}) });
     const done: { part_number: number; etag: string }[] = [];
     for (const part of init.parts as { part_number: number; url: string }[]) {
       const chunk = file.slice((part.part_number - 1) * init.part_size, part.part_number * init.part_size);
@@ -322,6 +331,45 @@ class HttpApi implements Api {
     const t = tokens.get();
     return `${config.apiUrl}/tiles/imagery/${id}/{z}/{x}/{y}.png${t ? `?access_token=${encodeURIComponent(t)}` : ""}`;
   }
+
+  // ---- standalone mapping workspaces ----
+  async listMaps() { return (await this.req<Wire[]>("GET", "/maps")).map(toMap); }
+  async getMap(id: string) { return toMap(await this.req("GET", `/maps/${id}`)); }
+  async createMap(name: string, description?: string) { return toMap(await this.req("POST", "/maps", { name, description: description ?? "" })); }
+  async updateMap(id: string, patch: { name?: string; description?: string; sources?: TileSource[] }) { return toMap(await this.req("PATCH", `/maps/${id}`, patch)); }
+  deleteMap(id: string) { return this.req<void>("DELETE", `/maps/${id}`); }
+  async listMapFeatures(mapId: string) { return (await this.req<Wire[]>("GET", `/maps/${mapId}/features`)).map(toGeo); }
+  async createMapFeature(mapId: string, f: { id: string; geometry: Geometry; properties: Props }) { return toGeo(await this.req("POST", `/maps/${mapId}/features`, f)); }
+  async updateMapFeature(mapId: string, id: string, patch: { geometry?: Geometry; properties?: Props; base_version?: number }) { return toGeo(await this.req("PATCH", `/maps/${mapId}/features/${id}`, patch)); }
+  deleteMapFeature(mapId: string, id: string) { return this.req<void>("DELETE", `/maps/${mapId}/features/${id}`); }
+  async importMapFeatures(mapId: string, features: { geometry: Geometry; properties: Props }[]) {
+    const out: MapImportResult = { imported: 0, rejected: 0, errors: [] };
+    for (let i = 0; i < features.length; i += 2000) {     // the API takes up to 10000 per call; stay well below request limits
+      const r = await this.req<MapImportResult>("POST", `/maps/${mapId}/features/import`, { features: features.slice(i, i + 2000) });
+      out.imported += r.imported; out.rejected += r.rejected;
+      out.errors.push(...r.errors.map((e) => ({ ...e, row: e.row + i })));
+    }
+    out.errors = out.errors.slice(0, 20);
+    return out;
+  }
+  async exportMap(mapId: string) {
+    const token = tokens.get();
+    const res = await fetch(`${config.apiUrl}/maps/${mapId}/export.geojson`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new ApiError(res.status, "Could not export the map.");
+    return res.blob();
+  }
+  async listMapImagery(mapId: string) {
+    const page = await this.req<Wire>("GET", `/maps/${mapId}/imagery?limit=100`);
+    const assets: ImageryAsset[] = page.items.map(toImagery);
+    const layers: MapLayers = { imagery: [] };
+    if (assets.some((a) => a.status === "ready")) {
+      const l = await this.req<Wire>("GET", `/maps/${mapId}/layers`);    // signed tile URLs: map tiles cannot send headers
+      layers.imagery = l.imagery.map((i: Wire) => ({ id: i.id, name: i.name, bounds: i.bounds?.length === 4 ? i.bounds : undefined, url: i.tiles_url }));
+    }
+    return { assets, layers };
+  }
+  uploadMapImagery(mapId: string, file: File, bounds?: [number, number, number, number]) { return this.uploadImageryTo(`/maps/${mapId}/imagery`, file, bounds); }
+  deleteImagery(id: string) { return this.req<void>("DELETE", `/imagery/${id}`); }
 
   async listDatasets(q?: string) {
     const out: Dataset[] = [];
@@ -362,33 +410,6 @@ class HttpApi implements Api {
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
-
-  // ---- Maps workspace ----
-  private async all<T>(path: string, limit: number): Promise<T[]> {
-    const out: T[] = [];
-    let cursor: string | null = null;
-    do {
-      const sep = path.includes("?") ? "&" : "?";
-      const page: Wire = await this.req("GET", `${path}${sep}limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
-      out.push(...page.items);
-      cursor = page.next_cursor;
-    } while (cursor);
-    return out;
-  }
-  listMaps() { return this.all<MapDoc>("/maps", 100); }
-  getMap(id: string) { return this.req<MapDoc>("GET", `/maps/${id}`); }
-  createMap(name: string, description?: string) { return this.req<MapDoc>("POST", "/maps", { name, description: description ?? "" }); }
-  deleteMap(id: string) { return this.req<void>("DELETE", `/maps/${id}`); }
-  listMapLayers(mapId: string) { return this.req<MapLayer[]>("GET", `/maps/${mapId}/layers`); }
-  createMapLayer(mapId: string, input: NewMapLayer) { return this.req<MapLayer>("POST", `/maps/${mapId}/layers`, input); }
-  deleteMapLayer(id: string) { return this.req<void>("DELETE", `/layers/${id}`); }
-  listMapFeatures(mapId: string) { return this.all<MapFeature>(`/maps/${mapId}/features`, 1000); }
-  createMapFeature(mapId: string, f: NewMapFeature) { return this.req<MapFeature>("POST", `/maps/${mapId}/features`, f); }
-  updateMapFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }) { return this.req<MapFeature>("PATCH", `/map-features/${id}`, patch); }
-  deleteMapFeature(id: string) { return this.req<void>("DELETE", `/map-features/${id}`); }
-  listImagerySources(mapId: string) { return this.req<ImagerySource[]>("GET", `/maps/${mapId}/imagery-sources`); }
-  addImagerySource(mapId: string, input: NewImagerySource) { return this.req<ImagerySource>("POST", `/maps/${mapId}/imagery-sources`, input); }
-  deleteImagerySource(id: string) { return this.req<void>("DELETE", `/imagery-sources/${id}`); }
 }
 
 /** Backend slugs: lowercase letters, digits and hyphens, 2-63 chars, a short random suffix keeps them unique. */

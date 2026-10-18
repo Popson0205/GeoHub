@@ -143,7 +143,7 @@ export default function CollectPage() {
   return (
     <div className="collect">
       <header className="collect-head">
-        <Link to="/projects" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>
+        <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>
         <div className="grow"><small>Project</small><strong>{name}</strong></div>
         <span className={`badge ${online ? "badge-ok" : "badge-warn"}`}>{online ? "Online" : "Offline"}{pending ? ` · ${pending} to sync` : ""}</span>
       </header>

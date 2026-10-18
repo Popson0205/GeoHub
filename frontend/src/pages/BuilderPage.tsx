@@ -61,7 +61,7 @@ export default function BuilderPage() {
   return (
     <div className="builder" style={{ flex: 1 }}>
       <aside className="side left">
-        <Link to={`/projects/${projectId}/forms`}>All forms</Link>
+        <Link to={`/collect/${projectId}/forms`}>All forms</Link>
         <h2>Add a field</h2>
         {TYPES.map((t) => <Button key={t} onClick={() => add(t)} style={{ justifyContent: "flex-start" }}>{FIELD_TYPE_LABEL[t]}</Button>)}
       </aside>

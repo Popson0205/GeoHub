@@ -28,7 +28,7 @@ export default function ProjectsPage() {
   return (
     <div className="container" style={{ width: "100%" }}>
       <div className="page-head">
-        <h1>Your projects</h1><span className="grow" />
+        <h1>Data collection</h1><span className="grow" />
         <Button variant="accent" onClick={() => setCreating((v) => !v)}>New project</Button>
       </div>
 
@@ -42,7 +42,7 @@ export default function ProjectsPage() {
       {publishing && <PublishPanel project={publishing} onClose={() => setPublishing(null)} />}
       {loading && <Loading label="Loading projects…" />}
       {error != null && <ErrorState error={error} onRetry={reload} />}
-      {data && data.length === 0 && <EmptyState title="No projects yet">Create one to define a form, invite collectors and add imagery.</EmptyState>}
+      {data && data.length === 0 && <EmptyState title="No projects yet">Create a project to build a form, invite collectors and start collecting.</EmptyState>}
       {data && data.length > 0 && (
         <div className="grid-cards">
           {data.map((p) => (
@@ -51,9 +51,9 @@ export default function ProjectsPage() {
               <h2>{p.name}</h2>
               <div className="meta">{p.collector_count} collectors · {p.feature_count} features · updated {new Date(p.updated_at).toLocaleDateString()}</div>
               <div className="actions">
-                <Link className="btn btn-primary" to={`/projects/${p.id}/editor`}>Open editor</Link>
-                <Link className="btn" to={`/projects/${p.id}/forms`}>Forms</Link>
-                <Link className="btn" to={`/collect/${p.id}`}>Collect</Link>
+                <Link className="btn btn-primary" to={`/collect/${p.id}`}>Collect</Link>
+                {(p.role === "owner" || p.role === "admin") && <Link className="btn" to={`/collect/${p.id}/forms`}>Forms</Link>}
+                <Link className="btn" to={`/collect/${p.id}/review`}>Review data</Link>
                 {(p.role === "owner" || p.role === "admin") && <Button onClick={() => setPublishing(p)}>Publish</Button>}
               </div>
             </article>

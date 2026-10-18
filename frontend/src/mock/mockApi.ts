@@ -3,13 +3,15 @@ import { validateProperties, uuid } from "../lib/forms";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
-  ImagerySource, MapDoc, MapFeature, MapLayer, NewImagerySource, NewMapFeature, NewMapLayer,
+  GeoFeature, MapImportResult, MapLayers, TileSource, WorkMap,
 } from "../lib/types";
 import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects } from "./seed";
 
 type Row = Feature & { seq: number };
-interface State { projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
-  maps?: MapDoc[]; mapLayers?: MapLayer[]; mapFeatures?: MapFeature[]; mapSources?: ImagerySource[] }
+interface State {
+  projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
+  maps?: WorkMap[]; mapFeatures?: (GeoFeature & { map_id: string })[];
+}
 
 const KEY = "geohub.mock.v1";
 const wait = (ms = 120) => new Promise((r) => setTimeout(r, ms));
@@ -24,7 +26,7 @@ function load(): State {
 
 /** In-memory stand-in for the backend so the whole frontend runs offline. State persists in localStorage. */
 export class MockApi implements Api {
-  private s: State = (() => { const x = load(); x.maps ??= []; x.mapLayers ??= []; x.mapFeatures ??= []; x.mapSources ??= []; return x; })();
+  private s: State = load();
   private jobs = new Map<string, { job: Job; polls: number; url?: string; error?: string }>();
 
   private save() { try { localStorage.setItem(KEY, JSON.stringify(this.s)); } catch { /* storage full */ } }
@@ -202,6 +204,91 @@ export class MockApi implements Api {
   }
   imageryTileUrl(): string | null { return null; } // no tile server in mock mode
 
+  // ---- standalone mapping workspaces ----
+  private maps() { return (this.s.maps ??= []); }
+  private mapFeats() { return (this.s.mapFeatures ??= []); }
+  private mapOf(id: string) {
+    const m = this.maps().find((x) => x.id === id);
+    if (!m) throw new ApiError(404, "Map not found.");
+    return m;
+  }
+  async listMaps() { await wait(); this.auth(); return this.maps().map((m) => ({ ...m, feature_count: this.mapFeats().filter((f) => f.map_id === m.id).length })); }
+  async getMap(id: string) { await wait(60); this.auth(); const m = this.mapOf(id); return { ...m, feature_count: this.mapFeats().filter((f) => f.map_id === id).length }; }
+  async createMap(name: string, description?: string) {
+    await wait(); this.auth();
+    const m: WorkMap = { id: uuid(), name, description: description ?? "", sources: [], feature_count: 0, updated_at: new Date().toISOString() };
+    this.maps().unshift(m); this.save();
+    return m;
+  }
+  async updateMap(id: string, patch: { name?: string; description?: string; sources?: TileSource[] }) {
+    await wait(60); this.auth();
+    const m = this.mapOf(id);
+    if (patch.sources) {
+      for (const s of patch.sources) {
+        if (!/^https?:\/\//i.test(s.url) || !s.url.includes("{z}") || !s.url.includes("{x}") || !(s.url.includes("{y}") || s.url.includes("{-y}"))) {
+          throw new ApiError(422, `Imagery source "${s.name}": the URL must start with http(s):// and contain {z}, {x} and {y}.`);
+        }
+      }
+      m.sources = patch.sources.map((s) => ({ ...s, id: s.id || uuid().slice(0, 12) }));
+    }
+    if (patch.name !== undefined) m.name = patch.name;
+    if (patch.description !== undefined) m.description = patch.description;
+    m.updated_at = new Date().toISOString(); this.save();
+    return { ...m, feature_count: this.mapFeats().filter((f) => f.map_id === id).length };
+  }
+  async deleteMap(id: string) {
+    await wait(); this.auth(); this.mapOf(id);
+    this.s.maps = this.maps().filter((m) => m.id !== id);
+    this.s.mapFeatures = this.mapFeats().filter((f) => f.map_id !== id);
+    this.s.imagery = this.s.imagery.filter((i) => i.map_id !== id);
+    this.save();
+  }
+  async listMapFeatures(mapId: string) { await wait(60); this.auth(); this.mapOf(mapId); return this.mapFeats().filter((f) => f.map_id === mapId).map(({ map_id: _m, ...f }) => f); }
+  async createMapFeature(mapId: string, f: { id: string; geometry: Geometry; properties: Props }) {
+    await wait(60); this.auth(); this.mapOf(mapId);
+    const row = { id: f.id, map_id: mapId, geometry: f.geometry, properties: f.properties, version: 1 };
+    this.mapFeats().push(row); this.save();
+    const { map_id: _m, ...out } = row;
+    return out;
+  }
+  async updateMapFeature(mapId: string, id: string, patch: { geometry?: Geometry; properties?: Props; base_version?: number }) {
+    await wait(60); this.auth();
+    const f = this.mapFeats().find((x) => x.id === id && x.map_id === mapId);
+    if (!f) throw new ApiError(404, "Feature not found.");
+    if (patch.base_version !== undefined && patch.base_version !== f.version) throw new ApiError(409, "This feature changed since you opened it. Reload and try again.");
+    if (patch.geometry) f.geometry = patch.geometry;
+    if (patch.properties) f.properties = patch.properties;
+    f.version += 1; this.save();
+    const { map_id: _m, ...out } = f;
+    return out;
+  }
+  async deleteMapFeature(mapId: string, id: string) {
+    await wait(60); this.auth();
+    this.s.mapFeatures = this.mapFeats().filter((f) => !(f.id === id && f.map_id === mapId)); this.save();
+  }
+  async importMapFeatures(mapId: string, features: { geometry: Geometry; properties: Props }[]): Promise<MapImportResult> {
+    await wait(); this.auth(); this.mapOf(mapId);
+    for (const f of features) this.mapFeats().push({ id: uuid(), map_id: mapId, geometry: f.geometry, properties: f.properties, version: 1 });
+    this.save();
+    return { imported: features.length, rejected: 0, errors: [] };
+  }
+  async exportMap(mapId: string) {
+    const feats = await this.listMapFeatures(mapId);
+    const fc = { type: "FeatureCollection", features: feats.map((f) => ({ type: "Feature", id: f.id, geometry: f.geometry, properties: f.properties })) };
+    return new Blob([JSON.stringify(fc, null, 2)], { type: "application/geo+json" });
+  }
+  async listMapImagery(mapId: string): Promise<{ assets: ImageryAsset[]; layers: MapLayers }> {
+    await wait(60); this.auth();
+    return { assets: this.s.imagery.filter((i) => i.map_id === mapId), layers: { imagery: [] } };   // no tile server in mock mode
+  }
+  async uploadMapImagery(mapId: string, file: File) {
+    await wait(500); this.auth(); this.mapOf(mapId);
+    const a: ImageryAsset = { id: uuid(), map_id: mapId, name: file.name, status: "ready" };
+    this.s.imagery.push(a); this.save();
+    return a;
+  }
+  async deleteImagery(id: string) { await wait(60); this.s.imagery = this.s.imagery.filter((i) => i.id !== id); this.save(); }
+
   async listDatasets(q?: string) {
     await wait();
     const needle = (q ?? "").trim().toLowerCase();
@@ -258,85 +345,6 @@ export class MockApi implements Api {
     if (e.error) return { ...e.job, status: "failed", progress: 100, error: e.error };
     return { ...e.job, status: "done", progress: 100, download_url: e.url };
   }
-
-  // ---- Maps workspace ----
-  private mapCounts(m: MapDoc): MapDoc {
-    return { ...m, layer_count: this.s.mapLayers!.filter((l) => l.map_id === m.id).length,
-      feature_count: this.s.mapFeatures!.filter((f) => f.map_id === m.id).length };
-  }
-  private mapOr404(id: string) {
-    const m = this.s.maps!.find((x) => x.id === id);
-    if (!m) throw new ApiError(404, "Map not found.");
-    return m;
-  }
-  async listMaps() { await wait(); this.auth(); return this.s.maps!.map((m) => this.mapCounts(m)); }
-  async getMap(id: string) { await wait(60); this.auth(); return this.mapCounts(this.mapOr404(id)); }
-  async createMap(name: string, description?: string) {
-    await wait(); this.auth();
-    const m: MapDoc = { id: uuid(), name, description: description ?? "", role: "owner", layer_count: 0, feature_count: 0, updated_at: new Date().toISOString() };
-    this.s.maps!.unshift(m);
-    // A new map is ready to draw on: one default layer that holds any shape.
-    this.s.mapLayers!.push({ id: uuid(), map_id: m.id, name: "Layer 1", geometry_type: "any", fields: [], position: 0 });
-    this.save();
-    return this.mapCounts(m);
-  }
-  async deleteMap(id: string) {
-    await wait(); this.auth(); this.mapOr404(id);
-    this.s.maps = this.s.maps!.filter((m) => m.id !== id);
-    this.s.mapLayers = this.s.mapLayers!.filter((l) => l.map_id !== id);
-    this.s.mapFeatures = this.s.mapFeatures!.filter((f) => f.map_id !== id);
-    this.s.mapSources = this.s.mapSources!.filter((i) => i.map_id !== id);
-    this.save();
-  }
-  async listMapLayers(mapId: string) { await wait(60); this.auth(); return this.s.mapLayers!.filter((l) => l.map_id === mapId).sort((a, b) => a.position - b.position); }
-  async createMapLayer(mapId: string, input: NewMapLayer) {
-    await wait(); this.auth(); this.mapOr404(mapId);
-    const position = this.s.mapLayers!.filter((l) => l.map_id === mapId).length;
-    const l: MapLayer = { id: uuid(), map_id: mapId, name: input.name, geometry_type: input.geometry_type, fields: input.fields, position };
-    this.s.mapLayers!.push(l); this.save();
-    return l;
-  }
-  async deleteMapLayer(id: string) {
-    await wait(); this.auth();
-    this.s.mapLayers = this.s.mapLayers!.filter((l) => l.id !== id);
-    this.s.mapFeatures = this.s.mapFeatures!.filter((f) => f.layer_id !== id);
-    this.save();
-  }
-  async listMapFeatures(mapId: string) { await wait(60); this.auth(); return this.s.mapFeatures!.filter((f) => f.map_id === mapId); }
-  async createMapFeature(mapId: string, f: NewMapFeature) {
-    await wait(80); this.auth();
-    const layer = this.s.mapLayers!.find((l) => l.id === f.layer_id && l.map_id === mapId);
-    if (!layer) throw new ApiError(404, "Layer not found.");
-    const kind = { Point: "point", LineString: "line", Polygon: "area" }[f.geometry.type];
-    if (layer.geometry_type !== "any" && layer.geometry_type !== kind) throw new ApiError(422, `This layer holds ${layer.geometry_type} features, not ${kind}.`);
-    const row: MapFeature = { id: f.id, map_id: mapId, layer_id: f.layer_id, geometry: f.geometry, properties: f.properties, version: 1, updated_at: new Date().toISOString() };
-    this.s.mapFeatures!.push(row); this.save();
-    return row;
-  }
-  async updateMapFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }) {
-    await wait(80); this.auth();
-    const row = this.s.mapFeatures!.find((f) => f.id === id);
-    if (!row) throw new ApiError(404, "Feature not found.");
-    if (row.version !== patch.base_version) throw new ApiError(409, "Someone else changed this feature. Reload and try again.");
-    if (patch.geometry) row.geometry = patch.geometry;
-    if (patch.properties) row.properties = patch.properties;
-    row.version += 1; row.updated_at = new Date().toISOString(); this.save();
-    return { ...row };
-  }
-  async deleteMapFeature(id: string) { await wait(60); this.auth(); this.s.mapFeatures = this.s.mapFeatures!.filter((f) => f.id !== id); this.save(); }
-  async listImagerySources(mapId: string) { await wait(60); this.auth(); return this.s.mapSources!.filter((i) => i.map_id === mapId); }
-  async addImagerySource(mapId: string, input: NewImagerySource) {
-    await wait(); this.auth(); this.mapOr404(mapId);
-    const t = input.url_template.trim();
-    if (!/^https?:\/\//i.test(t) || !t.includes("{z}") || !t.includes("{x}") || !t.includes("{y}")) {
-      throw new ApiError(422, "The URL must start with http(s):// and contain {z}, {x} and {y}.", { url_template: "Use a tile URL like https://host/{z}/{x}/{y}.png" });
-    }
-    const src: ImagerySource = { id: uuid(), map_id: mapId, name: input.name, url_template: t, attribution: input.attribution ?? "",
-      min_zoom: input.min_zoom ?? 0, max_zoom: input.max_zoom ?? 19, tile_size: input.tile_size ?? 256 };
-    this.s.mapSources!.push(src); this.save();
-    return src;
-  }
-  async deleteImagerySource(id: string) { await wait(60); this.auth(); this.s.mapSources = this.s.mapSources!.filter((i) => i.id !== id); this.save(); }
 }
 
 function toCsv(fc: FeatureCollection): string {

@@ -7,7 +7,7 @@ import { config } from "../lib/config";
 export default function LoginPage() {
   const { login, register } = useAuth();
   const nav = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? "/projects";
+  const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
   const [email, setEmail] = useState(config.useMock ? "demo@geohub.test" : "");
   const [password, setPassword] = useState(config.useMock ? "demo" : "");
   const [name, setName] = useState("");
