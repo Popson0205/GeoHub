@@ -103,3 +103,23 @@ Edits are **staged**, not saved one by one. Draw as many features as you like, t
 * **Snapping** to nearby points while drawing and dragging (on by default).
 * Unsaved work is kept on the device and restored if the page is refreshed or closed. If some changes fail to save (for example someone else edited the feature), the rest are saved and the failed ones stay staged.
 * The logic lives in `src/lib/staging.ts` (edit history) and `src/lib/geoops.ts` (split, merge, move). `npm run test:digitize` checks both. Cutting and merging areas load Turf on first use only.
+
+
+## Teams, contributors and publishing (shared maps)
+
+A map can have people on it. Open **Team & stats** on a map card (or "Campaign portal" in the editor) to get the organiser's portal at `/maps/:id/portal`.
+
+| Tab | Who | What it is for |
+| --- | --- | --- |
+| Contributors | everyone on the map | Leaderboard (features added, approved, waiting, rejected, edited, last active), activity chart, recent changes, CSV download for prizes. |
+| Review | reviewers, owner (contributors see their own work and the reviewers' notes) | Filter by status or by person, look at features on the map, approve or reject in bulk with a note. |
+| Team | owner manages | Invitation link (on/off, new link), promote to reviewer, remove people. Anyone can leave. |
+| Campaign | owner | Turn the map into a mapping project or competition: goal, start and end, leaderboard on or off. |
+| Publish | owner | Publish the **approved** features to the Data hub, one kind (points, lines or areas) per dataset, with licence, visibility and contributor credits. Publish new versions later. |
+
+* **Roles:** owner runs the map and publishes; reviewers approve work and can edit anything; contributors draw, and can change their own features until a reviewer approves them. Whatever the owner or a reviewer draws is approved straight away.
+* **Joining:** people open the invitation link (`/join/:code`) or paste it on the Web mapping page. In mock mode, try `/join/ibadan-flood`.
+* **Competition:** ranked by features added; rejected features do not count. With dates set, only features drawn inside the window count, and contributors cannot draw outside it.
+* In the editor, features waiting for review are purple and rejected ones red. Contributors see approved and other people's features as locked.
+* Mock mode ships a demo campaign ("Osogbo building mapathon") with a team and review work, so the portal has something to show.
+* `npm run test:ui` renders the editor and portal pages against the mock backend (jsdom, with a stand-in for the WebGL map).

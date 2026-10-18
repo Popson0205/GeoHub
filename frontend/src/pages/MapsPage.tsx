@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button, EmptyState, ErrorState, Loading, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
@@ -11,6 +11,15 @@ export default function MapsPage() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState("");
+  const nav = useNavigate();
+
+  /** Accepts a pasted invitation link or just the code at the end of it. */
+  function openInvite(e: FormEvent) {
+    e.preventDefault();
+    const c = code.trim().replace(/\/+$/, "").split("/").pop();
+    if (c) nav(`/join/${encodeURIComponent(c)}`);
+  }
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -33,10 +42,14 @@ export default function MapsPage() {
     <div className="container" style={{ width: "100%" }}>
       <div className="page-head">
         <h1>Web mapping</h1><span className="grow" />
+        <form className="row" onSubmit={openInvite} aria-label="Join a map">
+          <input className="input" style={{ width: 220, minHeight: 44 }} aria-label="Invitation link or code" placeholder="Invitation link or code" value={code} onChange={(e) => setCode(e.target.value)} />
+          <Button type="submit" disabled={!code.trim()}>Join</Button>
+        </form>
         <Button variant="accent" onClick={() => setCreating((v) => !v)}>New map</Button>
       </div>
       <p style={{ color: "var(--muted)", marginTop: -8, maxWidth: 640 }}>
-        Draw points, lines and areas over satellite imagery. Add imagery from a tile URL or by uploading a GeoTIFF, then export what you mapped.
+        Draw points, lines and areas over satellite imagery, alone or with a team. Invite contributors, review their work, run a mapping competition, and publish the approved features to the Data hub.
       </p>
 
       {creating && (
@@ -55,10 +68,15 @@ export default function MapsPage() {
             <article className="card" key={m.id}>
               <div className="thumb" aria-hidden="true" />
               <h2>{m.name}</h2>
-              <div className="meta">{m.feature_count} features · {m.sources.length} imagery {m.sources.length === 1 ? "source" : "sources"} · updated {new Date(m.updated_at).toLocaleDateString()}</div>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <span className="badge badge-ok">{m.role === "owner" ? "Owner" : m.role === "reviewer" ? "Reviewer" : "Contributor"}</span>
+                {m.is_campaign && m.campaign_status && <span className={`badge ${m.campaign_status === "open" ? "badge-ok" : m.campaign_status === "ended" ? "badge-bad" : "badge-warn"}`}>{m.competition ? "Competition" : "Campaign"} · {m.campaign_status === "open" ? "open" : m.campaign_status === "ended" ? "ended" : "not started"}</span>}
+              </div>
+              <div className="meta">{m.feature_count} features · {m.member_count} {m.member_count === 1 ? "person" : "people"}{m.role !== "owner" ? ` · by ${m.owner_name}` : ""} · updated {new Date(m.updated_at).toLocaleDateString()}</div>
               <div className="actions">
                 <Link className="btn btn-primary" to={`/maps/${m.id}`}>Open map</Link>
-                <Button variant="danger" onClick={() => remove(m.id, m.name)}>Delete</Button>
+                <Link className="btn" to={`/maps/${m.id}/portal`}>{m.role === "contributor" ? "Leaderboard" : "Team & stats"}</Link>
+                {m.role === "owner" && <Button variant="danger" onClick={() => remove(m.id, m.name)}>Delete</Button>}
               </div>
             </article>
           ))}

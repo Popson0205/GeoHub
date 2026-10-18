@@ -2,7 +2,8 @@ import { config } from "./config";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
-  GeoFeature, MapImportResult, MapLayers, TileSource, WorkMap,
+  GeoFeature, MapImportResult, MapLayers, WorkMap,
+  Activity, ContributorsReport, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
 
@@ -52,7 +53,7 @@ export interface Api {
   listMaps(): Promise<WorkMap[]>;
   getMap(id: string): Promise<WorkMap>;
   createMap(name: string, description?: string): Promise<WorkMap>;
-  updateMap(id: string, patch: { name?: string; description?: string; sources?: TileSource[] }): Promise<WorkMap>;
+  updateMap(id: string, patch: MapSettings): Promise<WorkMap>;
   deleteMap(id: string): Promise<void>;
   listMapFeatures(mapId: string): Promise<GeoFeature[]>;
   createMapFeature(mapId: string, f: { id: string; geometry: Geometry; properties: Props }): Promise<GeoFeature>;
@@ -65,6 +66,21 @@ export interface Api {
   listMapImagery(mapId: string): Promise<{ assets: ImageryAsset[]; layers: MapLayers }>;
   uploadMapImagery(mapId: string, file: File, bounds?: [number, number, number, number]): Promise<ImageryAsset>;
   deleteImagery(id: string): Promise<void>;
+
+  // ---- shared maps: team, review, contributors, publishing ----
+  listMembers(mapId: string): Promise<MapMember[]>;
+  setMemberRole(mapId: string, userId: string, role: Exclude<MapRole, "owner">): Promise<void>;
+  removeMember(mapId: string, userId: string): Promise<void>;
+  joinPreview(code: string): Promise<JoinPreview>;
+  joinMap(code: string): Promise<WorkMap>;
+  contributors(mapId: string): Promise<ContributorsReport>;
+  mapActivity(mapId: string): Promise<Activity[]>;
+  reviewFeatures(mapId: string, ids: string[], status: ReviewStatus, note?: string): Promise<number>;
+  mapDatasets(mapId: string): Promise<Dataset[]>;
+  /** Publish the approved features of one kind as a Data hub dataset. Poll the job until it is done. */
+  publishMap(mapId: string, input: PublishInput): Promise<{ dataset: Dataset; job: Job }>;
+  /** Take a fresh snapshot of a published dataset as its next version. */
+  newDatasetVersion(slug: string): Promise<Job>;
 
   listDatasets(q?: string): Promise<Dataset[]>;
   getDataset(slug: string): Promise<Dataset>;
@@ -120,8 +136,17 @@ const toImagery = (i: Wire): ImageryAsset => ({
 });
 const toMap = (m: Wire): WorkMap => ({
   id: m.id, name: m.name, description: m.description ?? "", sources: m.sources ?? [], feature_count: m.feature_count ?? 0, updated_at: m.updated_at,
+  role: m.role ?? "owner", owner_name: m.owner_name ?? "", member_count: m.member_count ?? 1,
+  is_campaign: !!m.is_campaign, goal: m.goal ?? "", starts_at: m.starts_at ?? undefined, ends_at: m.ends_at ?? undefined,
+  competition: !!m.competition, campaign_status: m.campaign_status ?? undefined, join_code: m.join_code ?? undefined,
 });
-const toGeo = (f: Wire): GeoFeature => ({ id: f.id, geometry: f.geometry, properties: f.properties ?? {}, version: f.version });
+const toGeo = (f: Wire): GeoFeature => ({
+  id: f.id, geometry: f.geometry, properties: f.properties ?? {}, version: f.version,
+  status: f.status, created_by: f.created_by ?? undefined, author: f.author ?? undefined, review_note: f.review_note || undefined,
+  updated_at: f.updated_at, created_at: f.created_at,
+});
+const toMember = (m: Wire): MapMember => ({ user_id: m.user_id, name: m.name, email: m.email ?? undefined, role: m.role, joined_at: m.joined_at ?? undefined });
+const toContributor = (c: Wire) => ({ ...c, first_at: c.first_at ?? undefined, last_at: c.last_at ?? undefined });
 const toDataset = (d: Wire): Dataset => ({
   slug: d.slug, project_id: d.project_id ?? "", title: d.title, description: d.description,
   license: LICENSE_FROM_API[d.license as keyof typeof LICENSE_FROM_API] ?? (d.license as License),
@@ -129,6 +154,7 @@ const toDataset = (d: Wire): Dataset => ({
   bbox: d.bbox && d.bbox.length === 4 ? d.bbox : undefined,
   feature_count: d.feature_count, latest_version: d.latest_version, updated_at: d.published_at,
   formats: (d.formats ?? ALL_FORMATS) as ExportFormat[],
+  visibility: d.visibility, map_id: d.map_id ?? undefined, contributors: d.contributors?.length ? d.contributors : undefined,
 });
 const toJob = (j: Wire): Job => ({
   id: j.id, kind: j.kind, status: j.status, progress: j.progress,
@@ -336,9 +362,36 @@ class HttpApi implements Api {
   async listMaps() { return (await this.req<Wire[]>("GET", "/maps")).map(toMap); }
   async getMap(id: string) { return toMap(await this.req("GET", `/maps/${id}`)); }
   async createMap(name: string, description?: string) { return toMap(await this.req("POST", "/maps", { name, description: description ?? "" })); }
-  async updateMap(id: string, patch: { name?: string; description?: string; sources?: TileSource[] }) { return toMap(await this.req("PATCH", `/maps/${id}`, patch)); }
+  async updateMap(id: string, patch: MapSettings) { return toMap(await this.req("PATCH", `/maps/${id}`, patch)); }
   deleteMap(id: string) { return this.req<void>("DELETE", `/maps/${id}`); }
   async listMapFeatures(mapId: string) { return (await this.req<Wire[]>("GET", `/maps/${mapId}/features`)).map(toGeo); }
+
+  // ---- shared maps ----
+  async listMembers(mapId: string) { return (await this.req<Wire[]>("GET", `/maps/${mapId}/members`)).map(toMember); }
+  async setMemberRole(mapId: string, userId: string, role: Exclude<MapRole, "owner">) { await this.req("PATCH", `/maps/${mapId}/members/${userId}`, { role }); }
+  removeMember(mapId: string, userId: string) { return this.req<void>("DELETE", `/maps/${mapId}/members/${userId}`); }
+  joinPreview(code: string) { return this.req<Wire>("GET", `/join/${encodeURIComponent(code)}`).then((j) => ({ ...j, starts_at: j.starts_at ?? undefined, ends_at: j.ends_at ?? undefined, campaign_status: j.campaign_status ?? undefined }) as JoinPreview); }
+  async joinMap(code: string) { return toMap(await this.req("POST", `/join/${encodeURIComponent(code)}`)); }
+  async contributors(mapId: string): Promise<ContributorsReport> {
+    const r = await this.req<Wire>("GET", `/maps/${mapId}/contributors`);
+    return { ...r, contributors: r.contributors.map(toContributor), starts_at: r.starts_at ?? undefined, ends_at: r.ends_at ?? undefined };
+  }
+  async mapActivity(mapId: string) { return (await this.req<Wire[]>("GET", `/maps/${mapId}/activity`)) as Activity[]; }
+  async reviewFeatures(mapId: string, ids: string[], status: ReviewStatus, note = "") {
+    let n = 0;
+    for (let i = 0; i < ids.length; i += 1000) n += (await this.req<Wire>("POST", `/maps/${mapId}/features/review`, { ids: ids.slice(i, i + 1000), status, note })).updated;
+    return n;
+  }
+  async mapDatasets(mapId: string) { return (await this.req<Wire[]>("GET", `/maps/${mapId}/datasets`)).map(toDataset); }
+  async publishMap(mapId: string, input: PublishInput) {
+    const r = await this.req<Wire>("POST", `/maps/${mapId}/publish`, {
+      slug: input.slug, title: input.title, description: input.description, license: LICENSE_TO_API[input.license],
+      tags: input.tags, visibility: input.license === "Private" ? "private" : input.visibility,
+      geometry_type: input.geometry_type, credit_contributors: input.credit_contributors,
+    });
+    return { dataset: toDataset(r.dataset), job: toJob(r.job) };
+  }
+  newDatasetVersion(slug: string) { return this.req<Wire>("POST", `/datasets/${slug}/versions`, {}).then(toJob); }
   async createMapFeature(mapId: string, f: { id: string; geometry: Geometry; properties: Props }) { return toGeo(await this.req("POST", `/maps/${mapId}/features`, f)); }
   async updateMapFeature(mapId: string, id: string, patch: { geometry?: Geometry; properties?: Props; base_version?: number }) { return toGeo(await this.req("PATCH", `/maps/${mapId}/features/${id}`, patch)); }
   deleteMapFeature(mapId: string, id: string) { return this.req<void>("DELETE", `/maps/${mapId}/features/${id}`); }

@@ -12,6 +12,8 @@ import CollectPage from "./pages/CollectPage";
 import LandingPage from "./pages/LandingPage";
 import MapsPage from "./pages/MapsPage";
 import MapEditorPage from "./pages/MapEditorPage";
+import MapPortalPage from "./pages/MapPortalPage";
+import JoinMapPage from "./pages/JoinMapPage";
 
 function NotFound() {
   return (
@@ -39,6 +41,8 @@ export default function App() {
         {/* Web mapping: standalone maps, no forms or projects */}
         <Route path="/maps" element={<RequireAuth><MapsPage /></RequireAuth>} />
         <Route path="/maps/:mapId" element={<RequireAuth><MapEditorPage /></RequireAuth>} />
+        <Route path="/maps/:mapId/portal" element={<RequireAuth><MapPortalPage /></RequireAuth>} />
+        <Route path="/join/:code" element={<RequireAuth><JoinMapPage /></RequireAuth>} />
         <Route path="/hub" element={<HubPage />} />
         <Route path="/hub/:slug" element={<DatasetPage />} />
         {/* Data collection: projects, form builder, review */}

@@ -7,7 +7,7 @@ import { translate } from "../lib/geoops";
 import type { Geometry, GeometryType, Position, Props } from "../lib/types";
 import { Button } from "./ui";
 
-export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" }
+export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected" }
 export interface MapImagery { id: string; url: string; maxzoom?: number; opacity?: number; attribution?: string }
 export type Bbox = [number, number, number, number];
 
@@ -92,9 +92,11 @@ const GREEN = "#1f6b52";
 const ORANGE = "#b8431a";
 const AMBER = "#d98a0b";
 const BLUE = "#2f6fb0";
+const PURPLE = "#7b5ea7";
+const RED = "#c0392b";
 const SNAP_PX = 12;
-/** Colour by edit state: new = amber, changed = blue, saved = green. */
-const byState = (): maplibregl.ExpressionSpecification => ["match", ["get", "state"], "new", AMBER, "mod", BLUE, GREEN];
+/** Colour by state: new = amber, changed = blue, saved = green; on shared maps also waiting for review = purple, rejected = red. */
+const byState = (): maplibregl.ExpressionSpecification => ["match", ["get", "state"], "new", AMBER, "mod", BLUE, "review", PURPLE, "rejected", RED, GREEN];
 
 function asFC(features: MapFeature[]) {
   return {

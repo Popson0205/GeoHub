@@ -107,6 +107,11 @@ export interface Dataset {
   latest_version: number;
   updated_at: string;
   formats: ExportFormat[];
+  visibility?: "public" | "private";
+  /** Set when the dataset was published from a map (only visible to that map's members). */
+  map_id?: string;
+  /** People credited for the latest version of a dataset published from a map. */
+  contributors?: { name: string; features: number }[];
 }
 export interface Job {
   id: string;
@@ -126,6 +131,10 @@ export interface FeatureCollection {
 // ---- standalone mapping workspaces (independent of projects and forms) ----
 /** Imagery added by URL, e.g. https://host/{z}/{x}/{y}.png */
 export interface TileSource { id: string; name: string; type: "xyz"; url: string; maxzoom?: number; attribution?: string }
+/** What you can do on a map. Owners run it, reviewers approve work, contributors draw. */
+export type MapRole = "owner" | "reviewer" | "contributor";
+export type ReviewStatus = "submitted" | "approved" | "rejected";
+export type CampaignStatus = "upcoming" | "open" | "ended";
 export interface WorkMap {
   id: string;
   name: string;
@@ -133,9 +142,50 @@ export interface WorkMap {
   sources: TileSource[];
   feature_count: number;
   updated_at: string;
+  role: MapRole;
+  owner_name: string;
+  member_count: number;
+  /** Mapping campaign settings. Ignored unless `is_campaign`. */
+  is_campaign: boolean;
+  goal: string;
+  starts_at?: string;
+  ends_at?: string;
+  /** Show a leaderboard to members. */
+  competition: boolean;
+  campaign_status?: CampaignStatus;
+  /** Only the owner sees the code. Missing means joining by link is closed. */
+  join_code?: string;
+}
+export interface MapSettings {
+  name?: string; description?: string; sources?: TileSource[];
+  is_campaign?: boolean; goal?: string; starts_at?: string | null; ends_at?: string | null; competition?: boolean; join_open?: boolean;
 }
 /** A feature drawn in a map. `properties` are free-form tags (like OpenStreetMap), no form needed. */
-export interface GeoFeature { id: string; geometry: Geometry; properties: Props; version: number }
+export interface GeoFeature {
+  id: string; geometry: Geometry; properties: Props; version: number;
+  /** Review state and who drew it (shared maps). */
+  status?: ReviewStatus; created_by?: string; author?: string; review_note?: string; updated_at?: string; created_at?: string;
+}
+export interface MapMember { user_id: string; name: string; email?: string; role: MapRole; joined_at?: string }
+export interface JoinPreview {
+  name: string; description: string; goal: string; owner_name: string; member_count: number; competition: boolean;
+  starts_at?: string; ends_at?: string; campaign_status?: CampaignStatus; already_member: boolean;
+}
+export interface Contributor {
+  user_id: string; name: string; role: MapRole | "former"; rank: number;
+  added: number; approved: number; pending: number; rejected: number; edited: number; first_at?: string; last_at?: string;
+}
+export interface ContributorsReport {
+  contributors: Contributor[];
+  totals: { contributors: number; added: number; approved: number; pending: number; rejected: number };
+  daily: { day: string; count: number }[];
+  starts_at?: string; ends_at?: string;
+}
+export interface Activity { feature_id: string; user_id?: string; name?: string; action: "added" | "edited"; at: string; geometry_type: "point" | "line" | "area"; status: ReviewStatus }
+export interface PublishInput {
+  title: string; slug: string; description: string; license: License; visibility: "public" | "private";
+  geometry_type: "point" | "line" | "area"; tags: string[]; credit_contributors: boolean;
+}
 export interface MapLayers {
   /** Uploaded imagery that is ready, with signed tile URLs. */
   imagery: { id: string; name: string; bounds?: [number, number, number, number]; url: string }[];

@@ -13,7 +13,10 @@ export type Edit =
   | { kind: "del"; base: GeoFeature };
 export type Edits = Record<string, Edit>;
 export type FeatureState = "clean" | "new" | "mod";
-export interface WorkFeature { id: string; geometry: Geometry; properties: Props; state: FeatureState }
+/** Who drew a saved feature and where it stands in review. Missing for features that are not saved yet. */
+export interface FeatureMeta { status?: GeoFeature["status"]; created_by?: string; author?: string; review_note?: string }
+export interface WorkFeature { id: string; geometry: Geometry; properties: Props; state: FeatureState; meta?: FeatureMeta }
+const metaOf = (f: GeoFeature): FeatureMeta => ({ status: f.status, created_by: f.created_by, author: f.author, review_note: f.review_note });
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -22,8 +25,8 @@ export function effective(server: GeoFeature[], edits: Edits): WorkFeature[] {
   const out: WorkFeature[] = [];
   for (const f of server) {
     const e = edits[f.id];
-    if (!e) out.push({ id: f.id, geometry: f.geometry, properties: f.properties, state: "clean" });
-    else if (e.kind === "mod") out.push({ id: f.id, geometry: e.geometry, properties: e.properties, state: "mod" });
+    if (!e) out.push({ id: f.id, geometry: f.geometry, properties: f.properties, state: "clean", meta: metaOf(f) });
+    else if (e.kind === "mod") out.push({ id: f.id, geometry: e.geometry, properties: e.properties, state: "mod", meta: metaOf(f) });
     // "del": hidden
   }
   for (const [id, e] of Object.entries(edits)) if (e.kind === "new") out.push({ id, geometry: e.geometry, properties: e.properties, state: "new" });
@@ -34,11 +37,11 @@ export function current(server: GeoFeature[], edits: Edits, id: string): WorkFea
   const e = edits[id];
   if (e) {
     if (e.kind === "new") return { id, geometry: e.geometry, properties: e.properties, state: "new" };
-    if (e.kind === "mod") return { id, geometry: e.geometry, properties: e.properties, state: "mod" };
+    if (e.kind === "mod") return { id, geometry: e.geometry, properties: e.properties, state: "mod", meta: metaOf(e.base) };
     return undefined;
   }
   const f = server.find((x) => x.id === id);
-  return f ? { id, geometry: f.geometry, properties: f.properties, state: "clean" } : undefined;
+  return f ? { id, geometry: f.geometry, properties: f.properties, state: "clean", meta: metaOf(f) } : undefined;
 }
 
 /** Drop a "mod" that has been put back exactly as it was on the server. */

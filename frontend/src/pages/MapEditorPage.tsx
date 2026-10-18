@@ -4,13 +4,14 @@ import MapView, { type Bbox, type MapFeature, type MapImagery } from "../compone
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
 import { extOf, NEEDS_BOUNDS_EXTS, RASTER_EXTS } from "../lib/fileTypes";
+import { useAuth } from "../lib/auth";
 import { bboxOf, uuid } from "../lib/forms";
 import { cutByLine, mergeGeometries, splitLineAtPoint, translate } from "../lib/geoops";
 import { MAP_IMPORT_EXTS, readMapFile } from "../lib/geoImport";
 import { useAsync } from "../lib/hooks";
 import {
   addNew, commit, effective, mergeInto, newHistory, redo, removeFeature, replaceWithPieces, reset, setGeometry, setProperties, summarize, undo,
-  type Edit, type Edits, type History,
+  type Edit, type Edits, type History, type WorkFeature,
 } from "../lib/staging";
 import { GEOMETRY_LABEL, type GeoFeature, type Geometry, type GeometryType, type ImageryAsset, type Position, type Props, type TileSource } from "../lib/types";
 
@@ -65,22 +66,22 @@ const hasDuplicateKeys = (rows: Tag[]) => { const keys = rows.map((t) => t.k.tri
 const typeText = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Editable list of tag rows. Enter in a value starts a new row, so tagging many features stays on the keyboard. */
-function TagRows({ rows, onChange }: { rows: Tag[]; onChange: (rows: Tag[]) => void }) {
+function TagRows({ rows, onChange, disabled }: { rows: Tag[]; onChange: (rows: Tag[]) => void; disabled?: boolean }) {
   const [focusRow, setFocusRow] = useState(-1);
   const add = () => { setFocusRow(rows.length); onChange([...rows, { k: "", v: "" }]); };
   return (
     <div className="stack" style={{ gap: 8 }}>
       {rows.map((t, i) => (
         <div className="row" key={i}>
-          <input aria-label="Tag name" list="tag-keys" placeholder="name" value={t.k} autoFocus={i === focusRow} style={{ flex: "0 0 42%", minWidth: 0 }}
+          <input aria-label="Tag name" list="tag-keys" placeholder="name" value={t.k} autoFocus={i === focusRow} disabled={disabled} style={{ flex: "0 0 42%", minWidth: 0 }}
             onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, k: e.target.value } : x)))} />
-          <input aria-label={`Value for ${t.k || "tag"}`} placeholder="value" value={t.v} className="grow" style={{ minWidth: 0 }}
+          <input aria-label={`Value for ${t.k || "tag"}`} placeholder="value" value={t.v} className="grow" style={{ minWidth: 0 }} disabled={disabled}
             onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))}
             onKeyDown={(e) => { if (e.key === "Enter" && i === rows.length - 1) { e.preventDefault(); add(); } }} />
-          <Button small variant="ghost" aria-label="Remove tag" onClick={() => onChange(rows.filter((_, j) => j !== i))}>×</Button>
+          <Button small variant="ghost" aria-label="Remove tag" disabled={disabled} onClick={() => onChange(rows.filter((_, j) => j !== i))}>×</Button>
         </div>
       ))}
-      <Button small onClick={add}>Add tag</Button>
+      <Button small onClick={add} disabled={disabled}>Add tag</Button>
       {hasDuplicateKeys(rows) && <span className="tag-error" role="alert">Two tags have the same name. Change one of them.</span>}
     </div>
   );
@@ -89,6 +90,7 @@ function TagRows({ rows, onChange }: { rows: Tag[]; onChange: (rows: Tag[]) => v
 export default function MapEditorPage() {
   const { mapId = "" } = useParams();
   const toast = useToast();
+  const { user } = useAuth();
   const { data, error, loading, reload, setData } = useAsync(async (api) => {
     const [map, features, imagery] = await Promise.all([api.getMap(mapId), api.listMapFeatures(mapId), api.listMapImagery(mapId)]);
     return { map, features, assets: imagery.assets, layers: imagery.layers };
@@ -139,6 +141,17 @@ export default function MapEditorPage() {
   const dirty = counts.total > 0;
   const drawGeom = DRAW_GEOMETRY[tool] ?? null;
 
+  // On a shared map, contributors change only their own features until a reviewer approves them. Reviewers and the owner change anything.
+  const role = data?.map.role ?? "owner";
+  const closed = role === "contributor" && !!data?.map.is_campaign && data.map.campaign_status !== "open";
+  const canEdit = (f: WorkFeature) => role !== "contributor" || f.state === "new" || (f.meta?.created_by === user?.id && f.meta?.status !== "approved");
+  /** The ids from `ids` the person may change. Says so when some are left out. */
+  function editable(ids: string[], quiet = false): string[] {
+    const ok = ids.filter((id) => { const f = byId.get(id); return !!f && canEdit(f); });
+    if (!quiet && ok.length < ids.length) toast(ok.length ? `${ids.length - ok.length} of the selected features belong to someone else or are already approved, so they were left alone.` : "These features belong to someone else or are already approved, so you cannot change them.", "info");
+    return ok;
+  }
+
   /** Record a change (one undo step). `key` merges a burst of similar changes, such as typing in a tag, into one step. */
   function stage(next: Edits, key: string | null = null) {
     const h = commit(histRef.current, next, key);
@@ -147,7 +160,10 @@ export default function MapEditorPage() {
   }
   const now = () => histRef.current.present;
 
-  const mapFeatures: MapFeature[] = useMemo(() => work.map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, state: f.state })), [work]);
+  const mapFeatures: MapFeature[] = useMemo(() => work.map((f) => ({
+    id: f.id, geometry: f.geometry, properties: f.properties,
+    state: f.state !== "clean" ? f.state : f.meta?.status === "submitted" ? "review" : f.meta?.status === "rejected" ? "rejected" : "clean",
+  })), [work]);
 
   const sources = data?.map.sources ?? [];
   const imagery: MapImagery[] = useMemo(() => {
@@ -228,6 +244,7 @@ export default function MapEditorPage() {
 
   // ---------------- tools and selection ----------------
   function chooseTool(t: Tool) {
+    if (closed && t !== "select") { toast(data?.map.campaign_status === "upcoming" ? "This campaign has not started yet." : "This campaign has ended, so contributors can no longer draw.", "info"); return; }
     if (t === "reshape" && sel.length !== 1) toast("Select one feature, then drag its points.", "info");
     if (t === "move" && !sel.length) toast("Select a feature, then drag it. You can also drag any feature directly.", "info");
     setTool(t);
@@ -247,20 +264,20 @@ export default function MapEditorPage() {
     stage(addNew(now(), id, g, fromTags(newTags, {})));
     setSelectedIds([id]);                           // the new feature is selected so its tags can be filled in, and the tool stays on
   }
-  function onGeometryChange(g: Geometry) { if (primaryId) stage(setGeometry(now(), serverRef.current, primaryId, g)); }
+  function onGeometryChange(g: Geometry) { if (primaryId && editable([primaryId]).length) stage(setGeometry(now(), serverRef.current, primaryId, g)); }
   function onMove(ids: string[], dx: number, dy: number) {
     let next = now();
-    for (const id of ids) { const f = byId.get(id); if (f) next = setGeometry(next, serverRef.current, id, translate(f.geometry, dx, dy)); }
+    for (const id of editable(ids)) { const f = byId.get(id); if (f) next = setGeometry(next, serverRef.current, id, translate(f.geometry, dx, dy)); }
     stage(next);
   }
   function updateTags(rows: Tag[]) {
     setTags(rows);
-    if (!primary || hasDuplicateKeys(rows)) return;        // wait until the clash is fixed
+    if (!primary || !canEdit(primary) || hasDuplicateKeys(rows)) return;        // wait until the clash is fixed
     stage(setProperties(now(), serverRef.current, primary.id, fromTags(rows, primary.properties)), `tags:${primary.id}`);
   }
   function applyPreset(p: (typeof PRESETS)[number]) {
     let next = now();
-    for (const id of sel) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...p.tags }); }
+    for (const id of editable(sel)) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...p.tags }); }
     stage(next);
     setTagsRev((r) => r + 1);
   }
@@ -269,16 +286,17 @@ export default function MapEditorPage() {
     const add = fromTags(bulkTags.filter((t) => t.k.trim()), {});
     if (!Object.keys(add).length) { toast("Add at least one tag first.", "error"); return; }
     let next = now();
-    for (const id of sel) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...add }); }
+    for (const id of editable(sel)) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, { ...f.properties, ...add }); }
     stage(next);
     toast(`Tags added to ${typeText(sel.length, "feature", "features")}.`, "success");
   }
   function removeSelected() {
-    if (!sel.length) return;
+    const ids = editable(sel);
+    if (!ids.length) return;
     let next = now();
-    for (const id of sel) next = removeFeature(next, serverRef.current, id);
+    for (const id of ids) next = removeFeature(next, serverRef.current, id);
     stage(next);
-    setSelectedIds([]);
+    setSelectedIds(sel.filter((id) => !ids.includes(id)));
   }
   function duplicateSelected() {
     let next = now();
@@ -289,7 +307,7 @@ export default function MapEditorPage() {
   }
   function splitAt(id: string, pos: Position) {
     const f = byId.get(id);
-    if (!f) return;
+    if (!f || !editable([id]).length) return;
     if (f.geometry.type !== "LineString") { toast("Split works on lines. Use Cut to divide an area.", "error"); return; }
     const pieces = splitLineAtPoint(f.geometry, pos);
     if (!pieces) { toast("Click along the line, not at its very end.", "error"); return; }
@@ -303,7 +321,7 @@ export default function MapEditorPage() {
     try {
       const cb = bboxOf([g])!;
       const candidates = (sel.length ? sel.map((id) => byId.get(id)!).filter(Boolean) : work).filter((f) => {
-        if (f.geometry.type === "Point") return false;
+        if (f.geometry.type === "Point" || !canEdit(f)) return false;
         const b = bboxOf([f.geometry])!;
         return !(b[0] > cb[2] || b[2] < cb[0] || b[1] > cb[3] || b[3] < cb[1]);
       });
@@ -325,6 +343,7 @@ export default function MapEditorPage() {
   }
   async function mergeSelected() {
     const feats = sel.map((id) => byId.get(id)!).filter(Boolean);
+    if (editable(sel).length !== sel.length) return;
     setWorking(true);
     try {
       const r = await mergeGeometries(feats.map((f) => f.geometry));
@@ -344,6 +363,7 @@ export default function MapEditorPage() {
   // ---------------- saving: one click sends everything ----------------
   async function saveAll() {
     if (saving || !dirty) return;
+    if (closed) { toast("This campaign is not open, so contributors cannot save changes right now.", "error"); return; }
     if (hasDuplicateKeys(tags)) { toast("Two tags on the selected feature have the same name. Fix that first.", "error"); return; }
     setSaving(true);
     try {
@@ -524,7 +544,12 @@ export default function MapEditorPage() {
           <Link to="/maps" className="field-hint" onClick={(e) => { if (dirty && !window.confirm("You have unsaved changes. They are kept on this device, but are not saved to the map yet. Leave anyway?")) e.preventDefault(); }}>← All maps</Link>
           <input aria-label="Map name" value={name ?? data.map.name} onChange={(e) => setName(e.target.value)} onBlur={rename}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ font: "600 16px var(--font-ui)" }} />
-          <span className="field-hint">{data.features.length} saved feature{data.features.length === 1 ? "" : "s"}</span>
+          <span className="field-hint">{data.features.length} saved feature{data.features.length === 1 ? "" : "s"}{role !== "owner" ? ` · you are a ${role}` : ""}</span>
+          <Link className="btn btn-sm" to={`/maps/${mapId}/portal`} onClick={(e) => { if (dirty && !window.confirm("You have unsaved changes. They are kept on this device, but are not saved to the map yet. Leave anyway?")) e.preventDefault(); }}>
+            {data.map.is_campaign ? "Campaign portal" : "Team, review & publish"} →
+          </Link>
+          {data.map.is_campaign && data.map.campaign_status && <span className="field-hint">{data.map.goal ? `${data.map.goal} · ` : ""}Campaign {data.map.campaign_status === "open" ? "is open" : data.map.campaign_status === "upcoming" ? "has not started" : "has ended"}.</span>}
+          {closed && <span className="tag-error" role="status">Contributors cannot draw right now.</span>}
         </div>
 
         <div className="changes" role="region" aria-label="Unsaved changes">
@@ -556,7 +581,7 @@ export default function MapEditorPage() {
           </div>
           <div className="tool-grid">
             <Button small disabled={!sel.length} onClick={duplicateSelected}>Duplicate</Button>
-            <Button small variant="danger" disabled={!sel.length} title="Delete (Del)" onClick={removeSelected}>Delete</Button>
+            <Button small variant="danger" disabled={!sel.length || editable(sel, true).length === 0} title="Delete (Del)" onClick={removeSelected}>Delete</Button>
             <Button small disabled={!hist.past.length} title="Undo (Ctrl+Z)" onClick={undoAct}>Undo</Button>
           </div>
           <span className="field-hint">{TOOL_HELP[tool]}</span>
@@ -700,26 +725,29 @@ export default function MapEditorPage() {
               <h2>Selected feature</h2>
               <strong>{GEOMETRY_LABEL[primary.geometry.type]}</strong>
               <div className="meta" style={{ fontSize: 13, color: "var(--muted)" }}>{primary.state === "new" ? "New · not saved yet" : primary.state === "mod" ? "Edited · not saved yet" : "Saved"}</div>
+              {primary.meta?.author && <div className="meta" style={{ fontSize: 13, color: "var(--muted)" }}>Drawn by {primary.meta.author}{primary.meta.status ? ` · ${primary.meta.status === "submitted" ? "waiting for review" : primary.meta.status}` : ""}</div>}
+              {primary.meta?.review_note && <div className="field-hint" role="note">Reviewer: {primary.meta.review_note}</div>}
+              {!canEdit(primary) && <div className="tag-error" role="note">{primary.meta?.status === "approved" ? "A reviewer approved this, so it is locked." : "This belongs to someone else, so you can only look at it."}</div>}
             </div>
             {presets.length > 0 && (
               <div className="stack" style={{ gap: 6 }}>
                 <span className="field-hint">Quick tags</span>
-                <div className="chips">{presets.map((p) => <Button key={p.label} small onClick={() => applyPreset(p)}>{p.label}</Button>)}</div>
+                <div className="chips">{presets.map((p) => <Button key={p.label} small disabled={!canEdit(primary)} onClick={() => applyPreset(p)}>{p.label}</Button>)}</div>
               </div>
             )}
             <div className="stack" style={{ gap: 8 }}>
               <h2>Tags</h2>
               {tags.length === 0 && <span className="field-hint">No tags yet. Add a name, type or any note.</span>}
-              <TagRows rows={tags} onChange={updateTags} />
+              <TagRows rows={tags} onChange={updateTags} disabled={!canEdit(primary)} />
             </div>
             <div className="stack" style={{ gap: 6 }}>
               <h2>Shape</h2>
-              <Button variant={tool === "reshape" ? "primary" : "default"} onClick={() => chooseTool(tool === "reshape" ? "select" : "reshape")}>{tool === "reshape" ? "Done reshaping" : "Reshape"}</Button>
+              <Button variant={tool === "reshape" ? "primary" : "default"} disabled={!canEdit(primary)} onClick={() => chooseTool(tool === "reshape" ? "select" : "reshape")}>{tool === "reshape" ? "Done reshaping" : "Reshape"}</Button>
               {tool === "reshape" && <span className="field-hint">{TOOL_HELP.reshape}</span>}
             </div>
             <div className="row" style={{ marginTop: "auto" }}>
               <Button className="grow" onClick={() => setSelectedIds([])}>Deselect</Button>
-              <Button className="grow" variant="danger" onClick={removeSelected}>Delete</Button>
+              <Button className="grow" variant="danger" disabled={!canEdit(primary)} onClick={removeSelected}>Delete</Button>
             </div>
           </>
         )}

@@ -71,6 +71,15 @@ export default function DatasetPage() {
             <dt>Coordinates</dt><dd className="mono">EPSG:4326</dd>
           </dl>
         </section>
+        {d.contributors && d.contributors.length > 0 && (
+          <section className="card" aria-label="Contributors">
+            <h2>Mapped by</h2>
+            <ul className="plain-list">
+              {d.contributors.map((c) => <li key={c.name} className="row"><span className="grow">{c.name}</span><span className="field-hint">{c.features} {c.features === 1 ? "feature" : "features"}</span></li>)}
+            </ul>
+          </section>
+        )}
+        {d.map_id && <section className="card" aria-label="Source"><span className="field-hint">Published from a shared map.</span><Link to={`/maps/${d.map_id}/portal?tab=publish`}>Open the map portal</Link></section>}
         <section className="card" aria-label="Use in your app">
           <h2>Use in your app</h2>
           <div className="mono" style={{ background: "var(--paper)", padding: 10, borderRadius: 6, wordBreak: "break-all" }}>{api}</div>
