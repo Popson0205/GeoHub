@@ -38,7 +38,8 @@ def limit(name: str, per: int, window: int = 60):
 
 
 async def ip_middleware(request: Request, call_next):
-    if request.url.path.startswith("/tiles/") or request.url.path.startswith("/health"):
+    path = request.url.path.removeprefix(settings.api_prefix)
+    if path.startswith("/tiles/") or path.startswith("/health"):
         return await call_next(request)   # tiles are many small requests; limit them at the edge
     try:
         await hit(f"ip:{client_ip(request)}", settings.rate_ip_per_min, 60)

@@ -20,8 +20,11 @@ async def lifespan(app):
         await app.state.http.aclose()
 
 
+P = settings.api_prefix.rstrip("/")
+
 app = FastAPI(
     title="Mapping Hub API", version="1.0.0", lifespan=lifespan,
+    docs_url=f"{P}/docs", redoc_url=f"{P}/redoc", openapi_url=f"{P}/openapi.json",
     description=("Backend for the web editor, mobile collector and public data hub. GeoJSON everywhere in EPSG:4326; "
                  "IDs are UUIDs; timestamps are UTC ISO 8601; lists use `?limit=&cursor=` and return "
                  "`{items, next_cursor}`; errors are `{type, title, status, detail, fields?}`."),
@@ -35,21 +38,15 @@ app.middleware("http")(logging_setup.access_middleware)
 
 for r in (auth.router, auth.me_router, projects.router, forms.router, features.router, sync.router, media.router,
           imagery.router, tiles.router, datasets.router, jobs.router):
-    app.include_router(r)
+    app.include_router(r, prefix=P)
 
 
-@app.get("/", include_in_schema=False)
-async def root():
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse("/docs")
-
-
-@app.get("/health", tags=["meta"], summary="Liveness")
+@app.get(f"{P}/health", tags=["meta"], summary="Liveness")
 async def health():
     return {"ok": True}
 
 
-@app.get("/health/ready", tags=["meta"], summary="Readiness: database, Redis and storage")
+@app.get(f"{P}/health/ready", tags=["meta"], summary="Readiness: database, Redis and storage")
 async def ready():
     import anyio
     from . import storage
@@ -71,3 +68,29 @@ async def ready():
         checks["storage"] = False
     from fastapi.responses import JSONResponse
     return JSONResponse({"ok": all(checks.values()), **checks}, status_code=200 if all(checks.values()) else 503)
+
+
+# ---- built web app (single-service deploy) ----
+# When WEB_DIR points at the frontend's `dist` folder, serve it from the same origin: real files first, then
+# index.html for client-side routes. API routes live under API_PREFIX (e.g. /api) so they never clash with them.
+if settings.web_dir:
+    from pathlib import Path
+
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    _web = Path(settings.web_dir).resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def web_app(full_path: str):
+        if P and ("/" + full_path).startswith(P + "/"):
+            raise HTTPException(404)
+        f = (_web / full_path).resolve()
+        if full_path and f.is_file() and _web in f.parents:
+            return FileResponse(f)
+        return FileResponse(_web / "index.html")
+elif not P:
+    @app.get("/", include_in_schema=False)
+    async def root():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/docs")

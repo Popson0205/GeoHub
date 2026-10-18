@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     app_url: str = "http://localhost:5173"
     cors_origins: str = "http://localhost:5173"
     trust_proxy: bool = False
+    api_prefix: str = ""             # "/api" when the API and the built web app are served from one service
+    web_dir: str = ""                # folder with the built frontend (index.html); empty = API only
 
     s3_endpoint: str
     s3_public_endpoint: str
