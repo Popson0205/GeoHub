@@ -52,7 +52,7 @@ async def require_role(conn, project_id, user_id, minimum: str = "viewer") -> st
 
 async def require_map(conn, map_id, user_id) -> dict:
     """Maps are private to their owner. Anyone else gets 404 (the map's existence is not revealed)."""
-    cur = await conn.execute("SELECT * FROM maps WHERE id = %s AND owner_id = %s", (map_id, user_id))
+    cur = await conn.execute("SELECT * FROM workspace_maps WHERE id = %s AND owner_id = %s", (map_id, user_id))
     row = await cur.fetchone()
     if not row:
         raise Problem(404, "Map not found.", code="not_found")

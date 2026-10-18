@@ -148,7 +148,7 @@ def _map_out(r: dict) -> dict:
 
 
 MAP_SELECT = ("SELECT m.id, m.name, m.description, m.sources, m.created_at, m.updated_at, "
-              "(SELECT count(*) FROM map_features f WHERE f.map_id = m.id)::int AS feature_count FROM maps m ")
+              "(SELECT count(*) FROM workspace_features f WHERE f.map_id = m.id)::int AS feature_count FROM workspace_maps m ")
 
 
 # ------------------------------------------------------------------ maps
@@ -160,7 +160,7 @@ async def list_maps(user=Depends(current_user), conn=Depends(get_conn)):
 
 @router.post("/maps", response_model=MapOut, status_code=201)
 async def create_map(body: MapIn, user=Depends(current_user), conn=Depends(get_conn)):
-    cur = await conn.execute("INSERT INTO maps (owner_id, name, description) VALUES (%s, %s, %s) RETURNING id",
+    cur = await conn.execute("INSERT INTO workspace_maps (owner_id, name, description) VALUES (%s, %s, %s) RETURNING id",
                              (user["id"], body.name.strip(), body.description))
     mid = (await cur.fetchone())["id"]
     cur = await conn.execute(MAP_SELECT + "WHERE m.id = %s", (mid,))
@@ -185,7 +185,7 @@ async def update_map(map_id: UUID, body: MapPatch, user=Depends(current_user), c
     if body.sources is not None:
         sets.append("sources = %s"); params.append(Jsonb(_clean_sources(body.sources)))
     if sets:
-        await conn.execute(f"UPDATE maps SET {', '.join(sets)}, updated_at = now() WHERE id = %s", (*params, map_id))
+        await conn.execute(f"UPDATE workspace_maps SET {', '.join(sets)}, updated_at = now() WHERE id = %s", (*params, map_id))
     cur = await conn.execute(MAP_SELECT + "WHERE m.id = %s", (map_id,))
     return await cur.fetchone()
 
@@ -195,7 +195,7 @@ async def delete_map(map_id: UUID, user=Depends(current_user), conn=Depends(get_
     await require_map(conn, map_id, user["id"])
     cur = await conn.execute("SELECT source_key, storage_key FROM imagery_assets WHERE map_id = %s", (map_id,))
     keys = [k for r in await cur.fetchall() for k in (r["source_key"], r["storage_key"]) if k]
-    await conn.execute("DELETE FROM maps WHERE id = %s", (map_id,))       # features and imagery rows cascade
+    await conn.execute("DELETE FROM workspace_maps WHERE id = %s", (map_id,))       # features and imagery rows cascade
     if keys:
         await storage.run(storage.delete_keys, *keys)
     return Response(status_code=204)
@@ -228,7 +228,7 @@ async def list_features(map_id: UUID, bbox: str | None = Query(None, description
             raise Problem(422, "bbox must be minx,miny,maxx,maxy", code="validation", fields={"bbox": ["invalid"]})
         where.append("geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)")
         params += [minx, miny, maxx, maxy]
-    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM map_features WHERE {' AND '.join(where)} "
+    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM workspace_features WHERE {' AND '.join(where)} "
                              "ORDER BY created_at LIMIT %s", (*params, MAX_FEATURES_LISTED))
     return await cur.fetchall()
 
@@ -241,12 +241,12 @@ async def create_feature(map_id: UUID, body: MapFeatureIn, user=Depends(current_
         raise Problem(422, err, code="validation", fields={"geometry": [err]})
     fid = body.id or uuid4()
     cur = await conn.execute(
-        "INSERT INTO map_features (id, map_id, geom, properties, created_by) VALUES (%s, %s, geom_from_json(%s), %s, %s) "
+        "INSERT INTO workspace_features (id, map_id, geom, properties, created_by) VALUES (%s, %s, geom_from_json(%s), %s, %s) "
         "ON CONFLICT (id) DO NOTHING RETURNING id", (fid, map_id, json.dumps(body.geometry), Jsonb(body.properties), user["id"]))
     if not await cur.fetchone():
         raise Problem(409, "A feature with this id already exists.", code="already_exists")
-    await conn.execute("UPDATE maps SET updated_at = now() WHERE id = %s", (map_id,))
-    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM map_features WHERE id = %s", (fid,))
+    await conn.execute("UPDATE workspace_maps SET updated_at = now() WHERE id = %s", (map_id,))
+    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM workspace_features WHERE id = %s", (fid,))
     return await cur.fetchone()
 
 
@@ -254,7 +254,7 @@ async def create_feature(map_id: UUID, body: MapFeatureIn, user=Depends(current_
 async def update_feature(map_id: UUID, feature_id: UUID, body: MapFeaturePatch, user=Depends(current_user),
                          conn=Depends(get_conn)):
     await require_map(conn, map_id, user["id"])
-    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM map_features WHERE id = %s AND map_id = %s FOR UPDATE",
+    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM workspace_features WHERE id = %s AND map_id = %s FOR UPDATE",
                              (feature_id, map_id))
     cur_row = await cur.fetchone()
     if not cur_row:
@@ -267,20 +267,20 @@ async def update_feature(map_id: UUID, feature_id: UUID, body: MapFeaturePatch, 
     err = _check_feature(geometry, properties)
     if err:
         raise Problem(422, err, code="validation", fields={"geometry": [err]})
-    await conn.execute("UPDATE map_features SET geom = geom_from_json(%s), properties = %s, version = version + 1, "
+    await conn.execute("UPDATE workspace_features SET geom = geom_from_json(%s), properties = %s, version = version + 1, "
                        "updated_at = now() WHERE id = %s", (json.dumps(geometry), Jsonb(properties), feature_id))
-    await conn.execute("UPDATE maps SET updated_at = now() WHERE id = %s", (map_id,))
-    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM map_features WHERE id = %s", (feature_id,))
+    await conn.execute("UPDATE workspace_maps SET updated_at = now() WHERE id = %s", (map_id,))
+    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM workspace_features WHERE id = %s", (feature_id,))
     return await cur.fetchone()
 
 
 @router.delete("/maps/{map_id}/features/{feature_id}", status_code=204)
 async def delete_feature(map_id: UUID, feature_id: UUID, user=Depends(current_user), conn=Depends(get_conn)):
     await require_map(conn, map_id, user["id"])
-    cur = await conn.execute("DELETE FROM map_features WHERE id = %s AND map_id = %s RETURNING id", (feature_id, map_id))
+    cur = await conn.execute("DELETE FROM workspace_features WHERE id = %s AND map_id = %s RETURNING id", (feature_id, map_id))
     if not await cur.fetchone():
         raise Problem(404, "Feature not found.", code="not_found")
-    await conn.execute("UPDATE maps SET updated_at = now() WHERE id = %s", (map_id,))
+    await conn.execute("UPDATE workspace_maps SET updated_at = now() WHERE id = %s", (map_id,))
     return Response(status_code=204)
 
 
@@ -297,18 +297,18 @@ async def import_features(map_id: UUID, body: ImportIn, user=Depends(current_use
                 errors.append({"row": i + 1, "message": err})
                 continue
             await cur.execute(
-                "INSERT INTO map_features (id, map_id, geom, properties, created_by) "
+                "INSERT INTO workspace_features (id, map_id, geom, properties, created_by) "
                 "VALUES (%s, %s, geom_from_json(%s), %s, %s) ON CONFLICT (id) DO NOTHING",
                 (f.id or uuid4(), map_id, json.dumps(f.geometry), Jsonb(f.properties), user["id"]))
             imported += cur.rowcount
-    await conn.execute("UPDATE maps SET updated_at = now() WHERE id = %s", (map_id,))
+    await conn.execute("UPDATE workspace_maps SET updated_at = now() WHERE id = %s", (map_id,))
     return {"imported": imported, "rejected": len(body.features) - imported, "errors": errors[:20]}
 
 
 @router.get("/maps/{map_id}/export.geojson")
 async def export_geojson(map_id: UUID, user=Depends(current_user), conn=Depends(get_conn)):
     m = await require_map(conn, map_id, user["id"])
-    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM map_features WHERE map_id = %s ORDER BY created_at", (map_id,))
+    cur = await conn.execute(f"SELECT {FEATURE_SQL} FROM workspace_features WHERE map_id = %s ORDER BY created_at", (map_id,))
     fc = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "id": str(r["id"]), "geometry": r["geometry"], "properties": r["properties"]}
         for r in await cur.fetchall()]}
