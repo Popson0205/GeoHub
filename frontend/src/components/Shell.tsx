@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui";
 
@@ -10,8 +10,9 @@ export default function Shell() {
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
-        <span className="brand">Geohub</span>
-        {user && <NavLink to="/projects">Projects</NavLink>}
+        <Link className="brand" to="/">Geohub</Link>
+        {user && <NavLink to="/projects">Web mapping</NavLink>}
+        {user && <NavLink to="/collect">Data collection</NavLink>}
         <NavLink to="/hub">Data hub</NavLink>
         <span className="spacer" />
         {user ? (

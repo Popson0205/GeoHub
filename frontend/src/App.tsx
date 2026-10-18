@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Route, Routes } from "react-router-dom";
 import Shell from "./components/Shell";
 import { RequireAuth } from "./lib/auth";
 import LoginPage from "./pages/LoginPage";
@@ -9,12 +9,14 @@ import BuilderPage from "./pages/BuilderPage";
 import HubPage from "./pages/HubPage";
 import DatasetPage from "./pages/DatasetPage";
 import CollectPage from "./pages/CollectPage";
+import CollectHome from "./pages/CollectHome";
+import LandingPage from "./pages/LandingPage";
 
 function NotFound() {
   return (
     <div className="container">
       <h1>Page not found</h1>
-      <p><Link to="/hub">Go to the data hub</Link></p>
+      <p><Link to="/">Back to Geohub home</Link></p>
     </div>
   );
 }
@@ -25,7 +27,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
       <Route element={<Shell />}>
-        <Route index element={<Navigate to="/projects" replace />} />
+        <Route index element={<LandingPage />} />
+        <Route path="/collect" element={<RequireAuth><CollectHome /></RequireAuth>} />
         <Route path="/hub" element={<HubPage />} />
         <Route path="/hub/:slug" element={<DatasetPage />} />
         <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
