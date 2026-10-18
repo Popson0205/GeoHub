@@ -48,3 +48,12 @@ async def require_role(conn, project_id, user_id, minimum: str = "viewer") -> st
     if RANK[role] < RANK[minimum]:
         raise Problem(403, f"This action needs the {minimum} role or higher.", code="forbidden")
     return role
+
+
+async def require_map(conn, map_id, user_id) -> dict:
+    """Maps are private to their owner. Anyone else gets 404 (the map's existence is not revealed)."""
+    cur = await conn.execute("SELECT * FROM maps WHERE id = %s AND owner_id = %s", (map_id, user_id))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "Map not found.", code="not_found")
+    return row

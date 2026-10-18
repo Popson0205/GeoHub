@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from ..config import settings
 from ..db import get_conn
-from ..deps import current_user, require_role, role_in
+from ..deps import current_user, require_map, require_role, role_in
 from ..errors import Problem
 from ..schemas import LayersOut
 from ..security import decode_token, make_tile_token
@@ -18,19 +18,23 @@ CACHE = {"Cache-Control": "private, max-age=60"}
 TITILER_PASSTHROUGH = ("rescale", "bidx", "color_formula", "nodata", "resampling", "colormap_name")
 
 
-async def _authorise(request: Request, conn, project_id: UUID):
+def _tile_user(request: Request, scope_id: UUID) -> str:
+    """The user behind a tile request. `scope_id` is the project or map the tile belongs to."""
     q = request.query_params
     if q.get("sig"):
         p = decode_token(q["sig"], "tile")
-        if p["pid"] != str(project_id):
-            raise Problem(403, "This tile token is for a different project.", code="forbidden")
-        user_id = p["sub"]
-    else:
-        auth = request.headers.get("authorization", "")
-        token = auth[7:] if auth.lower().startswith("bearer ") else q.get("access_token")
-        if not token:
-            raise Problem(401, "Sign in to view this map.", code="unauthenticated")
-        user_id = decode_token(token, "access")["sub"]
+        if p["pid"] != str(scope_id):
+            raise Problem(403, "This tile token is for a different project or map.", code="forbidden")
+        return p["sub"]
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else q.get("access_token")
+    if not token:
+        raise Problem(401, "Sign in to view this map.", code="unauthenticated")
+    return decode_token(token, "access")["sub"]
+
+
+async def _authorise(request: Request, conn, project_id: UUID):
+    user_id = _tile_user(request, project_id)
     if not await role_in(conn, project_id, user_id):
         raise Problem(404, "Project not found.", code="not_found")
 
@@ -60,11 +64,15 @@ async def feature_tile(project_id: UUID, form_id: UUID, z: int, x: int, y: int, 
 
 @router.get("/tiles/imagery/{imagery_id}/{z}/{x}/{y:int}.png")
 async def imagery_tile(imagery_id: UUID, z: int, x: int, y: int, request: Request, conn=Depends(get_conn)):
-    cur = await conn.execute("SELECT project_id, status, storage_key FROM imagery_assets WHERE id = %s", (imagery_id,))
+    cur = await conn.execute("SELECT project_id, map_id, status, storage_key FROM imagery_assets WHERE id = %s",
+                             (imagery_id,))
     a = await cur.fetchone()
     if not a:
         raise Problem(404, "Imagery not found.", code="not_found")
-    await _authorise(request, conn, a["project_id"])
+    if a["project_id"]:
+        await _authorise(request, conn, a["project_id"])
+    else:
+        await require_map(conn, a["map_id"], _tile_user(request, a["map_id"]))
     if a["status"] != "ready":
         raise Problem(409, "This imagery is not ready yet.", code="not_ready")
     params = {"url": f"s3://{settings.s3_bucket}/{a['storage_key']}"}

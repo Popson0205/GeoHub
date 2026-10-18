@@ -1,118 +1,126 @@
-"""Maps workspace: independent of collection projects and forms."""
+"""Standalone mapping workspaces: independent of projects and forms."""
 import uuid
 
-from .conftest import pt
+import httpx
+
+from conftest import pt
+from test_media_imagery_tiles import make_tif
+
+XYZ = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
 
 
-def new_map(owner, name="Survey base"):
+def new_map(owner, name="Survey"):
     r = owner.post("/maps", json={"name": name})
     assert r.status_code == 201, r.text
-    return r.json()["id"]
+    return r.json()
 
 
-def new_layer(owner, mid, **kw):
-    r = owner.post(f"/maps/{mid}/layers", json={"name": "Buildings", **kw})
-    assert r.status_code == 201, r.text
-    return r.json()["id"]
+def test_map_crud_and_privacy(actor):
+    a, b = actor("A"), actor("B")
+    m = new_map(a)
+    assert m["feature_count"] == 0 and m["sources"] == []
+    assert [x["id"] for x in a.get("/maps").json()] == [m["id"]]
+    assert b.get("/maps").json() == []
+    for call in (b.get, b.delete):                           # someone else's map does not exist for you
+        assert call(f"/maps/{m['id']}").status_code == 404
+    assert b.post(f"/maps/{m['id']}/features", json={"geometry": pt()}).status_code == 404
+    r = a.patch(f"/maps/{m['id']}", json={"name": "Renamed", "description": "x"})
+    assert r.status_code == 200 and r.json()["name"] == "Renamed"
+    assert a.delete(f"/maps/{m['id']}").status_code == 204
+    assert a.get(f"/maps/{m['id']}").status_code == 404
 
 
-def feat(owner, mid, lid, geometry=None, **props):
-    fid = str(uuid.uuid4())
-    r = owner.post(f"/maps/{mid}/features", json={"id": fid, "layer_id": lid, "geometry": geometry or pt(),
-                                                  "properties": props})
-    return fid, r
-
-
-def test_new_map_is_ready_to_draw_with_free_tags(actor):
-    """Create a map and draw straight away: no layer setup, no form, no declared fields."""
-    o = actor("Owner")
-    mid = new_map(o)
-    layers = o.get(f"/maps/{mid}/layers").json()
-    assert len(layers) == 1 and layers[0]["geometry_type"] == "any" and layers[0]["fields"] == []
-    fid, r = feat(o, mid, layers[0]["id"], building="yes", name="Clinic", levels=2, open=True)
-    assert r.status_code == 201, r.text
-    assert r.json()["properties"] == {"building": "yes", "name": "Clinic", "levels": 2, "open": True}
-    for geom in ({"type": "LineString", "coordinates": [[3.0, 6.0], [3.1, 6.1]]},
-                 {"type": "Polygon", "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.0]]]}):
-        assert feat(o, mid, layers[0]["id"], geometry=geom, highway="path")[1].status_code == 201
-    m = o.get(f"/maps/{mid}").json()
-    assert m["role"] == "owner" and m["layer_count"] == 1 and m["feature_count"] == 3
-    assert o.get("/projects").json()["items"] == []          # nothing leaked into collection projects
-
-
-def test_tag_validation(actor):
-    o = actor()
-    mid = new_map(o)
-    lid = o.get(f"/maps/{mid}/layers").json()[0]["id"]
-    assert feat(o, mid, lid, **{"": "x"})[1].status_code == 422                  # empty tag name
-    assert feat(o, mid, lid, nested={"a": 1})[1].status_code == 422              # values are scalars
-    assert feat(o, mid, lid, **{f"k{i}": "v" for i in range(101)})[1].status_code == 422
-    assert o.get("/projects").json()["items"] == []          # nothing leaked into collection projects
-
-
-def test_optional_layer_restrictions(actor):
-    """Layers are optional organisation. A layer may restrict its shape and declare typed fields, but need not."""
-    o = actor()
-    mid = new_map(o)
-    lid = new_layer(o, mid, geometry_type="area", fields=[{"id": "floors", "label": "Floors", "type": "number"}])
-    _, r = feat(o, mid, lid, geometry=pt())
-    assert r.status_code == 422 and r.json()["fields"]["geometry"]
-    square = {"type": "Polygon", "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.0]]]}
-    _, r = feat(o, mid, lid, geometry=square, floors="two")
-    assert r.status_code == 422 and "floors" in r.json()["fields"]
-    _, r = feat(o, mid, lid, geometry=square, floors=2, extra="kept")        # unknown keys are allowed
-    assert r.status_code == 201
-
-
-def test_feature_update_conflict_and_delete(actor):
-    o = actor()
-    mid = new_map(o)
-    lid = new_layer(o, mid)
-    fid, _ = feat(o, mid, lid, note="a")
-    r = o.patch(f"/map-features/{fid}", json={"base_version": 1, "properties": {"note": "b"}})
-    assert r.status_code == 200 and r.json()["version"] == 2
-    r = o.patch(f"/map-features/{fid}", json={"base_version": 1, "properties": {"note": "c"}})
-    assert r.status_code == 409 and r.json()["server"]["properties"] == {"note": "b"}
-    assert o.delete(f"/map-features/{fid}").status_code == 204
-    assert o.get(f"/maps/{mid}/features").json()["items"] == []
-
-
-def test_bbox_and_layer_filters(actor):
-    o = actor()
-    mid = new_map(o)
-    a, b = new_layer(o, mid), new_layer(o, mid, name="Roads")
-    feat(o, mid, a, pt(3.0, 6.0)); feat(o, mid, b, pt(8.0, 9.0))
-    assert len(o.get(f"/maps/{mid}/features").json()["items"]) == 2
-    assert len(o.get(f"/maps/{mid}/features", params={"layer_id": a}).json()["items"]) == 1
-    assert len(o.get(f"/maps/{mid}/features", params={"bbox": "7,8,9,10"}).json()["items"]) == 1
-
-
-def test_roles_and_hidden_existence(actor):
-    o, ed, viewer, stranger = actor("O"), actor("E"), actor("V"), actor("S")
-    mid = new_map(o)
-    lid = new_layer(o, mid)
-    assert o.post(f"/maps/{mid}/members", json={"email": ed.email, "role": "editor"}).status_code == 201
-    assert o.post(f"/maps/{mid}/members", json={"email": viewer.email, "role": "viewer"}).status_code == 201
-    assert stranger.get(f"/maps/{mid}").status_code == 404
-    assert viewer.get(f"/maps/{mid}/features").status_code == 200
-    assert feat(viewer, mid, lid)[1].status_code == 403
-    assert feat(ed, mid, lid)[1].status_code == 201
-    assert ed.delete(f"/maps/{mid}").status_code == 403
-    assert o.post(f"/maps/{mid}/members", json={"email": "nobody@example.com"}).status_code == 404
-    assert o.delete(f"/maps/{mid}").status_code == 204
-
-
-def test_imagery_source_url_template(actor):
-    o = actor()
-    mid = new_map(o)
-    ok = {"name": "Satellite", "url_template": "https://tiles.example.com/{z}/{x}/{y}.jpg", "max_zoom": 20}
-    r = o.post(f"/maps/{mid}/imagery-sources", json=ok)
-    assert r.status_code == 201 and r.json()["kind"] == "xyz"
-    for bad in ("tiles.example.com/{z}/{x}/{y}", "https://tiles.example.com/tile.png",
-                "javascript:alert(1)//{z}/{x}/{y}"):
-        r = o.post(f"/maps/{mid}/imagery-sources", json={**ok, "url_template": bad})
+def test_xyz_sources_are_validated_and_stored(actor):
+    a = actor()
+    m = new_map(a)
+    good = {"name": "Google satellite", "url": XYZ, "maxzoom": 20}
+    r = a.patch(f"/maps/{m['id']}", json={"sources": [good]})
+    assert r.status_code == 200, r.text
+    s = r.json()["sources"][0]
+    assert s["id"] and s["url"] == XYZ and s["type"] == "xyz" and s["maxzoom"] == 20
+    for bad in ("ftp://x/{z}/{x}/{y}", "https://example.com/tiles.png", "https://example.com/{z}/{x}.png"):
+        r = a.patch(f"/maps/{m['id']}", json={"sources": [{"name": "Bad", "url": bad}]})
         assert r.status_code == 422, bad
-    assert o.post(f"/maps/{mid}/imagery-sources", json={**ok, "min_zoom": 12, "max_zoom": 3}).status_code == 422
-    assert len(o.get(f"/maps/{mid}/imagery-sources").json()) == 1
-    sid = r = o.get(f"/maps/{mid}/imagery-sources").json()[0]["id"]
-    assert o.delete(f"/imagery-sources/{sid}").status_code == 204
+    assert a.get(f"/maps/{m['id']}/layers").json()["sources"][0]["url"] == XYZ
+
+
+def test_features_need_no_project_or_form(actor):
+    a = actor()
+    m = new_map(a)
+    fid = str(uuid.uuid4())
+    line = {"type": "LineString", "coordinates": [[3.0, 6.0], [3.1, 6.1]]}
+    r = a.post(f"/maps/{m['id']}/features", json={"id": fid, "geometry": line, "properties": {"highway": "residential", "lanes": 2}})
+    assert r.status_code == 201, r.text
+    f = r.json()
+    assert f["id"] == fid and f["version"] == 1 and f["geometry"]["type"] == "LineString"
+    assert a.post(f"/maps/{m['id']}/features", json={"id": fid, "geometry": pt()}).status_code == 409   # idempotent id
+    # free-form tags, any geometry type
+    area = {"type": "Polygon", "coordinates": [[[3, 6], [3.1, 6], [3.1, 6.1], [3, 6]]]}
+    assert a.post(f"/maps/{m['id']}/features", json={"geometry": area, "properties": {"building": "yes"}}).status_code == 201
+    assert a.post(f"/maps/{m['id']}/features", json={"geometry": pt(), "properties": {"name": "Well"}}).status_code == 201
+    assert len(a.get(f"/maps/{m['id']}/features").json()) == 3
+    assert len(a.get(f"/maps/{m['id']}/features", params={"bbox": "2.9,5.9,3.2,6.2"}).json()) == 2   # point at 3.39 is outside
+    assert a.get(f"/maps/{m['id']}").json()["feature_count"] == 3
+    # update: tags and geometry, with optimistic locking
+    r = a.patch(f"/maps/{m['id']}/features/{fid}", json={"properties": {"highway": "primary"}, "base_version": 1})
+    assert r.status_code == 200 and r.json()["version"] == 2 and r.json()["properties"] == {"highway": "primary"}
+    assert a.patch(f"/maps/{m['id']}/features/{fid}", json={"properties": {}, "base_version": 1}).status_code == 409
+    moved = {"type": "LineString", "coordinates": [[3.0, 6.0], [3.2, 6.2], [3.3, 6.3]]}
+    assert len(a.patch(f"/maps/{m['id']}/features/{fid}", json={"geometry": moved}).json()["geometry"]["coordinates"]) == 3
+    # validation
+    assert a.post(f"/maps/{m['id']}/features", json={"geometry": {"type": "Point", "coordinates": [200, 0]}}).status_code == 422
+    assert a.post(f"/maps/{m['id']}/features", json={"geometry": pt(), "properties": {"x": {"nested": 1}}}).status_code == 422
+    assert a.delete(f"/maps/{m['id']}/features/{fid}").status_code == 204
+    assert a.delete(f"/maps/{m['id']}/features/{fid}").status_code == 404
+
+
+def test_import_and_export_geojson(actor):
+    a = actor()
+    m = new_map(a, "My map / test")
+    feats = [{"geometry": pt(3.1, 6.1), "properties": {"name": "A"}},
+             {"geometry": {"type": "Point", "coordinates": [999, 0]}, "properties": {}},
+             {"geometry": {"type": "LineString", "coordinates": [[3, 6], [3.1, 6.1]]}, "properties": {"k": None}}]
+    r = a.post(f"/maps/{m['id']}/features/import", json={"features": feats})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert (out["imported"], out["rejected"]) == (2, 1) and out["errors"][0]["row"] == 2
+    ex = a.get(f"/maps/{m['id']}/export.geojson")
+    assert ex.status_code == 200 and 'filename="My-map-test.geojson"' in ex.headers["content-disposition"]
+    fc = ex.json()
+    assert fc["type"] == "FeatureCollection" and len(fc["features"]) == 2
+    assert fc["features"][0]["properties"] == {"name": "A"}
+
+
+def test_uploaded_imagery_belongs_to_the_map(actor, tmp_path, tile_calls):
+    a, b = actor("A"), actor("B")
+    m = new_map(a)
+    tif = make_tif(tmp_path / "s.tif")
+    r = a.post(f"/maps/{m['id']}/imagery", json={"name": "Drone", "filename": "s.tif", "size": len(tif)})
+    assert r.status_code == 201, r.text
+    up = r.json()
+    assert b.post(f"/maps/{m['id']}/imagery", json={"name": "x", "filename": "s.tif", "size": 5}).status_code == 404
+    put = httpx.put(up["parts"][0]["url"], content=tif)
+    r = a.post(f"/imagery/{up['id']}/complete", json={"parts": [{"part_number": 1, "etag": put.headers["etag"]}]})
+    assert r.status_code == 202, r.text
+    assert b.get(f"/imagery/{up['id']}").status_code == 404                     # private to the map's owner
+    assert b.post(f"/imagery/{up['id']}/complete", json={"parts": [{"part_number": 1, "etag": "x"}]}).status_code == 404
+    got = a.get(f"/imagery/{up['id']}").json()
+    assert got["status"] == "ready" and got["map_id"] == m["id"] and got["project_id"] is None
+    assert [i["id"] for i in a.get(f"/maps/{m['id']}/imagery").json()["items"]] == [up["id"]]
+    layers = a.get(f"/maps/{m['id']}/layers").json()
+    assert len(layers["imagery"]) == 1
+    url = layers["imagery"][0]["tiles_url"].replace("{z}", "3").replace("{x}", "4").replace("{y}", "5")
+    tile = a.c.get(url.replace("http://testserver", ""))                         # the signed URL works without a header
+    assert tile.status_code == 200
+    bad = a.c.get(f"/tiles/imagery/{up['id']}/3/4/5.png")                        # but never anonymously
+    assert bad.status_code == 401
+    assert b.get(f"/tiles/imagery/{up['id']}/3/4/5.png").status_code == 404
+    assert a.delete(f"/imagery/{up['id']}").status_code == 204
+    assert a.get(f"/maps/{m['id']}/imagery").json()["items"] == []
+
+
+def test_vector_files_are_not_imagery(actor):
+    a = actor()
+    m = new_map(a)
+    r = a.post(f"/maps/{m['id']}/imagery", json={"name": "x", "filename": "points.geojson", "size": 10})
+    assert r.status_code == 422 and r.json()["code"] == "use_import"

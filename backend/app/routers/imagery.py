@@ -9,7 +9,7 @@ from .. import formats, storage
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
-from ..deps import current_user, require_role
+from ..deps import current_user, require_map, require_role
 from ..errors import Problem
 from ..jobs import create_job, dispatch
 from ..logging_setup import client_ip
@@ -34,14 +34,32 @@ async def _load(conn, imagery_id) -> dict:
     return a
 
 
+async def _require(conn, a: dict, user_id, minimum: str = "viewer"):
+    """Imagery belongs to a project (members) or to a standalone map (its owner)."""
+    if a["project_id"]:
+        return await require_role(conn, a["project_id"], user_id, minimum)
+    return await require_map(conn, a["map_id"], user_id)
+
+
 @router.post("/projects/{project_id}/imagery", response_model=ImageryUploadOut, status_code=201)
 async def start_upload(project_id: UUID, body: ImageryIn, user=Depends(current_user), conn=Depends(get_conn)):
     """Returns presigned multipart URLs. PUT each part straight to storage, collect the ETag response
     headers, then call /imagery/{id}/complete."""
     await require_role(conn, project_id, user["id"], "admin")
+    return await _start(conn, user, "project_id", project_id, body,
+                        "Import it into a form with POST /projects/{id}/import instead.")
+
+
+@router.post("/maps/{map_id}/imagery", response_model=ImageryUploadOut, status_code=201)
+async def start_map_upload(map_id: UUID, body: ImageryIn, user=Depends(current_user), conn=Depends(get_conn)):
+    """Same as the project upload, for a standalone map you own."""
+    await require_map(conn, map_id, user["id"])
+    return await _start(conn, user, "map_id", map_id, body, "Import it into the map's features instead.")
+
+
+async def _start(conn, user, scope_col: str, scope_id, body: ImageryIn, vector_hint: str):
     if formats.vector_kind(body.filename):
-        raise Problem(422, "This is map data (points, lines, areas), not an image. Import it into a form with "
-                           "POST /projects/{id}/import instead.", code="use_import",
+        raise Problem(422, f"This is map data (points, lines, areas), not an image. {vector_hint}", code="use_import",
                       fields={"filename": ["vector files are imported as features, not imagery"]})
     if not formats.is_raster(body.filename):
         raise Problem(422, f"Unsupported image type. Accepted: {formats.RASTER_LIST}.", code="unsupported_format",
@@ -57,12 +75,12 @@ async def start_upload(project_id: UUID, body: ImageryIn, user=Depends(current_u
         raise Problem(413, f"Imagery uploads are limited to {settings.max_imagery_bytes // 1024**3} GB.", code="too_large")
     part_size = max(64 * MB, math.ceil(body.size / 9000 / MB) * MB)
     n_parts = math.ceil(body.size / part_size)
-    cur = await conn.execute("INSERT INTO imagery_assets (project_id, name, source_key, size, created_by, georef_hint) "
+    cur = await conn.execute(f"INSERT INTO imagery_assets ({scope_col}, name, source_key, size, created_by, georef_hint) "
                              "VALUES (%s, %s, 'pending', %s, %s, %s) RETURNING id",
-                             (project_id, body.name, body.size, user["id"], Jsonb(hint) if hint else None))
+                             (scope_id, body.name, body.size, user["id"], Jsonb(hint) if hint else None))
     iid = (await cur.fetchone())["id"]
     ext = formats.ext(body.filename)
-    key = f"imagery/{project_id}/{iid}/source{ext}"
+    key = f"imagery/{scope_id}/{iid}/source{ext}"
     mp = await storage.run(storage.internal.create_multipart_upload, Bucket=settings.s3_bucket, Key=key,
                            ContentType=formats.RASTER[ext])
     await conn.execute("UPDATE imagery_assets SET source_key = %s, upload_id = %s WHERE id = %s",
@@ -75,7 +93,7 @@ async def start_upload(project_id: UUID, body: ImageryIn, user=Depends(current_u
 @router.post("/imagery/{imagery_id}/complete", response_model=ImageryOut, status_code=202)
 async def complete(imagery_id: UUID, body: ImageryCompleteIn, user=Depends(current_user), conn=Depends(get_conn)):
     a = await _load(conn, imagery_id)
-    await require_role(conn, a["project_id"], user["id"], "admin")
+    await _require(conn, a, user["id"], "admin")
     if a["status"] != "uploading":
         raise Problem(409, "This upload was already completed.", code="already_completed")
     parts = [{"PartNumber": p.part_number, "ETag": p.etag} for p in sorted(body.parts, key=lambda p: p.part_number)]
@@ -87,7 +105,7 @@ async def complete(imagery_id: UUID, body: ImageryCompleteIn, user=Depends(curre
                       code="upload_incomplete", reason=e.response["Error"].get("Code"))
     await conn.execute("UPDATE imagery_assets SET status = 'processing', upload_id = NULL WHERE id = %s", (imagery_id,))
     job = await create_job(conn, "imagery_convert", {"imagery_id": str(imagery_id)}, project_id=a["project_id"],
-                           created_by=user["id"])
+                           created_by=user["id"])      # map imagery has no project: the job is private to its creator
     await dispatch(conn, job)
     return _out(await _load(conn, imagery_id), job["id"])
 
@@ -103,17 +121,28 @@ async def list_imagery(project_id: UUID, limit: int = Query(50, ge=1, le=200), c
     return {"items": [_out(r) for r in rows], "next_cursor": nxt}
 
 
+@router.get("/maps/{map_id}/imagery", response_model=Page[ImageryOut])
+async def list_map_imagery(map_id: UUID, limit: int = Query(50, ge=1, le=200), cursor: str | None = None,
+                           user=Depends(current_user), conn=Depends(get_conn)):
+    await require_map(conn, map_id, user["id"])
+    off = decode_cursor(cursor).get("o", 0)
+    cur = await conn.execute("SELECT * FROM imagery_assets WHERE map_id = %s ORDER BY created_at DESC, id "
+                             "LIMIT %s OFFSET %s", (map_id, limit + 1, off))
+    rows, nxt = page_from_offset(await cur.fetchall(), limit, off)
+    return {"items": [_out(r) for r in rows], "next_cursor": nxt}
+
+
 @router.get("/imagery/{imagery_id}", response_model=ImageryOut)
 async def get_imagery(imagery_id: UUID, user=Depends(current_user), conn=Depends(get_conn)):
     a = await _load(conn, imagery_id)
-    await require_role(conn, a["project_id"], user["id"])
+    await _require(conn, a, user["id"])
     return _out(a)
 
 
 @router.delete("/imagery/{imagery_id}", status_code=204)
 async def delete_imagery(imagery_id: UUID, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
     a = await _load(conn, imagery_id)
-    await require_role(conn, a["project_id"], user["id"], "admin")
+    await _require(conn, a, user["id"], "admin")
     if a["status"] == "uploading" and a["upload_id"]:
         try:
             await storage.run(storage.internal.abort_multipart_upload, Bucket=settings.s3_bucket, Key=a["source_key"],

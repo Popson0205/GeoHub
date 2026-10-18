@@ -1,7 +1,12 @@
 # Geohub
 
-A spatial data collection and mapping platform: collect features in the field (offline), edit them on a map with
-imagery, and publish datasets to a public hub where anyone can preview and download them.
+A spatial data platform made of three separate tools that share one login:
+
+| Tool | What it is | Routes |
+|---|---|---|
+| **Web mapping** | A standalone mapping tool, like OpenStreetMap's editors. Draw points, lines and areas with free-form tags over imagery you add by tile URL (`https://host/{z}/{x}/{y}.png`) or by uploading a GeoTIFF/JPEG/PNG. Import GeoJSON, KML or GPX, export GeoJSON. Needs no forms and no projects. | `/maps`, `/maps/:id` |
+| **Data collection** | Projects with a form builder, offline mobile collector (GPS, photos), review of collected data and publishing. | `/collect`, `/collect/:project`, `/collect/:project/forms`, `/collect/:project/review` |
+| **Data hub** | Public catalogue where anyone can preview and download published datasets. | `/hub`, `/hub/:slug` |
 
 | Folder | What | Stack |
 |---|---|---|
@@ -40,6 +45,12 @@ With `VITE_USE_MOCK=true` (the default) the frontend runs alone against an in-br
   the Android app).
 
 ## Deploying
+
+**One service (Railway or any Docker host):** the `Dockerfile` in the repo root builds the frontend and the API into a single
+image. The API is served under `/api` and the web app at `/`. Set `API_PREFIX=/api` and `WEB_DIR` (already set in that
+Dockerfile) and `PUBLIC_BASE_URL=https://your-domain/api`.
+
+**Separately:**
 
 - **Database**: Supabase. **Backend**: any Docker host (Railway, Render, Fly). See "Deploy" in [`backend/README.md`](backend/README.md).
 - **Frontend**: Cloudflare Pages (or any static host). Root directory `frontend`, build command `npm run build`,

@@ -104,7 +104,7 @@ def imagery_convert(conn, job) -> dict:
             _run(["gdal_translate", "-of", "COG", "-co", "COMPRESS=DEFLATE", "-co", "OVERVIEWS=AUTO",
                   "-co", "BIGTIFF=IF_SAFER", "-co", "NUM_THREADS=ALL_CPUS", str(src), str(out)])
             _progress(conn, job["id"], 70)
-            key = f"imagery/{a['project_id']}/{iid}/cog.tif"
+            key = f"imagery/{a['project_id'] or a['map_id']}/{iid}/cog.tif"
             storage.internal.upload_file(str(out), B, key)
         conn.execute(
             "UPDATE imagery_assets SET status = 'ready', storage_key = %s, bounds = %s, crs = %s, resolution = %s, "

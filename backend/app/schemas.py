@@ -313,7 +313,8 @@ class ImageryCompleteIn(BaseModel):
 
 class ImageryOut(BaseModel):
     id: UUID
-    project_id: UUID
+    project_id: UUID | None = None
+    map_id: UUID | None = None
     name: str
     status: Literal["uploading", "processing", "ready", "failed"]
     bounds: list[float] | None
