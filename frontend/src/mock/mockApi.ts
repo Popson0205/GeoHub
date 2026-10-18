@@ -274,8 +274,11 @@ export class MockApi implements Api {
   async createMap(name: string, description?: string) {
     await wait(); this.auth();
     const m: MapDoc = { id: uuid(), name, description: description ?? "", role: "owner", layer_count: 0, feature_count: 0, updated_at: new Date().toISOString() };
-    this.s.maps!.unshift(m); this.save();
-    return m;
+    this.s.maps!.unshift(m);
+    // A new map is ready to draw on: one default layer that holds any shape.
+    this.s.mapLayers!.push({ id: uuid(), map_id: m.id, name: "Layer 1", geometry_type: "any", fields: [], position: 0 });
+    this.save();
+    return this.mapCounts(m);
   }
   async deleteMap(id: string) {
     await wait(); this.auth(); this.mapOr404(id);
