@@ -23,20 +23,35 @@ def feat(owner, mid, lid, geometry=None, **props):
     return fid, r
 
 
-def test_map_needs_no_project_or_form(actor):
+def test_new_map_is_ready_to_draw_with_free_tags(actor):
+    """Create a map and draw straight away: no layer setup, no form, no declared fields."""
     o = actor("Owner")
     mid = new_map(o)
-    lid = new_layer(o, mid, geometry_type="point",
-                    fields=[{"id": "name", "label": "Name", "type": "text"}, {"id": "floors", "label": "Floors", "type": "number"}])
-    fid, r = feat(o, mid, lid, name="Clinic", floors=2)
+    layers = o.get(f"/maps/{mid}/layers").json()
+    assert len(layers) == 1 and layers[0]["geometry_type"] == "any" and layers[0]["fields"] == []
+    fid, r = feat(o, mid, layers[0]["id"], building="yes", name="Clinic", levels=2, open=True)
     assert r.status_code == 201, r.text
-    assert r.json()["version"] == 1 and r.json()["geometry"]["type"] == "Point"
+    assert r.json()["properties"] == {"building": "yes", "name": "Clinic", "levels": 2, "open": True}
+    for geom in ({"type": "LineString", "coordinates": [[3.0, 6.0], [3.1, 6.1]]},
+                 {"type": "Polygon", "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.0]]]}):
+        assert feat(o, mid, layers[0]["id"], geometry=geom, highway="path")[1].status_code == 201
     m = o.get(f"/maps/{mid}").json()
-    assert m["role"] == "owner" and m["layer_count"] == 1 and m["feature_count"] == 1
+    assert m["role"] == "owner" and m["layer_count"] == 1 and m["feature_count"] == 3
     assert o.get("/projects").json()["items"] == []          # nothing leaked into collection projects
 
 
-def test_layer_geometry_and_attribute_validation(actor):
+def test_tag_validation(actor):
+    o = actor()
+    mid = new_map(o)
+    lid = o.get(f"/maps/{mid}/layers").json()[0]["id"]
+    assert feat(o, mid, lid, **{"": "x"})[1].status_code == 422                  # empty tag name
+    assert feat(o, mid, lid, nested={"a": 1})[1].status_code == 422              # values are scalars
+    assert feat(o, mid, lid, **{f"k{i}": "v" for i in range(101)})[1].status_code == 422
+    assert o.get("/projects").json()["items"] == []          # nothing leaked into collection projects
+
+
+def test_optional_layer_restrictions(actor):
+    """Layers are optional organisation. A layer may restrict its shape and declare typed fields, but need not."""
     o = actor()
     mid = new_map(o)
     lid = new_layer(o, mid, geometry_type="area", fields=[{"id": "floors", "label": "Floors", "type": "number"}])

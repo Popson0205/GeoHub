@@ -86,6 +86,7 @@ class LayerOut(BaseModel):
 
 
 class MapFeatureCreate(BaseModel):
+    """`properties` are free tags (any key/value pairs); layers do not need to declare fields."""
     id: UUID
     layer_id: UUID
     geometry: dict
@@ -195,8 +196,22 @@ def _geometry_ok(layer_type: str, geom_type: str) -> bool:
     return layer_type == "any" or geom_type in kinds[layer_type]
 
 
+def _check_tags(props: dict):
+    """Free tags, OSM style: any key/value pairs. Keys are short non-empty text, values are plain scalars."""
+    if len(props) > 100:
+        raise Problem(422, "A feature can have at most 100 tags.", code="validation", fields={"properties": ["too many tags"]})
+    for k, v in props.items():
+        if not isinstance(k, str) or not k.strip() or len(k) > 63:
+            raise Problem(422, "Tag names must be 1 to 63 characters.", code="validation", fields={"properties": [f"bad tag name {k!r}"]})
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            raise Problem(422, f"The value of tag {k!r} must be text, a number or true/false.", code="validation", fields={k: ["invalid value"]})
+        if isinstance(v, str) and len(v) > 1000:
+            raise Problem(422, f"The value of tag {k!r} is too long.", code="validation", fields={k: ["too long"]})
+
+
 def _check_properties(layer: dict, props: dict):
-    """Light validation against the layer's fields: unknown keys are allowed, known keys must match their type."""
+    """Free tags always apply. If a layer declares fields (optional), known keys must also match their type."""
+    _check_tags(props)
     errors: dict[str, list[str]] = {}
     for f in layer["fields"]:
         v = props.get(f["id"])
@@ -243,6 +258,8 @@ async def create_map(body: MapIn, user=Depends(current_user), conn=Depends(get_c
                              (body.name.strip(), body.description, user["id"]))
     mid = (await cur.fetchone())["id"]
     await conn.execute("INSERT INTO map_members (map_id, user_id, role) VALUES (%s, %s, 'owner')", (mid, user["id"]))
+    # A new map is ready to draw on: one default layer that holds any shape and needs no fields.
+    await conn.execute("INSERT INTO map_layers (map_id, name, geometry_type, position) VALUES (%s, 'Layer 1', 'any', 0)", (mid,))
     await audit(conn, "map.create", actor_id=user["id"], target_type="map", target_id=mid)
     cur = await conn.execute(MAP_SELECT + " WHERE m.id = %s", (user["id"], mid))
     return await cur.fetchone()
