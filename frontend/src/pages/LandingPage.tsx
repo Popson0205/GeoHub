@@ -6,14 +6,14 @@ export default function LandingPage() {
   const { user } = useAuth();
   const items = [
     {
-      title: "Web mapping app",
-      text: "Design forms, edit features on the map with imagery, manage collectors and publish datasets.",
-      to: "/projects", cta: user ? "Open the mapping app" : "Sign in to map", who: "For project owners and admins",
+      title: "Web mapping",
+      text: "Digitize points, lines and areas over imagery. Add imagery from a tile URL and draw on your own layers.",
+      to: "/maps", cta: user ? "Open your maps" : "Sign in to map", who: "For mappers and analysts",
     },
     {
       title: "Data collection",
-      text: "Collect features in the field with offline forms, GPS and photos. Syncs when you are back online.",
-      to: "/collect", cta: user ? "Start collecting" : "Sign in to collect", who: "For field collectors (works on a phone)",
+      text: "Build forms, invite collectors and gather features in the field offline with GPS and photos.",
+      to: "/collect", cta: user ? "Open data collection" : "Sign in to collect", who: "For project teams and field collectors",
     },
     {
       title: "Public data hub",

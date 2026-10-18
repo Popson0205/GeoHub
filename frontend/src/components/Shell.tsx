@@ -11,7 +11,7 @@ export default function Shell() {
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
         <Link className="brand" to="/">Geohub</Link>
-        {user && <NavLink to="/projects">Web mapping</NavLink>}
+        {user && <NavLink to="/maps">Web mapping</NavLink>}
         {user && <NavLink to="/collect">Data collection</NavLink>}
         <NavLink to="/hub">Data hub</NavLink>
         <span className="spacer" />

@@ -121,3 +121,42 @@ export interface FeatureCollection {
   type: "FeatureCollection";
   features: { type: "Feature"; id: string; geometry: Geometry; properties: Props }[];
 }
+
+// ---- maps (the free-form web-mapping workspace, independent of collection projects) ----
+export type MapRole = "owner" | "editor" | "viewer";
+export type LayerGeometry = "point" | "line" | "area" | "any";
+export type LayerFieldType = "text" | "number" | "choice" | "date" | "checkbox";
+export interface LayerField { id: string; label: string; type: LayerFieldType; choices?: string[] }
+export interface MapDoc {
+  id: string;
+  name: string;
+  description: string;
+  role: MapRole;
+  layer_count: number;
+  feature_count: number;
+  updated_at: string;
+}
+export interface MapLayer { id: string; map_id: string; name: string; geometry_type: LayerGeometry; fields: LayerField[]; position: number }
+export interface MapFeature {
+  id: string; // client-generated UUID
+  map_id: string;
+  layer_id: string;
+  geometry: Geometry;
+  properties: Props;
+  version: number;
+  updated_at: string;
+}
+export interface ImagerySource {
+  id: string;
+  map_id: string;
+  name: string;
+  /** XYZ template with {z}/{x}/{y}. The browser loads tiles straight from the provider. */
+  url_template: string;
+  attribution: string;
+  min_zoom: number;
+  max_zoom: number;
+  tile_size: 256 | 512;
+}
+export interface NewImagerySource { name: string; url_template: string; attribution?: string; min_zoom?: number; max_zoom?: number; tile_size?: 256 | 512 }
+export interface NewMapLayer { name: string; geometry_type: LayerGeometry; fields: LayerField[] }
+export interface NewMapFeature { id: string; layer_id: string; geometry: Geometry; properties: Props }

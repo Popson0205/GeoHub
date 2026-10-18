@@ -7,7 +7,7 @@ import type { Geometry, GeometryType, Position, Props } from "../lib/types";
 import { Button } from "./ui";
 
 export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean }
-export interface MapImagery { id: string; url: string }
+export interface MapImagery { id: string; url: string; tileSize?: 256 | 512; minzoom?: number; maxzoom?: number; attribution?: string }
 
 interface Props_ {
   features: MapFeature[];
@@ -130,14 +130,14 @@ export default function MapView({ features, selectedId, drawMode, onDraw, onCanc
   }, [vertices, drawMode, ready]);
 
   // Imagery (raster tile layers sit under the vector layers)
-  const imageryKey = useMemo(() => imagery.map((i) => i.id + i.url).join("|"), [imagery]);
+  const imageryKey = useMemo(() => imagery.map((i) => [i.id, i.url, i.tileSize, i.minzoom, i.maxzoom].join("~")).join("|"), [imagery]);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
     for (const l of map.getStyle().layers) if (l.id.startsWith("img-")) map.removeLayer(l.id);
     for (const id of Object.keys(map.getStyle().sources)) if (id.startsWith("img-")) map.removeSource(id);
     for (const img of imagery) {
-      map.addSource(`img-${img.id}`, { type: "raster", tiles: [img.url], tileSize: 256 });
+      map.addSource(`img-${img.id}`, { type: "raster", tiles: [img.url], tileSize: img.tileSize ?? 256, minzoom: img.minzoom, maxzoom: img.maxzoom, attribution: img.attribution });
       map.addLayer({ id: `img-${img.id}`, type: "raster", source: `img-${img.id}` }, "features-fill");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

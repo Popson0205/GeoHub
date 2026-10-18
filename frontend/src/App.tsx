@@ -11,6 +11,8 @@ import DatasetPage from "./pages/DatasetPage";
 import CollectPage from "./pages/CollectPage";
 import CollectHome from "./pages/CollectHome";
 import LandingPage from "./pages/LandingPage";
+import MapsPage from "./pages/MapsPage";
+import MapEditorPage from "./pages/MapEditorPage";
 
 function NotFound() {
   return (
@@ -29,6 +31,8 @@ export default function App() {
       <Route element={<Shell />}>
         <Route index element={<LandingPage />} />
         <Route path="/collect" element={<RequireAuth><CollectHome /></RequireAuth>} />
+        <Route path="/maps" element={<RequireAuth><MapsPage /></RequireAuth>} />
+        <Route path="/maps/:mapId" element={<RequireAuth><MapEditorPage /></RequireAuth>} />
         <Route path="/hub" element={<HubPage />} />
         <Route path="/hub/:slug" element={<DatasetPage />} />
         <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
