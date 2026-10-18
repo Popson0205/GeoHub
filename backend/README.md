@@ -177,3 +177,15 @@ tests/               integration tests              docs/      CONTRACT_NOTES.md
 ## Not built yet
 Password reset and email verification; multi-layer or sidecar-file imagery (world files, `.prj`);  per-dataset API keys; virus scanning of uploads; tile
 caching; migrating to Alembic if schema changes become frequent (the runner in `app/db.py` is deliberately simple).
+
+
+## Shared maps, contributors and publishing
+
+Migration `006_collaboration.sql` adds what a mapping campaign needs. Everything is under `/maps` (see `openapi.json`).
+
+* **People:** `map_members` (reviewer or contributor; the owner is `workspace_maps.owner_id`). Joining is by an unguessable link code: `GET/POST /join/{code}`. `require_map(conn, map_id, user_id, minimum)` returns the map with the caller's `role`; people with no role get 404.
+* **Authorship and review:** every feature stores `created_by`, `updated_by` and a `status` (`submitted`, `approved`, `rejected`). Features drawn by the owner or a reviewer are approved at once; a contributor's feature waits, and changing it sends it back to `submitted`. Contributors can change only their own features, and not once approved. `POST /maps/{id}/features/review` (reviewers) approves or rejects up to 1000 at a time.
+* **Campaigns:** `is_campaign`, `goal`, `starts_at`, `ends_at`, `competition` on the map. Outside the window contributors get 409 `campaign_closed` on writes; the owner and reviewers are exempt.
+* **Portal data:** `GET /maps/{id}/contributors` (per-person counts, ranked by features added with rejected ones excluded, restricted to the campaign window), `/activity`, `/members`.
+* **Publishing:** `POST /maps/{id}/publish` (owner) creates a Data hub dataset (`datasets.map_id`, `map_geometry`) from the **approved** features of one kind. Tags become text fields (names are made safe and unique). `POST /datasets/{slug}/versions` publishes the next version. Contributors are credited in `dataset_versions.contributors` unless `credit_contributors` is false. Private map datasets are visible to map members only.
+* Tests: `tests/test_collaboration.py`.

@@ -127,6 +127,8 @@ def imagery_convert(conn, job) -> dict:
 def snapshot(conn, job) -> dict:
     did = job["params"]["dataset_id"]
     d = conn.execute("SELECT * FROM datasets WHERE id = %s FOR UPDATE", (did,)).fetchone()
+    if d["form_id"] is None:                 # published from a map, not from a project form
+        return _snapshot_map(conn, job, d)
     statuses = job["params"].get("statuses") or d["statuses"]
     form = conn.execute(
         "SELECT v.geometry_type, v.fields FROM forms f JOIN form_versions v ON v.form_id = f.id AND v.version = f.version "
@@ -145,6 +147,77 @@ def snapshot(conn, job) -> dict:
     if n == 0:
         raise JobFailed(f"No features to publish: there are none with status {', '.join(statuses)}. Approve features "
                         "first, or include submitted ones.", "empty_dataset")
+    bbox = conn.execute("SELECT ARRAY[ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e)] AS b FROM "
+                        "(SELECT ST_Extent(geom) AS e FROM dataset_features WHERE dataset_id = %s AND version = %s) x",
+                        (did, version)).fetchone()["b"]
+    with tempfile.TemporaryDirectory() as t:
+        path = Path(t) / "s.geojson"
+        with path.open("w") as fh, conn.cursor(name="snap") as c:
+            fh.write('{"type":"FeatureCollection","name":%s,"features":[' % json.dumps(d["slug"]))
+            c.itersize = 2000
+            c.execute("SELECT feature_id, ST_AsGeoJSON(geom, 7) AS g, properties FROM dataset_features "
+                      "WHERE dataset_id = %s AND version = %s ORDER BY feature_id", (did, version))
+            for i, r in enumerate(c):
+                fh.write(("," if i else "") + json.dumps({"type": "Feature", "id": str(r["feature_id"]),
+                                                          "geometry": json.loads(r["g"]), "properties": r["properties"]}))
+            fh.write("]}")
+        storage.internal.upload_file(str(path), B, skey, ExtraArgs={"ContentType": "application/geo+json"})
+    conn.execute("UPDATE dataset_versions SET feature_count = %s, bbox = %s WHERE dataset_id = %s AND version = %s",
+                 (n, bbox, did, version))
+    conn.execute("UPDATE datasets SET latest_version = %s, updated_at = now() WHERE id = %s", (version, did))
+    conn.commit()
+    return {"dataset": d["slug"], "version": version, "feature_count": n}
+
+
+def _tag_field_ids(keys: list[str]) -> dict[str, str]:
+    """Map free-form tag names ("addr:street", "Name") to safe, unique column ids ("addr_street", "name")."""
+    out, used = {}, set()
+    for k in keys:
+        base = re.sub(r"[^a-z0-9_]+", "_", k.lower()).strip("_")[:40] or "tag"
+        if not base[0].isalpha():
+            base = ("t_" + base)[:40]
+        cand, i = base, 2
+        while cand in used:
+            suffix = f"_{i}"
+            cand, i = base[:40 - len(suffix)] + suffix, i + 1
+        used.add(cand)
+        out[k] = cand
+    return out
+
+
+_GEOM_LIKE = {"point": "%POINT", "line": "%LINESTRING", "area": "%POLYGON"}
+
+
+def _snapshot_map(conn, job, d) -> dict:
+    """Immutable copy of a map's approved features of one kind. Tags become fields; contributors are credited."""
+    if d["map_id"] is None:
+        raise JobFailed("The map this dataset was published from has been deleted, so there is nothing to snapshot.", "map_deleted")
+    mid, did, gtype = d["map_id"], d["id"], d["map_geometry"]
+    like = _GEOM_LIKE[gtype]
+    keys = [r["k"] for r in conn.execute(
+        "SELECT DISTINCT jsonb_object_keys(properties) AS k FROM workspace_features WHERE map_id = %s AND status = 'approved' "
+        "AND GeometryType(geom) ILIKE %s ORDER BY 1", (mid, like)).fetchall()]
+    ids = _tag_field_ids(keys)
+    fields = [{"id": ids[k], "label": k[:200], "type": "text", "required": False, "choices": []} for k in keys]
+    credits = []
+    if d["credit_contributors"]:
+        credits = [{"name": r["name"], "features": r["n"]} for r in conn.execute(
+            "SELECT u.name, count(*)::int AS n FROM workspace_features f JOIN users u ON u.id = f.created_by "
+            "WHERE f.map_id = %s AND f.status = 'approved' AND GeometryType(f.geom) ILIKE %s GROUP BY u.id, u.name "
+            "ORDER BY n DESC, u.name", (mid, like)).fetchall()]
+    version = d["latest_version"] + 1
+    skey = f"snapshots/{did}/v{version}.geojson"
+    conn.execute("INSERT INTO dataset_versions (dataset_id, version, fields, geometry_type, snapshot_key, published_by, contributors) "
+                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                 (did, version, Jsonb(fields), gtype, skey, job["created_by"], Jsonb(credits)))
+    n = conn.execute(
+        "INSERT INTO dataset_features (dataset_id, version, feature_id, geom, properties) "
+        "SELECT %s, %s, f.id, f.geom, COALESCE((SELECT jsonb_object_agg(km.value, p.value) FROM jsonb_each(f.properties) p "
+        "JOIN jsonb_each_text(%s::jsonb) km ON km.key = p.key), '{}'::jsonb) "
+        "FROM workspace_features f WHERE f.map_id = %s AND f.status = 'approved' AND GeometryType(f.geom) ILIKE %s",
+        (did, version, Jsonb(ids), mid, like)).rowcount
+    if n == 0:
+        raise JobFailed(f"There are no approved {gtype} features to publish. Approve some in the map's Review tab first.", "empty_dataset")
     bbox = conn.execute("SELECT ARRAY[ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e)] AS b FROM "
                         "(SELECT ST_Extent(geom) AS e FROM dataset_features WHERE dataset_id = %s AND version = %s) x",
                         (did, version)).fetchone()["b"]

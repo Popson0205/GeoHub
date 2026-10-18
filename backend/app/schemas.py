@@ -395,8 +395,15 @@ class DatasetSummary(BaseModel):
     download_count: int
 
 
+class ContributorCredit(BaseModel):
+    name: str
+    features: int
+
+
 class DatasetOut(DatasetSummary):
     project_id: UUID | None = Field(None, description="Only shown to project members")
+    map_id: UUID | None = Field(None, description="Only shown to members of the map the dataset was published from")
+    contributors: list[ContributorCredit] = Field([], description="People credited for the latest version (map datasets)")
     fields: list[FieldDef]
     versions: list[DatasetVersionOut]
     formats: list[str]

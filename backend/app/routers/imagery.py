@@ -38,7 +38,7 @@ async def _require(conn, a: dict, user_id, minimum: str = "viewer"):
     """Imagery belongs to a project (members) or to a standalone map (its owner)."""
     if a["project_id"]:
         return await require_role(conn, a["project_id"], user_id, minimum)
-    return await require_map(conn, a["map_id"], user_id)
+    return await require_map(conn, a["map_id"], user_id, "owner" if minimum in ("admin", "owner") else "contributor")
 
 
 @router.post("/projects/{project_id}/imagery", response_model=ImageryUploadOut, status_code=201)
@@ -53,7 +53,7 @@ async def start_upload(project_id: UUID, body: ImageryIn, user=Depends(current_u
 @router.post("/maps/{map_id}/imagery", response_model=ImageryUploadOut, status_code=201)
 async def start_map_upload(map_id: UUID, body: ImageryIn, user=Depends(current_user), conn=Depends(get_conn)):
     """Same as the project upload, for a standalone map you own."""
-    await require_map(conn, map_id, user["id"])
+    await require_map(conn, map_id, user["id"], "owner")
     return await _start(conn, user, "map_id", map_id, body, "Import it into the map's features instead.")
 
 

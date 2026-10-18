@@ -50,10 +50,18 @@ async def require_role(conn, project_id, user_id, minimum: str = "viewer") -> st
     return role
 
 
-async def require_map(conn, map_id, user_id) -> dict:
-    """Maps are private to their owner. Anyone else gets 404 (the map's existence is not revealed)."""
-    cur = await conn.execute("SELECT * FROM workspace_maps WHERE id = %s AND owner_id = %s", (map_id, user_id))
+MAP_RANK = {"contributor": 1, "reviewer": 2, "owner": 3}
+
+
+async def require_map(conn, map_id, user_id, minimum: str = "contributor") -> dict:
+    """The map plus the caller's `role` on it (owner, reviewer or contributor). People with no role get 404 (the map's
+    existence is not revealed); members below `minimum` get 403."""
+    cur = await conn.execute(
+        "SELECT m.*, CASE WHEN m.owner_id = %s THEN 'owner' ELSE mm.role END AS role FROM workspace_maps m "
+        "LEFT JOIN map_members mm ON mm.map_id = m.id AND mm.user_id = %s WHERE m.id = %s", (user_id, user_id, map_id))
     row = await cur.fetchone()
-    if not row:
+    if not row or not row["role"]:
         raise Problem(404, "Map not found.", code="not_found")
+    if MAP_RANK[row["role"]] < MAP_RANK[minimum]:
+        raise Problem(403, f"This action needs the {minimum} role on the map.", code="forbidden")
     return row

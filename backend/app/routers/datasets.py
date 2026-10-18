@@ -6,7 +6,7 @@ from .. import ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
-from ..deps import current_user, optional_user, require_role, role_in
+from ..deps import current_user, optional_user, require_map, require_role, role_in
 from ..errors import Problem
 from ..jobs import create_job, dispatch
 from ..logging_setup import client_ip
@@ -20,11 +20,11 @@ FORMATS = ["geojson", "gpkg", "shp", "csv"]
 EXT = {"geojson": "geojson", "gpkg": "gpkg", "shp": "zip", "csv": "csv"}
 
 SUMMARY_SQL = (
-    "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, "
-    "d.statuses, COALESCE(v.geometry_type, f.geometry_type) AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
+    "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, d.map_id, "
+    "d.statuses, COALESCE(v.geometry_type, f.geometry_type, d.map_geometry) AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
     "v.bbox, COALESCE(v.published_at, d.created_at) AS published_at, "
     "(SELECT COALESCE(sum(x.download_count), 0)::bigint FROM dataset_versions x WHERE x.dataset_id = d.id) AS download_count "
-    "FROM datasets d JOIN forms f ON f.id = d.form_id "
+    "FROM datasets d LEFT JOIN forms f ON f.id = d.form_id "
     "LEFT JOIN dataset_versions v ON v.dataset_id = d.id AND v.version = d.latest_version ")
 
 
@@ -33,10 +33,34 @@ async def _anon_read_limit(request: Request, user):
         await ratelimit.hit(f"hubread:{client_ip(request)}", settings.rate_anon_read_per_min, 60)
 
 
+async def _dataset_role(conn, d: dict, user) -> str | None:
+    """The person's role on whatever the dataset came from: a project (members) or a map (owner, reviewers, contributors)."""
+    if not user:
+        return None
+    if d["map_id"]:
+        cur = await conn.execute(
+            "SELECT CASE WHEN m.owner_id = %s THEN 'owner' ELSE mm.role END AS role FROM workspace_maps m "
+            "LEFT JOIN map_members mm ON mm.map_id = m.id AND mm.user_id = %s WHERE m.id = %s", (user["id"], user["id"], d["map_id"]))
+        row = await cur.fetchone()
+        return row["role"] if row else None
+    return await role_in(conn, d["project_id"], user["id"]) if d["project_id"] else None
+
+
+async def _require_owner(conn, d: dict, user):
+    """Project datasets are managed by the project owner, map datasets by the map owner. If the map was deleted the person
+    who published the dataset keeps control of it."""
+    if d["map_id"]:
+        await require_map(conn, d["map_id"], user["id"], "owner")
+    elif d["project_id"]:
+        await require_role(conn, d["project_id"], user["id"], "owner")
+    elif d["created_by"] != user["id"]:
+        raise Problem(404, "Dataset not found.", code="not_found")
+
+
 async def _get_readable(conn, slug: str, user) -> tuple[dict, str | None]:
     cur = await conn.execute(SUMMARY_SQL + "WHERE d.slug = %s", (slug,))
     d = await cur.fetchone()
-    role = await role_in(conn, d["project_id"], user["id"]) if (d and user) else None
+    role = await _dataset_role(conn, d, user) if d else None
     if not d or (d["visibility"] != "public" and not role):
         raise Problem(404, "Dataset not found.", code="not_found")   # private datasets are invisible to outsiders
     return d, role
@@ -51,8 +75,9 @@ async def catalogue(request: Request, q: str | None = None, type: str | None = Q
     """Public catalogue. No login needed; signed-in users also see private datasets of their projects."""
     await _anon_read_limit(request, user)
     where, params = ["d.latest_version > 0",
-                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s))"], \
-                    [user["id"] if user else None]
+                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s) "
+                     "OR d.map_id IN (SELECT id FROM workspace_maps WHERE owner_id = %s UNION SELECT map_id FROM map_members WHERE user_id = %s))"], \
+                    [user["id"] if user else None] * 3
     if q:
         where.append("(d.title ILIKE %s OR d.description ILIKE %s OR %s = ANY(d.tags))")
         params += [f"%{q}%", f"%{q}%", q.lower()]
@@ -77,13 +102,14 @@ async def get_dataset(slug: str, request: Request, user=Depends(optional_user), 
     cur = await conn.execute("SELECT version, feature_count, bbox, published_at, download_count FROM dataset_versions "
                              "WHERE dataset_id = %s ORDER BY version DESC", (d["id"],))
     versions = await cur.fetchall()
-    fields = []
+    fields, contributors = [], []
     if versions:
-        cur = await conn.execute("SELECT fields FROM dataset_versions WHERE dataset_id = %s AND version = %s",
+        cur = await conn.execute("SELECT fields, contributors FROM dataset_versions WHERE dataset_id = %s AND version = %s",
                                  (d["id"], d["latest_version"]))
-        fields = (await cur.fetchone())["fields"]
-    return {**d, "project_id": d["project_id"] if role else None, "fields": fields, "versions": versions,
-            "formats": FORMATS}
+        row = await cur.fetchone()
+        fields, contributors = row["fields"], row["contributors"]
+    return {**d, "project_id": d["project_id"] if role else None, "map_id": d["map_id"] if role else None,
+            "contributors": contributors, "fields": fields, "versions": versions, "formats": FORMATS}
 
 
 @router.get("/datasets/{slug}/features")
@@ -159,12 +185,12 @@ async def publish_dataset(project_id: UUID, body: DatasetIn, request: Request, u
 async def new_version(slug: str, request: Request, body: NewVersionIn | None = None, user=Depends(current_user),
                       conn=Depends(get_conn)):
     """Take a fresh snapshot as the next version. Earlier versions never change."""
-    cur = await conn.execute("SELECT id, project_id FROM datasets WHERE slug = %s", (slug,))
+    cur = await conn.execute("SELECT id, project_id, map_id, created_by FROM datasets WHERE slug = %s", (slug,))
     d = await cur.fetchone()
     if not d:
         raise Problem(404, "Dataset not found.", code="not_found")
-    await require_role(conn, d["project_id"], user["id"], "owner")
-    statuses = body.statuses if body else None
+    await _require_owner(conn, d, user)
+    statuses = body.statuses if body and not d["map_id"] else None      # map datasets always publish approved features only
     if statuses:
         await conn.execute("UPDATE datasets SET statuses = %s WHERE id = %s", (statuses, d["id"]))
     await audit(conn, "dataset.version", actor_id=user["id"], project_id=d["project_id"], target_type="dataset",
@@ -178,11 +204,11 @@ async def new_version(slug: str, request: Request, body: NewVersionIn | None = N
 @router.patch("/datasets/{slug}", response_model=DatasetOut)
 async def update_dataset(slug: str, body: DatasetPatch, request: Request, user=Depends(current_user),
                          conn=Depends(get_conn)):
-    cur = await conn.execute("SELECT id, project_id, license, visibility FROM datasets WHERE slug = %s", (slug,))
+    cur = await conn.execute("SELECT id, project_id, map_id, created_by, license, visibility FROM datasets WHERE slug = %s", (slug,))
     d = await cur.fetchone()
     if not d:
         raise Problem(404, "Dataset not found.", code="not_found")
-    await require_role(conn, d["project_id"], user["id"], "owner")
+    await _require_owner(conn, d, user)
     lic, vis = body.license or d["license"], body.visibility or d["visibility"]
     if lic == "Private" and vis == "public":
         raise Problem(422, "A Private licence cannot be published publicly.", code="validation",
