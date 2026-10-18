@@ -38,6 +38,12 @@ for r in (auth.router, auth.me_router, projects.router, forms.router, features.r
     app.include_router(r)
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/docs")
+
+
 @app.get("/health", tags=["meta"], summary="Liveness")
 async def health():
     return {"ok": True}
