@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import { config } from "../lib/config";
+import { BrandMark } from "../components/Shell";
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -32,6 +33,14 @@ export default function LoginPage() {
 
   return (
     <div className="auth">
+      <aside className="auth-side">
+        <div className="brand-line"><BrandMark size={32} />Geohub</div>
+        <div>
+          <h2>Map it, collect it, share it.</h2>
+          <p>Digitise over imagery, run field surveys offline, and publish reviewed data for everyone to use.</p>
+        </div>
+      </aside>
+      <div className="auth-main">
       <form onSubmit={submit}>
         <h1>{mode === "register" ? "Create your Geohub account" : "Sign in to Geohub"}</h1>
         {config.useMock && <div className="state"><span>Mock mode: no server needed. Use the filled-in demo account.</span></div>}
@@ -49,6 +58,7 @@ export default function LoginPage() {
           </p>
         )}
       </form>
+      </div>
     </div>
   );
 }

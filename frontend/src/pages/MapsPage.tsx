@@ -48,7 +48,7 @@ export default function MapsPage() {
         </form>
         <Button variant="accent" onClick={() => setCreating((v) => !v)}>New map</Button>
       </div>
-      <p style={{ color: "var(--muted)", marginTop: -8, maxWidth: 640 }}>
+      <p className="page-lede">
         Draw points, lines and polygons over satellite imagery, alone or with a team. Invite contributors, review their work, run a mapping competition, and publish the approved features to the Data hub.
       </p>
 
