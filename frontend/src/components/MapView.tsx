@@ -8,6 +8,12 @@ import { draftFeatures, measure } from "../lib/sketch";
 import type { Geometry, GeometryType, Position, Props } from "../lib/types";
 import { Button } from "./ui";
 
+/** The vertex/midpoint handle layers vanish while the style reloads (basemap switch); querying a missing layer throws. */
+function queryHandles(map: maplibregl.Map, point: maplibregl.PointLike) {
+  const layers = ["edit-v", "edit-m"].filter((id) => map.getLayer(id));
+  return layers.length ? map.queryRenderedFeatures(point, { layers }) : [];
+}
+
 export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected" }
 export interface MapImagery { id: string; url: string; maxzoom?: number; opacity?: number; attribution?: string }
 export type Bbox = [number, number, number, number];
@@ -192,14 +198,14 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
 
       const showSnap = (p: Position | null) => (map.getSource("snap") as GeoJSONSource).setData((p ? { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: {} }] } : empty) as never);
       snapShow.current = showSnap;
-      const hitAt = (pt: { x: number; y: number }) => map.queryRenderedFeatures([[pt.x - 6, pt.y - 6], [pt.x + 6, pt.y + 6]], { layers: FEATURE_LAYERS })[0];
+      const hitAt = (pt: { x: number; y: number }) => map.queryRenderedFeatures([[pt.x - 6, pt.y - 6], [pt.x + 6, pt.y + 6]], { layers: FEATURE_LAYERS.filter((id) => map.getLayer(id)) })[0];
       hitRef.current = hitAt;
 
       // ---- moving whole features ----
       const startMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
         const L = live.current;
         if (!L.moveMode || drag.current || moving.current) return;
-        if (map.queryRenderedFeatures(e.point, { layers: ["edit-v", "edit-m"] }).length) return;
+        if (queryHandles(map, e.point).length) return;
         const hit = hitAt(e.point);
         if (!hit) return;
         const fid = String(hit.properties?.fid);
@@ -298,7 +304,7 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     });
 
     map.on("click", (e) => {
-      if (justDragged.current || map.queryRenderedFeatures(e.point, { layers: ["edit-v", "edit-m"] }).length) return;
+      if (justDragged.current || queryHandles(map, e.point).length) return;
       const { drawMode: mode, onDraw: draw, onSelect: select, pickMode: pick, onPick: picked } = live.current;
       const pos: Position = snapAt(map, e.lngLat, e.point, mode ? [] : live.current.selIds) ?? [e.lngLat.lng, e.lngLat.lat];
       if (mode === "Point") { draw?.({ type: "Point", coordinates: pos }); return; }
@@ -330,7 +336,7 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
         snapShow.current?.(sp);
         if (L.drawMode !== "Point" && L.vertices.length) { pointer.current = sp ?? [e.lngLat.lng, e.lngLat.lat]; paintDraft(pointer.current); }
       }
-      const handle = map.queryRenderedFeatures(e.point, { layers: ["edit-v", "edit-m"] }).length > 0;
+      const handle = queryHandles(map, e.point).length > 0;
       const over = !!hitRef.current?.(e.point);
       map.getCanvas().style.cursor = L.drawMode || L.pickMode ? "crosshair" : handle ? "move" : over ? (L.moveMode ? "grab" : "pointer") : "";
     });
