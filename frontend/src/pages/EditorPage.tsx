@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import FormRenderer from "../components/FormRenderer";
 import MapView, { type MapFeature } from "../components/MapView";
-import { Button, ErrorState, Loading, useToast } from "../components/ui";
+import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi, type Api } from "../lib/api";
 import { ACCEPT, classifyFile, extOf, NEEDS_BOUNDS_EXTS, type Bounds } from "../lib/fileTypes";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
@@ -15,6 +15,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export default function EditorPage() {
   const { projectId = "" } = useParams();
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, error, loading, reload, setData } = useAsync(async (api) => {
     const [project, forms, features, imagery] = await Promise.all([api.getProject(projectId), api.listForms(projectId), api.listFeatures(projectId), api.listImagery(projectId)]);
     return { project, forms: forms.filter((f) => f.status === "published"), features, imagery };
@@ -96,7 +97,7 @@ export default function EditorPage() {
   }
 
   async function remove(f: Feature) {
-    if (!window.confirm("Delete this feature? It stays in the history.")) return;
+    if (!(await confirm({ title: "Delete this feature?", message: "It stays in the history.", confirmLabel: "Delete feature", danger: true }))) return;
     try {
       await (await loadApi()).deleteFeature(f.id);
       setData({ ...data!, features: data!.features.filter((x) => x.id !== f.id) });

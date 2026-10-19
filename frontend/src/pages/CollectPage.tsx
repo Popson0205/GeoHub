@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
 import SignaturePad from "../components/SignaturePad";
 import MapView, { type MapFeature } from "../components/MapView";
-import { Button, ErrorState, Loading, useToast } from "../components/ui";
+import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
@@ -20,6 +20,7 @@ const DRAFT_ID = "__draft";
 export default function CollectPage() {
   const { projectId = "" } = useParams();
   const toast = useToast();
+  const confirm = useConfirm();
   const online = useOnline();
 
   const [forms, setForms] = useState<Form[] | null>(null);
@@ -236,7 +237,7 @@ export default function CollectPage() {
                   <small>{f.sync === "synced" ? "Synced" : f.sync === "pending" ? "Waiting to sync" : f.sync === "conflict" ? "Needs a decision" : `Not accepted: ${Object.values(f.errors ?? {}).join(" ")}`}</small>
                 </div>
                 <Button small onClick={() => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); }}>Edit</Button>
-                <Button small variant="danger" onClick={() => { if (window.confirm("Delete this record?")) void deleteFeatureLocal(f.id); }}>Delete</Button>
+                <Button small variant="danger" onClick={async () => { if (await confirm({ title: "Delete this record?", message: "It is removed from this device and will not be sent.", confirmLabel: "Delete record", danger: true })) void deleteFeatureLocal(f.id); }}>Delete</Button>
               </div>
             ))}
           </>

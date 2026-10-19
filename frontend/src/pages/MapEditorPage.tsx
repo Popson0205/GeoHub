@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import AttributeTable, { type TableRow } from "../components/AttributeTable";
 import { IconButton, type IconName } from "../components/icons";
 import MapView, { type Bbox, type MapFeature, type MapImagery } from "../components/MapView";
-import { Button, ErrorState, Loading, useToast } from "../components/ui";
+import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
 import { extOf, NEEDS_BOUNDS_EXTS, RASTER_EXTS } from "../lib/fileTypes";
 import { useAuth } from "../lib/auth";
@@ -94,6 +94,8 @@ function TagRows({ rows, onChange, disabled }: { rows: Tag[]; onChange: (rows: T
 export default function MapEditorPage() {
   const { mapId = "" } = useParams();
   const toast = useToast();
+  const confirm = useConfirm();
+  const nav = useNavigate();
   const { user } = useAuth();
   const { data, error, loading, reload, setData } = useAsync(async (api) => {
     const [map, features, imagery] = await Promise.all([api.getMap(mapId), api.listMapFeatures(mapId), api.listMapImagery(mapId)]);
@@ -398,8 +400,14 @@ export default function MapEditorPage() {
     } catch (e) { toast(e instanceof Error ? e.message : "Could not merge.", "error"); }
     finally { setWorking(false); }
   }
-  function discardAll() {
-    if (!window.confirm(`Throw away ${typeText(counts.total, "unsaved change", "unsaved changes")}?`)) return;
+  /** Leaving with unsaved work asks first; the link is held back until the answer is in. */
+  function leaveGuard(e: { preventDefault: () => void }, to: string) {
+    if (!dirty) return;
+    e.preventDefault();
+    void confirm({ title: "Leave without saving?", message: "Your changes are kept on this device, but are not saved to the map yet.", confirmLabel: "Leave anyway", cancelLabel: "Stay", danger: true }).then((ok) => { if (ok) nav(to); });
+  }
+  async function discardAll() {
+    if (!(await confirm({ title: `Discard ${typeText(counts.total, "unsaved change", "unsaved changes")}?`, message: "Everything you drew or edited since the last save is thrown away.", confirmLabel: "Discard changes", danger: true }))) return;
     stage({});
     setSelectedIds([]);
   }
@@ -534,7 +542,7 @@ export default function MapEditorPage() {
     finally { setBusy(""); if (imgRef.current) imgRef.current.value = ""; }
   }
   async function removeAsset(a: ImageryAsset) {
-    if (!window.confirm(`Remove "${a.name}" from this map?`)) return;
+    if (!(await confirm({ title: `Remove "${a.name}"?`, message: "The imagery is removed from this map. Features you drew stay.", confirmLabel: "Remove imagery", danger: true }))) return;
     try { await (await loadApi()).deleteImagery(a.id); await refreshImagery(); } catch (e) { toast(e instanceof Error ? e.message : "Could not remove it.", "error"); }
   }
   const toggle = (id: string, on: boolean) => setHidden((h) => { const n = new Set(h); if (on) n.delete(id); else n.add(id); return n; });
@@ -585,11 +593,11 @@ export default function MapEditorPage() {
     <div className="editor" style={{ flex: 1 }}>
       <aside className="side left" aria-label="Map tools and imagery">
         <div className="stack">
-          <Link to="/maps" className="field-hint" onClick={(e) => { if (dirty && !window.confirm("You have unsaved changes. They are kept on this device, but are not saved to the map yet. Leave anyway?")) e.preventDefault(); }}>← All maps</Link>
+          <Link to="/maps" className="field-hint" onClick={(e) => leaveGuard(e, "/maps")}>← All maps</Link>
           <input aria-label="Map name" value={name ?? data.map.name} onChange={(e) => setName(e.target.value)} onBlur={rename}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ font: "600 16px var(--font-ui)" }} />
           <span className="field-hint">{data.features.length} saved feature{data.features.length === 1 ? "" : "s"}{role !== "owner" ? ` · you are a ${role}` : ""}</span>
-          <Link className="btn btn-sm" to={`/maps/${mapId}/portal`} onClick={(e) => { if (dirty && !window.confirm("You have unsaved changes. They are kept on this device, but are not saved to the map yet. Leave anyway?")) e.preventDefault(); }}>
+          <Link className="btn btn-sm" to={`/maps/${mapId}/portal`} onClick={(e) => leaveGuard(e, `/maps/${mapId}/portal`)}>
             {data.map.is_campaign ? "Campaign portal" : "Team, review & publish"} →
           </Link>
           {data.map.is_campaign && data.map.campaign_status && <span className="field-hint">{data.map.goal ? `${data.map.goal} · ` : ""}Campaign {data.map.campaign_status === "open" ? "is open" : data.map.campaign_status === "upcoming" ? "has not started" : "has ended"}.</span>}

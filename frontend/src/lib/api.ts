@@ -84,7 +84,8 @@ export interface Api {
 
   listDatasets(q?: string): Promise<Dataset[]>;
   getDataset(slug: string): Promise<Dataset>;
-  datasetFeatures(slug: string): Promise<FeatureCollection>;
+  /** All features of a dataset; `limit` stops after that many (enough for a preview). */
+  datasetFeatures(slug: string, opts?: { limit?: number }): Promise<FeatureCollection>;
   publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<Dataset>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
   getJob(id: string): Promise<Job>;
@@ -447,14 +448,16 @@ class HttpApi implements Api {
     return out;
   }
   async getDataset(slug: string) { return toDataset(await this.req("GET", `/datasets/${slug}`)); }
-  async datasetFeatures(slug: string) {
+  async datasetFeatures(slug: string, opts?: { limit?: number }) {
     const out: FeatureCollection = { type: "FeatureCollection", features: [] };
+    const cap = opts?.limit;
     let cursor: string | null = null;
     do {
-      const page: Wire = await this.req("GET", `/datasets/${slug}/features?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      const size = cap ? Math.min(1000, cap - out.features.length) : 1000;
+      const page: Wire = await this.req("GET", `/datasets/${slug}/features?limit=${size}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
       out.features.push(...page.features);
       cursor = page.next_cursor;
-    } while (cursor);
+    } while (cursor && (!cap || out.features.length < cap));
     return out;
   }
   async publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }) {

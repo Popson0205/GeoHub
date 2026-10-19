@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import DatasetThumb from "../components/DatasetThumb";
 import { Button, EmptyState, ErrorState, Loading } from "../components/ui";
 import { useAsync } from "../lib/hooks";
 
@@ -29,7 +30,7 @@ export default function HubPage() {
         <div className="stack">
           {data?.map((d) => (
             <article className="dataset" key={d.slug}>
-              <div className="thumb" aria-hidden="true" />
+              <DatasetThumb slug={d.slug} version={d.latest_version} title={d.title} />
               <div>
                 <h3><Link to={`/hub/${d.slug}`}>{d.title}</Link></h3>
                 <p>{d.description || "No description yet."} {d.feature_count} features, updated {new Date(d.updated_at).toLocaleDateString()}.</p>

@@ -452,3 +452,21 @@ form.card:hover, .stat:hover { box-shadow: var(--shadow-1); border-color: var(--
 .card .actions { align-items: center; }
 .card .actions .btn { padding: 0 14px; }
 .card .actions .btn-danger { flex: 0 0 auto; margin-left: auto; border-color: transparent; box-shadow: none; background: transparent; }
+
+
+/* ---- confirmation dialog ---- */
+.dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(16, 36, 31, .45); animation: dialog-fade .12s ease-out; }
+.dialog { width: 100%; max-width: 440px; background: var(--card); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-2), 0 24px 64px rgba(16, 36, 31, .25); display: flex; flex-direction: column; gap: 12px; animation: dialog-pop .14s ease-out; }
+.dialog h2 { font-size: 19px; }
+.dialog-body { color: var(--muted); font-size: 14px; line-height: 1.55; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+@keyframes dialog-fade { from { opacity: 0; } }
+@keyframes dialog-pop { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+@media (max-width: 480px) { .dialog-actions { flex-direction: column-reverse; } .dialog-actions .btn { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .dialog-backdrop, .dialog { animation: none; } }
+
+/* Data hub thumbnails: a live preview map in place of the contour texture */
+.thumb-map { position: relative; overflow: hidden; background: #cfd8c4; }
+.thumb-map .map-wrap { position: absolute; inset: 0; flex: none; min-height: 0; }
+.thumb-map .maplibregl-ctrl-attrib { font-size: 9px; }
+.thumb-map .maplibregl-canvas { cursor: default; }

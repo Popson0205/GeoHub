@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import CalcEditor from "../components/CalcEditor";
 import ConditionEditor from "../components/ConditionEditor";
 import FormRenderer from "../components/FormRenderer";
-import { Button, ErrorState, Loading, useToast } from "../components/ui";
+import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import {
   PALETTE, PALETTE_CATEGORIES, TYPE_SPECS, allFields, allows, findField, hasChoices, inRepeat, isContainer, mapField, moveField, moveInto, newField, topLevelFields,
@@ -26,6 +26,7 @@ const optNum = (s: string): number | undefined => (s === "" ? undefined : Number
 export default function BuilderPage() {
   const { projectId = "", formId = "" } = useParams();
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, error, loading, reload } = useAsync((api) => api.getForm(formId), [formId]);
   const [form, setForm] = useState<Form | null>(null);
   const [sel, setSel] = useState<string | null>(null);
@@ -55,12 +56,12 @@ export default function BuilderPage() {
     setFields(into ? mapField(form!.fields, into.id, (p) => ({ ...p, children: [...(p.children ?? []), f] })) : [...form!.fields, f]);
     setSel(f.id);
   }
-  function remove(id: string) {
+  async function remove(id: string) {
     const target = findField(form!.fields, id);
     const ids = new Set(allFields(target?.children ?? []).map((c) => c.id).concat(id));
     const uses = (f: FormField) => [...(f.visible ? conditionRefs(f.visible) : []), ...(f.required_if ? conditionRefs(f.required_if) : []), ...(f.calc ? calcRefs(f.calc) : [])].some((r) => ids.has(r));
     const users = allFields(form!.fields).filter((f) => !ids.has(f.id) && uses(f));
-    if (users.length && !window.confirm(`${users.map((u) => u.label).join(", ")} use${users.length === 1 ? "s" : ""} this field in a rule. Remove it anyway?`)) return;
+    if (users.length && !(await confirm({ title: "Remove this field?", message: `${users.map((u) => u.label).join(", ")} use${users.length === 1 ? "s" : ""} this field in a rule. Removing it breaks that rule.`, confirmLabel: "Remove anyway", danger: true }))) return;
     setFields(mapField(form!.fields, id, () => null));
     setSel(null);
   }

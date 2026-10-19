@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Button, ErrorState, Loading, useToast } from "../../components/ui";
+import { Button, ErrorState, Loading, useConfirm, useToast } from "../../components/ui";
 import { loadApi } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useAsync } from "../../lib/hooks";
@@ -8,6 +8,7 @@ import { fmtDate } from "./shared";
 
 export default function TeamTab({ map, onChanged }: { map: WorkMap; onChanged: () => Promise<void> | void }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const nav = useNavigate();
   const { user } = useAuth();
   const isOwner = map.role === "owner";
@@ -23,7 +24,7 @@ export default function TeamTab({ map, onChanged }: { map: WorkMap; onChanged: (
     catch { toast("Could not copy. Select the link and copy it by hand.", "error"); }
   }
   async function leave() {
-    if (!window.confirm("Leave this map? What you drew stays on the map.")) return;
+    if (!(await confirm({ title: "Leave this map?", message: "What you drew stays on the map.", confirmLabel: "Leave map", danger: true }))) return;
     try { await (await loadApi()).removeMember(map.id, user!.id); toast("You left the map.", "success"); nav("/maps"); }
     catch (e) { toast(e instanceof Error ? e.message : "Could not leave.", "error"); }
   }
@@ -64,7 +65,7 @@ export default function TeamTab({ map, onChanged }: { map: WorkMap; onChanged: (
                     </td>
                     <td>{m.joined_at ? fmtDate(m.joined_at) : "—"}</td>
                     <td>
-                      {isOwner && m.role !== "owner" && <Button small variant="danger" onClick={() => window.confirm(`Remove ${m.name} from this map? What they drew stays.`) && run(async () => (await loadApi()).removeMember(map.id, m.user_id), `${m.name} was removed.`)}>Remove</Button>}
+                      {isOwner && m.role !== "owner" && <Button small variant="danger" onClick={async () => { if (await confirm({ title: `Remove ${m.name}?`, message: "They lose access to this map. What they drew stays.", confirmLabel: "Remove", danger: true })) await run(async () => (await loadApi()).removeMember(map.id, m.user_id), `${m.name} was removed.`); }}>Remove</Button>}
                       {!isOwner && m.user_id === user?.id && <Button small variant="danger" onClick={leave}>Leave</Button>}
                     </td>
                   </tr>

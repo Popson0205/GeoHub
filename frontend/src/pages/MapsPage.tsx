@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, EmptyState, ErrorState, Loading, useToast } from "../components/ui";
+import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 
 /** Mapping app home: your maps. A map is a workspace to digitise features over imagery. No forms, no projects. */
 export default function MapsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, error, loading, reload } = useAsync((api) => api.listMaps(), []);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -33,7 +34,7 @@ export default function MapsPage() {
     finally { setBusy(false); }
   }
   async function remove(id: string, title: string) {
-    if (!window.confirm(`Delete "${title}" with all its features and imagery? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete "${title}"?`, message: "This permanently deletes the map with all its features and imagery. This cannot be undone.", confirmLabel: "Delete map", danger: true }))) return;
     try { await (await loadApi()).deleteMap(id); toast("Map deleted.", "success"); await reload(); }
     catch (err) { toast(err instanceof Error ? err.message : "Could not delete the map.", "error"); }
   }

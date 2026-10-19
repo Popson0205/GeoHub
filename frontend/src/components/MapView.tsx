@@ -77,6 +77,8 @@ interface Props_ {
   fitKey?: string;
   geolocate?: boolean;
   label?: string;
+  /** A small, static map for thumbnails: no controls, no panning or zooming, no editing. */
+  preview?: boolean;
   /** Extra overlays drawn on top of the map (for example a toolbar). */
   children?: ReactNode;
 }
@@ -107,7 +109,7 @@ function asFC(features: MapFeature[]) {
   };
 }
 
-export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", children }: Props_) {
+export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", preview = false, children }: Props_) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -153,11 +155,11 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
 
   useEffect(() => {
     if (!box.current) return;
-    const map = new maplibregl.Map({ container: box.current, style: STYLE, center: DEFAULT_CENTER, zoom: 13, attributionControl: { compact: true } });
+    const map = new maplibregl.Map({ container: box.current, style: STYLE, center: DEFAULT_CENTER, zoom: 13, attributionControl: { compact: true }, interactive: !preview });
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    if (geolocate) map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true }), "top-right");
+    if (!preview) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    if (!preview) map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+    if (geolocate && !preview) map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true }), "top-right");
 
     map.on("load", () => {
       map.addSource("features", { type: "geojson", data: empty as never });
@@ -448,14 +450,14 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     const bb = bboxOf(features.map((f) => f.geometry));
     if (!bb) return;
     fitted.current = fitKey ?? "";
-    map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: 60, maxZoom: 17, duration: 0 });
+    map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: preview ? 14 : 60, maxZoom: preview ? 16 : 17, duration: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, fitKey, features.length]);
 
   const needed = drawMode === "LineString" ? 2 : 3;
   return (
     <div className="map-wrap">
-      <div ref={box} className="map" role="region" aria-label={label} />
+      <div ref={box} className="map" role={preview ? "img" : "region"} aria-label={label} />
       {children}
       {drawMode && (
         <div className="map-hint" role="status">

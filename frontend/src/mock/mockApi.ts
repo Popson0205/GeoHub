@@ -523,13 +523,14 @@ export class MockApi implements Api {
     if (!d) throw new ApiError(404, "Dataset not found.");
     return d;
   }
-  async datasetFeatures(slug: string): Promise<FeatureCollection> {
+  async datasetFeatures(slug: string, opts?: { limit?: number }): Promise<FeatureCollection> {
     const d = await this.getDataset(slug);
-    if (d.map_id) return { type: "FeatureCollection", features: this.s.mapSnapshots?.[slug] ?? [] };
+    const cut = <T,>(l: T[]) => (opts?.limit ? l.slice(0, opts.limit) : l);
+    if (d.map_id) return { type: "FeatureCollection", features: cut(this.s.mapSnapshots?.[slug] ?? []) };
     return {
       type: "FeatureCollection",
-      features: this.s.features.filter((f) => f.project_id === d.project_id && !f.deleted)
-        .map((f) => ({ type: "Feature" as const, id: f.id, geometry: f.geometry, properties: f.properties })),
+      features: cut(this.s.features.filter((f) => f.project_id === d.project_id && !f.deleted)
+        .map((f) => ({ type: "Feature" as const, id: f.id, geometry: f.geometry, properties: f.properties }))),
     };
   }
   async publishDataset(projectId: string, input: { form_id?: string; title: string; description: string; license: License }) {
