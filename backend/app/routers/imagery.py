@@ -1,3 +1,4 @@
+import logging
 import math
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from ..logging_setup import client_ip
 from ..pagination import Page, decode_cursor, page_from_offset
 from ..schemas import ImageryCompleteIn, ImageryIn, ImageryOut, ImageryUploadOut
 
+log = logging.getLogger("imagery")
 router = APIRouter(tags=["imagery"])
 MB = 1024 * 1024
 
@@ -81,8 +83,16 @@ async def _start(conn, user, scope_col: str, scope_id, body: ImageryIn, vector_h
     iid = (await cur.fetchone())["id"]
     ext = formats.ext(body.filename)
     key = f"imagery/{scope_id}/{iid}/source{ext}"
-    mp = await storage.run(storage.internal.create_multipart_upload, Bucket=settings.s3_bucket, Key=key,
-                           ContentType=formats.RASTER[ext])
+    try:
+        mp = await storage.run(storage.internal.create_multipart_upload, Bucket=settings.s3_bucket, Key=key,
+                               ContentType=formats.RASTER[ext])
+    except Exception as e:  # noqa: BLE001  storage misconfiguration: say what the storage service answered
+        await conn.execute("DELETE FROM imagery_assets WHERE id = %s", (iid,))
+        err = getattr(e, "response", {}).get("Error", {}) if isinstance(e, ClientError) else {}
+        log.error("create_multipart_upload failed for bucket=%r key=%r: %s", settings.s3_bucket, key, e)
+        raise Problem(502, f"Storage refused the upload ({err.get('Code') or type(e).__name__}: "
+                           f"{err.get('Message') or e}). Check S3_BUCKET, S3_ENDPOINT and the access key's permissions.",
+                      code="storage_error")
     await conn.execute("UPDATE imagery_assets SET source_key = %s, upload_id = %s WHERE id = %s",
                        (key, mp["UploadId"], iid))
     return {"id": iid, "upload_id": mp["UploadId"], "part_size": part_size,
