@@ -1,6 +1,6 @@
 import { config } from "./config";
 import type {
-  Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, GeometryType, ImageryAsset,
+  Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
   Activity, ContributorsReport, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
@@ -107,6 +107,8 @@ export const tokens = {
 // ---- wire formats (what the backend sends) -> UI types ----
 const GEOM_FROM_API: Record<string, GeometryType> = { point: "Point", line: "LineString", area: "Polygon" };
 const GEOM_TO_API: Record<GeometryType, string> = { Point: "point", LineString: "line", Polygon: "area" };
+/** What the server accepts for media fields (photos, signatures, audio, video, documents). Keep in step with backend/app/schemas.py. */
+export const MEDIA_TYPES_OK = ["image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp4", "audio/webm", "audio/ogg", "audio/wav", "video/mp4", "video/webm", "video/quicktime", "application/pdf", "text/plain", "text/csv"];
 const ALL_FORMATS: ExportFormat[] = ["geojson", "gpkg", "shp", "csv"];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -116,6 +118,13 @@ const toProject = (p: Wire): Project => ({
   id: p.id, name: p.name, description: p.description, role: p.role,
   feature_count: p.feature_count, collector_count: p.collector_count, updated_at: p.last_update ?? p.created_at,
 });
+/** The server always sends `choices` (empty when a field has none); the UI treats "no choices" as absent. Groups and repeats nest. */
+const fromWireField = (x: Wire): FormField => ({
+  ...x,
+  choices: x.choices?.length ? x.choices : undefined,
+  children: x.children ? x.children.map(fromWireField) : undefined,
+});
+const toWireField = (f: FormField): Wire => ({ ...f, choices: f.choices ?? [], children: f.children ? f.children.map(toWireField) : undefined });
 const toForm = (f: Wire, projectId?: string): Form => ({
   id: f.id ?? f.form_id,
   project_id: f.project_id ?? projectId ?? "",
@@ -123,7 +132,7 @@ const toForm = (f: Wire, projectId?: string): Form => ({
   geometry_type: GEOM_FROM_API[f.geometry_type] ?? "Point",
   version: f.version,
   status: f.status ?? "published", // bundle forms are published versions
-  fields: (f.fields ?? []).map((x: Wire) => ({ ...x, choices: x.choices?.length ? x.choices : undefined })),
+  fields: (f.fields ?? []).map(fromWireField),
 });
 const toFeature = (f: Wire): Feature => ({
   id: f.id, project_id: f.project_id, form_id: f.form_id, form_version: f.form_version,
@@ -253,7 +262,7 @@ class HttpApi implements Api {
     return toForm(await this.req("POST", `/projects/${projectId}/forms`, { name, geometry_type: GEOM_TO_API[geometry_type] }), projectId);
   }
   async saveForm(form: Form) {
-    return toForm(await this.req("PATCH", `/forms/${form.id}`, { name: form.name, fields: form.fields.map((f) => ({ ...f, choices: f.choices ?? [] })) }));
+    return toForm(await this.req("PATCH", `/forms/${form.id}`, { name: form.name, fields: form.fields.map(toWireField) }));
   }
   async publishForm(id: string) { return toForm(await this.req("POST", `/forms/${id}/publish`)); }
 
@@ -294,12 +303,12 @@ class HttpApi implements Api {
     };
   }
   async uploadMedia(projectId: string, featureId: string, mediaId: string, blob: Blob, fieldId?: string) {
-    const content_type = ["image/jpeg", "image/png", "image/webp"].includes(blob.type) ? blob.type : "image/jpeg";
+    const content_type = MEDIA_TYPES_OK.includes(blob.type) ? blob.type : "image/jpeg";
     const up = await this.req<{ upload_url: string; headers: Record<string, string> }>("POST", "/media/upload-url", {
       id: mediaId, project_id: projectId, content_type, size: blob.size,
     });
     const put = await fetch(up.upload_url, { method: "PUT", body: blob, headers: up.headers });
-    if (!put.ok) throw new ApiError(put.status, "Photo upload failed");
+    if (!put.ok) throw new ApiError(put.status, "Upload failed");
     await this.req("POST", `/media/${mediaId}/complete`, { feature_id: featureId, field_id: fieldId ?? null });
   }
 

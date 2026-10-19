@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import FormRenderer from "../components/FormRenderer";
+import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
+import SignaturePad from "../components/SignaturePad";
 import MapView, { type MapFeature } from "../components/MapView";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
-import { uuid, validateProperties } from "../lib/forms";
+import { topLevelFields } from "../lib/fieldSpec";
+import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useOnline } from "../lib/hooks";
 import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, type SyncReport } from "../lib/sync";
 import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props } from "../lib/types";
@@ -79,7 +81,7 @@ export default function CollectPage() {
     return list;
   }, [features, draft]);
 
-  function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: {}, newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
+  function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: applyDefaults(form.fields), newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
   async function cancelDraft() {
     if (draft?.newMedia.length) await db.media.bulkDelete(draft.newMedia);
     setDraft(null); setPlacing(false); setErrors({});
@@ -105,35 +107,56 @@ export default function CollectPage() {
     const errs = validateProperties(form, draft.props);
     setErrors(errs);
     if (Object.keys(errs).length) { toast("Fix the highlighted fields first.", "error"); return; }
-    await saveFeatureLocal({ id: draft.id, project_id: projectId, form, geometry: draft.geometry, properties: draft.props });
+    await saveFeatureLocal({ id: draft.id, project_id: projectId, form, geometry: draft.geometry, properties: pruneProperties(form, draft.props) });
     toast(navigator.onLine ? "Saved. Syncing…" : "Saved on this device. It will sync when you're online.", "success");
     setDraft(null); setPlacing(false);
     void sync(true);
   }
 
-  async function addPhoto(field: FormField, file: File | undefined) {
+  async function addMedia(field: FormField, file: Blob | undefined, ctx: MediaCtx) {
     if (!file || !draft) return;
-    const ids = Array.isArray(draft.props[field.id]) ? (draft.props[field.id] as string[]) : [];
-    if (ids.length >= (field.max_items ?? 3)) { toast(`You can add up to ${field.max_items ?? 3} photos here.`, "error"); return; }
+    const cap = field.max_items ?? (field.type === "signature" ? 1 : field.type === "photo" ? 3 : 10);
+    if (ctx.value.length >= cap) { toast(`You can add up to ${cap} here.`, "error"); return; }
     const id = uuid();
-    await db.media.add({ id, feature_id: draft.id, field_id: field.id, name: file.name || `${id}.jpg`, blob: file, uploaded: 0 });
-    setDraft((d) => d && { ...d, props: { ...d.props, [field.id]: [...ids, id] }, newMedia: [...d.newMedia, id] });
+    const name = file instanceof File && file.name ? file.name : `${id}.${file.type.split("/")[1] ?? "bin"}`;
+    await db.media.add({ id, feature_id: draft.id, field_id: field.id, name, blob: file, uploaded: 0 });
+    ctx.set([...ctx.value, id]);
+    setDraft((d) => d && { ...d, newMedia: [...d.newMedia, id] });
   }
-  const renderPhoto = (field: FormField) => {
-    const ids = Array.isArray(draft?.props[field.id]) ? (draft!.props[field.id] as string[]) : [];
+  async function dropMedia(id: string, ctx: MediaCtx) {
+    ctx.set(ctx.value.filter((x) => x !== id));
+    const m = await db.media.get(id);
+    if (m && m.uploaded === 0) await db.media.delete(id);
+    setDraft((d) => d && { ...d, newMedia: d.newMedia.filter((x) => x !== id) });
+  }
+  const ACCEPT: Record<string, string> = { photo: "image/*", audio: "audio/*", video: "video/*", file: "application/pdf,text/plain,text/csv,image/*" };
+  const renderMedia = (field: FormField, ctx: MediaCtx) => {
+    const cap = field.max_items ?? (field.type === "signature" ? 1 : field.type === "photo" ? 3 : 10);
     return (
       <>
-        <div className="photos">{ids.map((id) => photoUrls[id] && <img key={id} src={photoUrls[id]} alt="Captured photo" />)}</div>
-        <label className="upload">Take photo ({ids.length}/{field.max_items ?? 3})
-          <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(e) => { void addPhoto(field, e.target.files?.[0]); e.target.value = ""; }} />
-        </label>
+        <div className="photos">
+          {ctx.value.map((id, i) => (
+            <span className="media-item" key={id}>
+              {photoUrls[id] && media.find((m) => m.id === id)?.blob.type.startsWith("image/") ? <img src={photoUrls[id]} alt={`${field.label} ${i + 1}`} /> : <span className="media-chip">{field.type} {i + 1}</span>}
+              <button type="button" className="media-x" aria-label={`Remove ${field.label} ${i + 1}`} onClick={() => void dropMedia(id, ctx)}>×</button>
+            </span>
+          ))}
+        </div>
+        {field.type === "signature" ? (
+          <SignaturePad disabled={ctx.value.length >= cap} onDone={(png) => void addMedia(field, png, ctx)} />
+        ) : (
+          <label className="upload">{field.type === "photo" ? "Take photo" : field.type === "audio" ? "Record audio" : field.type === "video" ? "Record video" : "Attach file"} ({ctx.value.length}/{cap})
+            <input className="sr-only" type="file" accept={ACCEPT[field.type]} {...(field.type === "photo" ? (field.appearance === "camera_only" ? { capture: "environment" as const } : {}) : field.type === "file" ? {} : { capture: true })}
+              onChange={(e) => { void addMedia(field, e.target.files?.[0], ctx); e.target.value = ""; }} />
+          </label>
+        )}
       </>
     );
   };
 
   function titleOf(f: LocalFeature): string {
     const fm = forms?.find((x) => x.id === f.form_id);
-    const textField = fm?.fields.find((x) => x.type === "text");
+    const textField = fm ? topLevelFields(fm.fields).find((x) => x.type === "text") : undefined;
     return (textField && String(f.properties[textField.id] ?? "")) || fm?.name || "Feature";
   }
 
@@ -187,7 +210,7 @@ export default function CollectPage() {
         ) : form && (
           <>
             <div className="row"><h2 className="grow">{draft.existing ? "Edit" : "New"} {form.name.toLowerCase()}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m</span>}</div>
-            <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft({ ...draft, props: p })} errors={errors} renderPhoto={renderPhoto} />
+            <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
             <div className="row" style={{ position: "sticky", bottom: 0, background: "#fff", padding: "8px 0" }}>
               <Button onClick={cancelDraft}>Cancel</Button>
               <Button className="grow" variant="accent" onClick={save}>{online ? "Save record" : "Save on this device"}</Button>

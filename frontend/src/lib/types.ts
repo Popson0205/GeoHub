@@ -23,14 +23,67 @@ export interface Project {
   updated_at: string;
 }
 
-export type FieldType = "text" | "number" | "choice" | "multi_choice" | "date" | "photo";
+// ---- form fields ----
+// A form is a tree of fields. Three layers, kept apart on purpose:
+//   type        what the element is (decides what is stored and how it is validated)
+//   appearance  how it is drawn (decides which component renders it)
+//   rules       when it applies and what it must satisfy (visible, required_if, min, max, pattern ...)
+// Rules are flat properties on the field, so forms published before this model existed stay valid unchanged.
+// The registry in lib/fieldSpec.ts says which properties apply to which type.
+export type InputType = "text" | "number" | "date" | "time" | "datetime" | "choice" | "multi_choice" | "boolean" | "ranking" | "barcode";
+export type MediaType = "photo" | "audio" | "video" | "file" | "signature";
+export type FieldType = InputType | MediaType | "note" | "calculation" | "group" | "repeat";
+
+/** Declarative on purpose: no scripts, no eval. The server re-runs the same rules. */
+export type Condition =
+  | { field: string; op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte"; value: string | number | boolean }
+  | { field: string; op: "in" | "not_in" | "contains"; value: (string | number)[] | string | number }
+  | { field: string; op: "filled" | "empty" }
+  | { all: Condition[] }
+  | { any: Condition[] }
+  | { not: Condition };
+export type Operand = { field: string } | { const: string | number };
+/** A closed set of operations, not a formula string. */
+export type Calc =
+  | { fn: "concat"; args: Operand[]; sep?: string }
+  | { fn: "sum" | "product" | "min" | "max" | "avg"; args: Operand[] }
+  | { fn: "diff" | "ratio"; args: [Operand, Operand] }
+  | { fn: "count_selected"; args: [Operand] }
+  | { fn: "today" | "now" };
+
 export interface FormField {
   id: string;
   label: string;
   type: FieldType;
+  appearance?: string;
+  hint?: string;
+  placeholder?: string;
+  // rules
   required?: boolean;
-  choices?: string[];
+  required_if?: Condition;
+  visible?: Condition;
+  readonly?: boolean;
+  default?: string | number | boolean | string[];
+  min?: number | string;
+  max?: number | string;
+  min_length?: number;
+  max_length?: number;
+  min_items?: number;
   max_items?: number;
+  pattern?: string;
+  pattern_message?: string;
+  // per type
+  choices?: string[];
+  integer?: boolean;          // number
+  decimals?: number;          // number
+  unit?: string;              // number
+  must_be_true?: boolean;     // boolean; with required = an acknowledgement
+  true_label?: string;
+  false_label?: string;
+  text?: string;              // note
+  calc?: Calc;                // calculation
+  store?: boolean;            // calculation: false = shown but not saved
+  children?: FormField[];     // group, repeat
 }
 export interface Form {
   id: string;

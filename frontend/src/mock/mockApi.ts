@@ -1,4 +1,5 @@
 import { ApiError, tokens, type Api } from "../lib/api";
+import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
@@ -195,7 +196,7 @@ export class MockApi implements Api {
     let imported = 0; const errors: { row: number; message: string }[] = [];
     (data.features ?? []).forEach((f, i) => {
       if (!f.geometry || f.geometry.type !== form.geometry_type) { errors.push({ row: i + 1, message: `geometry must be a ${form.geometry_type}` }); return; }
-      const props: Props = {}; for (const fld of form.fields) if (f.properties && fld.id in f.properties) props[fld.id] = f.properties[fld.id];
+      const props: Props = {}; for (const fld of topLevelFields(form.fields)) if (f.properties && fld.id in f.properties) props[fld.id] = f.properties[fld.id];
       this.s.features.push({ id: uuid(), project_id: projectId, form_id: form.id, form_version: form.version, geometry: f.geometry, properties: props, status: "submitted", version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq });
       imported++;
     });

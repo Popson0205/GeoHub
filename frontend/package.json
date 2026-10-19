@@ -12,7 +12,8 @@
     "cap:android": "npx cap open android",
     "test:sync": "vite-node scripts/sync-test.ts",
     "test:digitize": "vite-node scripts/digitize-test.ts",
-    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx"
+    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx",
+    "test:forms": "vite-node scripts/forms-test.ts"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",

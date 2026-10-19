@@ -5,7 +5,7 @@ import MapView, { type MapFeature } from "../components/MapView";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { ApiError, loadApi, type Api } from "../lib/api";
 import { ACCEPT, classifyFile, extOf, NEEDS_BOUNDS_EXTS, type Bounds } from "../lib/fileTypes";
-import { uuid, validateProperties } from "../lib/forms";
+import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useAsync } from "../lib/hooks";
 import { GEOMETRY_LABEL, type Feature, type Geometry, type Props } from "../lib/types";
 
@@ -78,13 +78,13 @@ export default function EditorPage() {
     try {
       const api = await loadApi();
       if (draft) {
-        const created = await api.createFeature({ id: uuid(), project_id: projectId, form_id: editingForm.id, form_version: editingForm.version, geometry: draft, properties: props });
+        const created = await api.createFeature({ id: uuid(), project_id: projectId, form_id: editingForm.id, form_version: editingForm.version, geometry: draft, properties: pruneProperties(editingForm, props) });
         setData({ ...data!, features: [...data!.features, created] });
         toast("Feature saved.", "success");
         cancelEdit();
         setSelectedId(created.id); setProps(created.properties);
       } else if (selected) {
-        const updated = await api.updateFeature(selected.id, { properties: props, base_version: selected.version });
+        const updated = await api.updateFeature(selected.id, { properties: pruneProperties(editingForm, props), base_version: selected.version });
         setData({ ...data!, features: data!.features.map((f) => (f.id === updated.id ? updated : f)) });
         toast("Changes saved.", "success");
       }
@@ -228,7 +228,7 @@ export default function EditorPage() {
         features={mapFeatures}
         selectedId={draft ? DRAFT_ID : selectedId}
         drawMode={drawing && activeForm ? activeForm.geometry_type : null}
-        onDraw={(g) => { setDraft(g); setDrawing(false); setProps({}); setErrors({}); }}
+        onDraw={(g) => { setDraft(g); setDrawing(false); setProps(editingForm ? applyDefaults(editingForm.fields) : {}); setErrors({}); }}
         onCancelDraw={() => setDrawing(false)}
         onSelect={select}
         imagery={liveImagery}
