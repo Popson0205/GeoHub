@@ -18,6 +18,7 @@ interface State {
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
 type MockFeat = GeoFeature & { map_id: string; created_by: string; author: string; status: ReviewStatus; review_note?: string; created_at: string; updated_at: string; updated_by?: string };
+const KIND_NAME = { point: "point", line: "line", area: "polygon" } as const;
 const GEOM_KIND = (g: Geometry): "point" | "line" | "area" => (g.type === "Point" ? "point" : g.type === "LineString" ? "line" : "area");
 
 const KEY = "geohub.mock.v1";
@@ -479,7 +480,7 @@ export class MockApi implements Api {
     if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(input.slug)) throw new ApiError(422, "The web address can only use lowercase letters, numbers and hyphens.", { slug: "invalid" });
     if (this.s.datasets.some((d) => d.slug === input.slug)) throw new ApiError(409, "That slug is taken.", { slug: "already in use" });
     const feats = this.snapshot(m, input.geometry_type);
-    if (!feats.length) throw new ApiError(409, `There are no approved ${input.geometry_type} features yet. Approve some in the Review tab first.`);
+    if (!feats.length) throw new ApiError(409, `There are no approved ${KIND_NAME[input.geometry_type]} features yet. Approve some in the Review tab first.`);
     const d: Dataset = {
       slug: input.slug, project_id: "", title: input.title, description: input.description, license: input.license, tags: input.tags, kind: "vector",
       feature_count: feats.length, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
@@ -499,7 +500,7 @@ export class MockApi implements Api {
     const { m } = this.need(d.map_id, "owner");
     const kind = this.s.mapKinds?.[slug] ?? "point";
     const feats = this.snapshot(m, kind);
-    if (!feats.length) throw new ApiError(409, `There are no approved ${kind} features to publish.`);
+    if (!feats.length) throw new ApiError(409, `There are no approved ${KIND_NAME[kind]} features to publish.`);
     (this.s.mapSnapshots ??= {})[slug] = feats;
     d.latest_version += 1; d.feature_count = feats.length; d.updated_at = new Date().toISOString();
     if (d.contributors) d.contributors = this.credits(m, kind);

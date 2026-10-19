@@ -7,7 +7,7 @@ export default function LandingPage() {
   const items = [
     {
       title: "Web mapping app",
-      text: "Digitise points, lines and areas over satellite imagery, like OpenStreetMap. Add imagery from a tile URL or upload a GeoTIFF, then export your map.",
+      text: "Digitise points, lines and polygons over satellite imagery, like OpenStreetMap. Add imagery from a tile URL or upload a GeoTIFF, then export your map.",
       to: "/maps", cta: user ? "Open the mapping app" : "Sign in to map", who: "For mappers and analysts",
     },
     {

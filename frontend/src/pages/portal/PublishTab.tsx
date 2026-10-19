@@ -23,11 +23,13 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
   const published = useAsync((api) => api.mapDatasets(map.id), [map.id]);
   const approved = useMemo(() => { const c: Record<Kind, number> = { point: 0, line: 0, area: 0 }; for (const f of features) if (statusOf(f) === "approved") c[kindOf(f.geometry)]++; return c; }, [features]);
   const waiting = features.filter((f) => statusOf(f) === "submitted").length;
+  const NAME: Record<Kind, string> = { point: "point", line: "line", area: "polygon" };
+  const PLURAL: Record<Kind, string> = { point: "points", line: "lines", area: "polygons" };
   const first = (["area", "line", "point"] as Kind[]).find((k) => approved[k] > 0) ?? "area";
 
   const [kind, setKind] = useState<Kind>(first);
   const [title, setTitle] = useState(map.name);
-  const [slug, setSlug] = useState(`${slugify(map.name)}-${kind === "area" ? "areas" : kind === "line" ? "lines" : "points"}`);
+  const [slug, setSlug] = useState(`${slugify(map.name)}-${PLURAL[kind]}`);
   const [slugEdited, setSlugEdited] = useState(false);
   const [description, setDescription] = useState(map.description);
   const [license, setLicense] = useState<License>("CC BY 4.0");
@@ -38,7 +40,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
   const [done, setDone] = useState<string | null>(null);
   const [err, setErr] = useState("");
 
-  const suffix = (k: Kind) => (k === "area" ? "areas" : k === "line" ? "lines" : "points");
+  const suffix = (k: Kind) => PLURAL[k];
   function pickKind(k: Kind) { setKind(k); if (!slugEdited) setSlug(`${slugify(title || map.name)}-${suffix(k)}`); }
   function pickTitle(t: string) { setTitle(t); if (!slugEdited) setSlug(`${slugify(t)}-${suffix(kind)}`); }
 
@@ -73,7 +75,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
         <h2 style={{ margin: 0 }}>Publish to the Data hub</h2>
         <p style={{ margin: 0 }}>Only features a reviewer has <strong>approved</strong> are published, and a dataset holds one kind of feature.</p>
         <div className="stat-grid">
-          {(["area", "line", "point"] as Kind[]).map((k) => <div className="card stat" key={k}><strong>{approved[k]}</strong><span>approved {k === "area" ? "areas" : k === "line" ? "lines" : "points"}</span></div>)}
+          {(["area", "line", "point"] as Kind[]).map((k) => <div className="card stat" key={k}><strong>{approved[k]}</strong><span>approved {PLURAL[k]}</span></div>)}
           <div className="card stat"><strong>{waiting}</strong><span>still waiting for review</span></div>
         </div>
         {waiting > 0 && <p className="field-hint" style={{ margin: 0 }}>{plural(waiting, "feature")} will be left out until reviewed. <Link to="?tab=review">Go to Review</Link></p>}
@@ -101,7 +103,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
         <label className="check"><input type="checkbox" checked={credit} onChange={(e) => setCredit(e.target.checked)} />Credit contributors by name on the dataset page</label>
         {err && <span className="field-error" role="alert">{err}</span>}
         {done && <span role="status">Published. <Link to={`/hub/${done}`}>Open the dataset</Link></span>}
-        <div className="row"><Button type="submit" variant="primary" busy={busy} disabled={approved[kind] === 0}>{approved[kind] === 0 ? `No approved ${kind} features yet` : `Publish ${plural(approved[kind], kind === "area" ? "area" : kind)}`}</Button></div>
+        <div className="row"><Button type="submit" variant="primary" busy={busy} disabled={approved[kind] === 0}>{approved[kind] === 0 ? `No approved ${NAME[kind]} features yet` : `Publish ${plural(approved[kind], NAME[kind])}`}</Button></div>
       </form>
 
       <section className="card" aria-label="Published datasets">

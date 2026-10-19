@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AttributeTable, { type TableRow } from "../components/AttributeTable";
+import { IconButton, type IconName } from "../components/icons";
 import MapView, { type Bbox, type MapFeature, type MapImagery } from "../components/MapView";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
@@ -35,13 +36,14 @@ const COMMON_KEYS = ["name", "building", "highway", "landuse", "natural", "ameni
 /** What the person is doing on the map. Draw tools and Split/Cut stay on until they pick another tool or press Esc. */
 type Tool = "select" | "point" | "line" | "area" | "reshape" | "move" | "split" | "cut";
 const DRAW_GEOMETRY: Partial<Record<Tool, GeometryType>> = { point: "Point", line: "LineString", area: "Polygon", cut: "LineString" };
-const TOOL_LABEL: Record<Tool, string> = { select: "Select", point: "Point", line: "Line", area: "Area", reshape: "Reshape", move: "Move", split: "Split", cut: "Cut" };
-const TOOL_KEY: Record<Tool, string> = { select: "V", point: "P", line: "L", area: "A", reshape: "R", move: "M", split: "S", cut: "C" };
+const TOOL_LABEL: Record<Tool, string> = { select: "Select", point: "Point", line: "Line", area: "Polygon", reshape: "Reshape", move: "Move", split: "Split", cut: "Cut" };
+const TOOL_ICON: Record<Tool, IconName> = { select: "select", point: "point", line: "line", area: "polygon", reshape: "reshape", move: "move", split: "split", cut: "cut" };
+const TOOL_KEY: Record<Tool, string> = { select: "V", point: "P", line: "L", area: "G", reshape: "R", move: "M", split: "S", cut: "C" };
 const TOOL_HELP: Record<Tool, string> = {
   select: "Click a feature to select it. Hold Shift (or turn on Multi-select) to select several.",
   point: "Click the map to add points. The tool stays on; press Esc when you are done.",
-  line: "Click to add points, then double-click or press Enter to finish the line. The tool stays on for the next one.",
-  area: "Click to add corners, then double-click or press Enter to finish the area. The tool stays on for the next one.",
+  line: "Click to add points; a dashed segment follows the pointer. Double-click or press Enter to finish the line. The tool stays on for the next one.",
+  area: "Click to add corners. Click the green first point, double-click or press Enter to close the polygon. The tool stays on for the next one.",
   reshape: "Drag a point to move it. Drag a small midpoint to add a point. Right-click or double-click a point to remove it.",
   move: "Drag a selected feature to move it. Several selected features move together.",
   split: "Click a line where you want to cut it in two.",
@@ -350,7 +352,7 @@ export default function MapEditorPage() {
   function splitAt(id: string, pos: Position) {
     const f = byId.get(id);
     if (!f || !editable([id]).length) return;
-    if (f.geometry.type !== "LineString") { toast("Split works on lines. Use Cut to divide an area.", "error"); return; }
+    if (f.geometry.type !== "LineString") { toast("Split works on lines. Use Cut to divide a polygon.", "error"); return; }
     const pieces = splitLineAtPoint(f.geometry, pos);
     if (!pieces) { toast("Click along the line, not at its very end.", "error"); return; }
     const r = replaceWithPieces(now(), serverRef.current, id, pieces, uuid);
@@ -518,7 +520,7 @@ export default function MapEditorPage() {
   async function uploadImagery(file: File | undefined) {
     if (!file) return;
     if (!RASTER_EXTS.includes(extOf(file.name))) {
-      toast(`${extOf(file.name) || "This"} files are not imagery. Use TIFF, JPEG, PNG, JP2 and similar. For points, lines and areas use "Import data".`, "error");
+      toast(`${extOf(file.name) || "This"} files are not imagery. Use TIFF, JPEG, PNG, JP2 and similar. For points, lines and polygons use "Import data".`, "error");
       if (imgRef.current) imgRef.current.value = "";
       return;
     }
@@ -543,7 +545,7 @@ export default function MapEditorPage() {
     setBusy("import");
     try {
       const parsed = await readMapFile(file);
-      if (!parsed.length) throw new Error("No points, lines or areas were found in this file.");
+      if (!parsed.length) throw new Error("No points, lines or polygons were found in this file.");
       const r = await (await loadApi()).importMapFeatures(mapId, parsed);
       toast(`Imported ${r.imported} feature${r.imported === 1 ? "" : "s"}${r.rejected ? `, ${r.rejected} skipped (${r.errors[0]?.message ?? "invalid"})` : ""}.`, r.imported ? "success" : "error");
       setSelectedIds([]);
@@ -574,8 +576,8 @@ export default function MapEditorPage() {
   const drawPresets = PRESETS.filter((p) => p.geometry === drawGeom);
   const tileAssets = data.assets;
   const summaryBits = [counts.created && `${counts.created} new`, counts.modified && `${counts.modified} edited`, counts.deleted && `${counts.deleted} deleted`].filter(Boolean).join(" · ");
-  const toolBtn = (t: Tool, extra?: { disabled?: boolean }) => (
-    <Button key={t} small variant={tool === t ? "primary" : "default"} aria-pressed={tool === t} title={`${TOOL_LABEL[t]} (${TOOL_KEY[t]})`} disabled={extra?.disabled} onClick={() => chooseTool(tool === t && t !== "select" ? "select" : t)}>{TOOL_LABEL[t]}</Button>
+  const toolBtn = (t: Tool) => (
+    <IconButton key={t} icon={TOOL_ICON[t]} label={TOOL_LABEL[t]} shortcut={TOOL_KEY[t]} active={tool === t} aria-pressed={tool === t} onClick={() => chooseTool(tool === t && t !== "select" ? "select" : t)} />
   );
   const saveLabel = dirty ? `Save all (${counts.total})` : "Save all";
 
@@ -605,7 +607,7 @@ export default function MapEditorPage() {
 
         <div className="stack">
           <h2>Draw</h2>
-          <div className="tool-grid">{(["point", "line", "area"] as Tool[]).map((t) => toolBtn(t))}</div>
+          <div className="icon-grid" role="toolbar" aria-label="Drawing tools">{(["point", "line", "area"] as Tool[]).map((t) => toolBtn(t))}</div>
           {drawGeom && tool !== "cut" && (
             <div className="stack" style={{ gap: 8 }}>
               <span className="field-hint">Tags for each new feature</span>
@@ -617,19 +619,22 @@ export default function MapEditorPage() {
 
         <div className="stack">
           <h2>Edit</h2>
-          <div className="tool-grid">
+          <div className="icon-grid" role="toolbar" aria-label="Editing tools">
             {(["select", "reshape", "move", "split", "cut"] as Tool[]).map((t) => toolBtn(t))}
-            <Button small disabled={sel.length < 2 || working} busy={working} title="Merge selected lines or areas into one" onClick={() => void mergeSelected()}>Merge</Button>
+            <IconButton icon="merge" label="Merge" disabled={sel.length < 2 || working} busy={working} title="Merge (join selected lines or polygons into one)" onClick={() => void mergeSelected()} />
           </div>
-          <div className="tool-grid">
-            <Button small disabled={!sel.length} onClick={duplicateSelected}>Duplicate</Button>
-            <Button small variant="danger" disabled={!sel.length || editable(sel, true).length === 0} title="Delete (Del)" onClick={removeSelected}>Delete</Button>
-            <Button small disabled={!hist.past.length} title="Undo (Ctrl+Z)" onClick={undoAct}>Undo</Button>
+          <div className="icon-grid" role="toolbar" aria-label="Actions">
+            <IconButton icon="duplicate" label="Duplicate" disabled={!sel.length} onClick={duplicateSelected} />
+            <IconButton icon="delete" label="Delete" shortcut="Del" danger disabled={!sel.length || editable(sel, true).length === 0} onClick={removeSelected} />
+            <IconButton icon="undo" label="Undo" shortcut="Ctrl+Z" disabled={!hist.past.length} onClick={undoAct} />
+            <IconButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" disabled={!hist.future.length} onClick={redoAct} />
+            <IconButton icon="table" label="Attribute table" shortcut="T" active={tableOpen} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} />
           </div>
-          <Button small variant={tableOpen ? "primary" : "default"} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} title="Attribute table (T)">{tableOpen ? "Hide attribute table" : "Show attribute table"}</Button>
-          <span className="field-hint">{TOOL_HELP[tool]}</span>
-          <label className="check"><input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />Snap to nearby points</label>
-          <label className="check"><input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} />Multi-select (tap to add)</label>
+          <div className="icon-grid" role="toolbar" aria-label="Options">
+            <IconButton icon="snap" label="Snap to nearby points" active={snap} aria-pressed={snap} onClick={() => setSnap((v) => !v)} />
+            <IconButton icon="multi" label="Multi-select (tap to add)" active={multi} aria-pressed={multi} onClick={() => setMulti((v) => !v)} />
+          </div>
+          <span className="field-hint"><strong>{TOOL_LABEL[tool]}.</strong> {TOOL_HELP[tool]}</span>
         </div>
 
         <div className="stack">
@@ -703,7 +708,7 @@ export default function MapEditorPage() {
             {busy === "import" ? "Importing…" : "Import data"}
             <input ref={dataRef} className="sr-only" type="file" accept={MAP_IMPORT_EXTS.join(",")} disabled={busy === "import"} onChange={(e) => importData(e.target.files?.[0])} />
           </label>
-          <span className="field-hint">GeoJSON, KML or GPX. Points, lines and areas are added to this map.</span>
+          <span className="field-hint">GeoJSON, KML or GPX. Points, lines and polygons are added to this map.</span>
           <Button onClick={exportData} disabled={!data.features.length}>Export GeoJSON</Button>
           {dirty && <span className="field-hint">The export has saved features only. Save your changes first to include them.</span>}
         </div>
@@ -732,10 +737,10 @@ export default function MapEditorPage() {
         label="Map"
       >
         <div className="map-bar" role="toolbar" aria-label="Edit actions">
-          <Button small variant="ghost" disabled={!hist.past.length} onClick={undoAct} title="Undo (Ctrl+Z)">↶ Undo</Button>
-          <Button small variant="ghost" disabled={!hist.future.length} onClick={redoAct} title="Redo (Ctrl+Shift+Z)">↷ Redo</Button>
-          <Button small variant="primary" busy={saving} disabled={!dirty} onClick={() => void saveAll()} title="Save all (Ctrl+S)">{saveLabel}</Button>
-          <Button small variant={tableOpen ? "primary" : "ghost"} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} title="Attribute table (T)">Table ({work.length})</Button>
+          <IconButton icon="undo" label="Undo" shortcut="Ctrl+Z" disabled={!hist.past.length} onClick={undoAct} />
+          <IconButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" disabled={!hist.future.length} onClick={redoAct} />
+          <IconButton icon="table" label={`Table (${work.length})`} shortcut="T" active={tableOpen} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)}>{work.length}</IconButton>
+          <IconButton icon="save" label={saveLabel} shortcut="Ctrl+S" active busy={saving} disabled={!dirty} onClick={() => void saveAll()}>{dirty ? counts.total : null}</IconButton>
         </div>
       </MapView>
       {tableOpen && (
@@ -749,7 +754,7 @@ export default function MapEditorPage() {
         <datalist id="tag-keys">{COMMON_KEYS.map((k) => <option key={k} value={k} />)}</datalist>
         {!sel.length && (
           <div className="state"><strong>Nothing selected</strong>
-            {drawGeom && tool !== "cut" ? "Click the map to draw. Each new feature is selected so you can tag it, and the tool stays on." : "Pick Point, Line or Area to draw, or click a feature on the map."}
+            {drawGeom && tool !== "cut" ? "Click the map to draw. Each new feature is selected so you can tag it, and the tool stays on." : "Pick Point, Line or Polygon to draw, or click a feature on the map."}
           </div>
         )}
         {sel.length > 1 && (
@@ -766,7 +771,7 @@ export default function MapEditorPage() {
               <TagRows rows={bulkTags} onChange={setBulkTags} />
               <Button variant="primary" disabled={!bulkTags.some((t) => t.k.trim())} onClick={applyBulk}>Add to {sel.length} features</Button>
             </div>
-            <span className="field-hint">Merge joins lines that meet end to end, or areas that touch. The first one you selected keeps its tags.</span>
+            <span className="field-hint">Merge joins lines that meet end to end, or polygons that touch. The first one you selected keeps its tags.</span>
             <Button onClick={() => setSelectedIds([])}>Clear selection</Button>
           </>
         )}

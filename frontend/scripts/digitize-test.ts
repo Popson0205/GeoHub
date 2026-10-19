@@ -1,5 +1,6 @@
 import type { GeoFeature, Geometry } from "../src/lib/types";
 import { addNew, commit, current, effective, mergeInto, newHistory, redo, removeFeature, replaceWithPieces, setGeometry, setProperties, summarize, undo } from "../src/lib/staging";
+import { draftFeatures, fmtArea, fmtLength, measure, pathLength, polygonArea } from "../src/lib/sketch";
 import { cutByLine, mergeGeometries, splitLineAtPoint, translate } from "../src/lib/geoops";
 
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
@@ -51,6 +52,21 @@ let n = 0; const nid = () => `n${++n}`;
   const area = (g: any) => { const r = g.coordinates[0]; let s = 0; for (let i = 0; i < r.length - 1; i++) s += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1]; return Math.abs(s / 2); };
   ok(Math.abs(area(pieces[0]) + area(pieces[1]) - 4) < 1e-6, "the two pieces add up to the original area");
   ok((await cutByLine(server[1].geometry, { type: "LineString", coordinates: [[1, 1], [1, 3]] })) === null, "a cut that stops inside the area is refused");
+
+  // ---- sketch while drawing ----
+  const kinds = (fs: any[]) => fs.map((f) => f.properties.kind).sort().join(",");
+  ok(kinds(draftFeatures(false, [[0, 0]], null)) === "last", "a line with one point shows just that point");
+  ok(kinds(draftFeatures(false, [[0, 0], [1, 0]], [2, 0])) === "last,line,rubber,v,v", "a line shows its points, the solid line and a dashed segment to the pointer");
+  const polyDraft = draftFeatures(true, [[0, 0], [1, 0], [1, 1]], [0, 1]);
+  ok(kinds(polyDraft) === "fill,first,last,line,rubber,rubber,v,v", "a polygon also shows a fill, the green first point and the closing segment");
+  ok((polyDraft.find((f) => f.properties.kind === "first")!.geometry as any).coordinates[0] === 0, "the first point of a polygon is marked");
+  ok(kinds(draftFeatures(true, [[0, 0], [1, 0], [1, 1]], null)).includes("rubber"), "with no pointer (touch) the closing edge is still shown");
+  ok(draftFeatures(true, [], [1, 1]).length === 0, "nothing is shown before the first point");
+  ok(Math.abs(pathLength([[0, 0], [0, 1]]) - 111195) < 100, "one degree of latitude is about 111.2 km");
+  const sq = [[0, 0], [0.001, 0], [0.001, 0.001], [0, 0.001]] as any;
+  ok(Math.abs(polygonArea(sq) - 12364) / 12364 < 0.01, "a 0.001 degree square near the equator is about 12,400 m²");
+  ok(fmtLength(4.2) === "4.2 m" && fmtLength(1500) === "1.50 km" && fmtArea(250) === "250 m²" && fmtArea(25000) === "2.50 ha", "lengths and areas read naturally");
+  ok(measure(false, [[0, 0], [0, 0.001]]) === "111 m" && measure(true, sq).startsWith("1.24 ha ·"), "line and polygon readouts");
 
   // split staged
   const s = replaceWithPieces({}, server, "b", pieces, nid);

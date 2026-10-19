@@ -1,6 +1,6 @@
 /**
  * Geometry operations for digitizing: move, split, merge, duplicate.
- * Pure functions on GeoJSON-like geometries. The heavy ones (cutting and merging areas) load Turf on first use,
+ * Pure functions on GeoJSON-like geometries. The heavy ones (cutting and merging polygons) load Turf on first use,
  * so the map editor opens as fast as before.
  */
 import type { Geometry, Position } from "./types";
@@ -64,7 +64,7 @@ type Fc = { type: "FeatureCollection"; features: any[] };
 const feat = (g: unknown) => ({ type: "Feature", properties: {}, geometry: g });
 const fc = (...g: unknown[]): Fc => ({ type: "FeatureCollection", features: g.map(feat) });
 
-/** Split a line or an area with a cutting line. Lines are cut where the cutter crosses them; an area must be crossed edge to edge. */
+/** Split a line or a polygon with a cutting line. Lines are cut where the cutter crosses them; a polygon must be crossed edge to edge. */
 export async function cutByLine(target: Geometry, cutter: LS): Promise<Geometry[] | null> {
   if (target.type === "Point") return null;
   if (target.type === "LineString") {
@@ -99,11 +99,11 @@ function joinLines(lines: LS[]): LS | null {
   return { type: "LineString", coordinates: chain };
 }
 
-/** Merge lines into one line (they must connect end to end) or areas into one area (they must touch or overlap). */
+/** Merge lines into one line (they must connect end to end) or polygons into one polygon (they must touch or overlap). */
 export async function mergeGeometries(geoms: Geometry[]): Promise<{ geometry: Geometry } | { error: string }> {
   if (geoms.length < 2) return { error: "Select two or more features to merge." };
   const types = new Set(geoms.map((g) => g.type));
-  if (types.size > 1) return { error: "You can only merge features of the same kind (all lines, or all areas)." };
+  if (types.size > 1) return { error: "You can only merge features of the same kind (all lines, or all polygons)." };
   if (geoms[0].type === "Point") return { error: "Points cannot be merged." };
   if (geoms[0].type === "LineString") {
     const joined = joinLines(geoms as LS[]);
@@ -111,6 +111,6 @@ export async function mergeGeometries(geoms: Geometry[]): Promise<{ geometry: Ge
   }
   const { union } = await import("@turf/union");
   const u = union(fc(...geoms) as never) as any;
-  if (!u || u.geometry.type !== "Polygon") return { error: "These areas do not touch or overlap, so they cannot become one area." };
+  if (!u || u.geometry.type !== "Polygon") return { error: "These polygons do not touch or overlap, so they cannot become one polygon." };
   return { geometry: u.geometry as PG };
 }

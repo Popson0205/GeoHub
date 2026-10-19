@@ -1,6 +1,6 @@
 import type { Geometry, GeoFeature, ReviewStatus } from "../../lib/types";
 
-export const KIND_LABEL = { point: "Point", line: "Line", area: "Area" } as const;
+export const KIND_LABEL = { point: "Point", line: "Line", area: "Polygon" } as const;
 export const kindOf = (g: Geometry): "point" | "line" | "area" => (g.type === "Point" ? "point" : g.type === "LineString" ? "line" : "area");
 export const STATUS_LABEL: Record<ReviewStatus, string> = { submitted: "Waiting for review", approved: "Approved", rejected: "Rejected" };
 export const STATUS_BADGE: Record<ReviewStatus, string> = { submitted: "badge-warn", approved: "badge-ok", rejected: "badge-bad" };

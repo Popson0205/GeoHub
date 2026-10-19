@@ -241,3 +241,11 @@ a { color: var(--green); }
 .at-tag.at-new { background: #fbe3b0; } .at-tag.at-mod { background: #d3e3f5; } .at-tag.at-submitted { background: #e6dcf3; } .at-tag.at-rejected { background: var(--danger-soft); color: var(--danger); }
 .at-empty { margin: auto; }
 @media (max-width: 900px) { .editor-center { flex: none; } .at { height: 320px !important; } }
+
+/* ---- icon toolbars ---- */
+.icon-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.icon-btn { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+.icon-btn.has-text { width: auto; padding: 0 12px 0 10px; gap: 6px; font-weight: 700; }
+.icon-btn svg { flex: none; }
+.map-bar .icon-btn { width: 40px; min-height: 40px; }
+.map-bar .icon-btn.has-text { width: auto; }

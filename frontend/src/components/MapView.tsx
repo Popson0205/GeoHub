@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { config } from "../lib/config";
 import { bboxOf } from "../lib/forms";
 import { translate } from "../lib/geoops";
+import { draftFeatures, measure } from "../lib/sketch";
 import type { Geometry, GeometryType, Position, Props } from "../lib/types";
 import { Button } from "./ui";
 
@@ -94,6 +95,7 @@ const AMBER = "#d98a0b";
 const BLUE = "#2f6fb0";
 const PURPLE = "#7b5ea7";
 const RED = "#c0392b";
+const SKETCH = "#0a6cff";                 // the shape being drawn
 const SNAP_PX = 12;
 /** Colour by state: new = amber, changed = blue, saved = green; on shared maps also waiting for review = purple, rejected = red. */
 const byState = (): maplibregl.ExpressionSpecification => ["match", ["get", "state"], "new", AMBER, "mod", BLUE, "review", PURPLE, "rejected", RED, GREEN];
@@ -110,6 +112,8 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
   const [vertices, setVertices] = useState<Position[]>([]);
+  const [measureText, setMeasure] = useState("");
+  const pointer = useRef<Position | null>(null);
 
   // Latest callbacks/state for event handlers registered once.
   const selIds = useMemo(() => selectedIds ?? (selectedId ? [selectedId] : []), [selectedIds, selectedId]);
@@ -162,7 +166,8 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       map.addSource("handles", { type: "geojson", data: empty as never });
       map.addSource("snap", { type: "geojson", data: empty as never });
       map.addLayer({ id: "features-fill", type: "fill", source: "features", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": byState(), "fill-opacity": 0.28 } });
-      map.addLayer({ id: "features-line", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": byState(), "line-width": 2.5 } });
+      map.addLayer({ id: "features-casing", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 5.5, "line-opacity": 0.75 } });
+      map.addLayer({ id: "features-line", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": byState(), "line-width": 3 } });
       map.addLayer({
         id: "features-point", type: "circle", source: "features", filter: ["==", ["geometry-type"], "Point"],
         paint: { "circle-radius": 8, "circle-color": byState(), "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
@@ -170,8 +175,15 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       map.addLayer({ id: "sel-fill", type: "fill", source: "selected", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ORANGE, "fill-opacity": 0.3 } });
       map.addLayer({ id: "sel-line", type: "line", source: "selected", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": ORANGE, "line-width": 4 } });
       map.addLayer({ id: "sel-point", type: "circle", source: "selected", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 11, "circle-color": ORANGE, "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
-      map.addLayer({ id: "draft-line", type: "line", source: "draft", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": ORANGE, "line-width": 3, "line-dasharray": [2, 1.5] } });
-      map.addLayer({ id: "draft-point", type: "circle", source: "draft", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 6, "circle-color": "#fff", "circle-stroke-color": ORANGE, "circle-stroke-width": 3 } });
+      // The shape being drawn, like a sketch in a GIS: a translucent fill, a solid line with a white edge so it shows on any imagery,
+      // a dashed segment that follows the pointer, and clear vertices (the first one is green: click it to close a polygon).
+      map.addLayer({ id: "draft-fill", type: "fill", source: "draft", filter: ["==", ["get", "kind"], "fill"], paint: { "fill-color": SKETCH, "fill-opacity": 0.22 } });
+      map.addLayer({ id: "draft-casing", type: "line", source: "draft", filter: ["in", ["get", "kind"], ["literal", ["line", "rubber"]]], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.9 } });
+      map.addLayer({ id: "draft-line", type: "line", source: "draft", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": SKETCH, "line-width": 3.5 } });
+      map.addLayer({ id: "draft-rubber", type: "line", source: "draft", filter: ["==", ["get", "kind"], "rubber"], layout: { "line-cap": "butt" }, paint: { "line-color": SKETCH, "line-width": 3, "line-dasharray": [2, 1.6] } });
+      map.addLayer({ id: "draft-vertex", type: "circle", source: "draft", filter: ["==", ["get", "kind"], "v"], paint: { "circle-radius": 5.5, "circle-color": "#ffffff", "circle-stroke-color": SKETCH, "circle-stroke-width": 3 } });
+      map.addLayer({ id: "draft-first", type: "circle", source: "draft", filter: ["==", ["get", "kind"], "first"], paint: { "circle-radius": 8, "circle-color": "#1f9d63", "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
+      map.addLayer({ id: "draft-last", type: "circle", source: "draft", filter: ["==", ["get", "kind"], "last"], paint: { "circle-radius": 7, "circle-color": SKETCH, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
       map.addLayer({ id: "snap-ring", type: "circle", source: "snap", paint: { "circle-radius": 9, "circle-color": "#ffffff", "circle-opacity": 0.2, "circle-stroke-color": "#0b57d0", "circle-stroke-width": 3 } });
       map.addLayer({ id: "edit-m", type: "circle", source: "handles", filter: ["==", ["get", "kind"], "m"], paint: { "circle-radius": 5, "circle-color": "#fff", "circle-opacity": 0.8, "circle-stroke-color": ORANGE, "circle-stroke-width": 1.5 } });
       map.addLayer({ id: "edit-v", type: "circle", source: "handles", filter: ["==", ["get", "kind"], "v"], paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": ORANGE, "circle-stroke-width": 3 } });
@@ -288,6 +300,10 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       const { drawMode: mode, onDraw: draw, onSelect: select, pickMode: pick, onPick: picked } = live.current;
       const pos: Position = snapAt(map, e.lngLat, e.point, mode ? [] : live.current.selIds) ?? [e.lngLat.lng, e.lngLat.lat];
       if (mode === "Point") { draw?.({ type: "Point", coordinates: pos }); return; }
+      if (mode === "Polygon" && live.current.vertices.length >= 3) {          // clicking the first point closes the polygon
+        const q = map.project(live.current.vertices[0] as [number, number]);
+        if (Math.hypot(q.x - e.point.x, q.y - e.point.y) <= 10) { finish(); return; }
+      }
       if (mode) {
         // a double-click sends two clicks first; ignore the second one so the last point is not doubled
         setVertices((v) => { const last = v[v.length - 1]; if (last) { const q = map.project(last as [number, number]); if (Math.hypot(q.x - e.point.x, q.y - e.point.y) < 4) return v; } return [...v, pos]; });
@@ -303,10 +319,15 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       const { drawMode: mode } = live.current;
       if (mode === "LineString" || mode === "Polygon") { e.preventDefault(); finish(); }
     });
+    map.on("mouseout", () => { pointer.current = null; if (live.current.drawMode) paintDraft(null); });
     map.on("mousemove", (e) => {
       if (drag.current || moving.current) return;
       const L = live.current;
-      if (L.drawMode) snapShow.current?.(snapAt(map, e.lngLat, e.point, []));
+      if (L.drawMode) {
+        const sp = snapAt(map, e.lngLat, e.point, []);
+        snapShow.current?.(sp);
+        if (L.drawMode !== "Point" && L.vertices.length) { pointer.current = sp ?? [e.lngLat.lng, e.lngLat.lat]; paintDraft(pointer.current); }
+      }
       const handle = map.queryRenderedFeatures(e.point, { layers: ["edit-v", "edit-m"] }).length > 0;
       const over = !!hitRef.current?.(e.point);
       map.getCanvas().style.cursor = L.drawMode || L.pickMode ? "crosshair" : handle ? "move" : over ? (L.moveMode ? "grab" : "pointer") : "";
@@ -322,7 +343,7 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     else return;
     setVertices([]);
   }
-  useEffect(() => { setVertices([]); if (!drawMode) snapShow.current?.(null); }, [drawMode]);
+  useEffect(() => { setVertices([]); pointer.current = null; if (!drawMode) snapShow.current?.(null); }, [drawMode]);
 
   // Keyboard while drawing: Enter finishes, Backspace / Ctrl+Z removes the last point, Esc cancels the shape, then the tool.
   useEffect(() => {
@@ -376,14 +397,16 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     (map.getSource("handles") as GeoJSONSource).setData(handlesFC(editGeometry, editPaths.current) as never);
   }, [editGeometry, ready]);
 
-  // Draft while drawing
-  useEffect(() => {
-    if (!ready) return;
-    const fc: { type: string; features: unknown[] } = { type: "FeatureCollection", features: [] };
-    vertices.forEach((c) => fc.features.push({ type: "Feature", geometry: { type: "Point", coordinates: c }, properties: {} }));
-    if (vertices.length > 1) fc.features.push({ type: "Feature", geometry: { type: "LineString", coordinates: drawMode === "Polygon" && vertices.length > 2 ? [...vertices, vertices[0]] : vertices }, properties: {} });
-    (mapRef.current!.getSource("draft") as GeoJSONSource).setData(fc as never);
-  }, [vertices, drawMode, ready]);
+  // The sketch while drawing: the points so far, the line between them, and a live segment to the pointer.
+  function paintDraft(cursor: Position | null) {
+    const map = mapRef.current;
+    const { drawMode: mode, vertices: v } = live.current;
+    if (!map || !map.getSource("draft")) return;
+    const features = mode && mode !== "Point" ? draftFeatures(mode === "Polygon", v, cursor) : [];
+    (map.getSource("draft") as GeoJSONSource).setData({ type: "FeatureCollection", features } as never);
+    setMeasure(mode && mode !== "Point" && v.length ? measure(mode === "Polygon", cursor ? [...v, cursor] : v) : "");
+  }
+  useEffect(() => { if (ready) paintDraft(pointer.current); }, [vertices, drawMode, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Imagery (raster tile layers sit under the vector layers)
   const imageryKey = useMemo(() => imagery.map((i) => `${i.id}|${i.url}|${i.maxzoom ?? ""}`).join("||"), [imagery]);
@@ -436,7 +459,8 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       {children}
       {drawMode && (
         <div className="map-hint" role="status">
-          {hint ?? (drawMode === "Point" ? "Tap the map to place the point." : `Tap to add points. ${vertices.length} added. Double-tap or press Finish when done.`)}
+          {hint ?? (drawMode === "Point" ? "Tap the map to place the point." : drawMode === "Polygon" ? "Click to add corners. Click the green point, double-click or press Enter to finish." : "Click to add points. Double-click or press Enter to finish.")}
+          {measureText && <strong style={{ marginLeft: 8 }}>{measureText}</strong>}
         </div>
       )}
       {drawMode && (

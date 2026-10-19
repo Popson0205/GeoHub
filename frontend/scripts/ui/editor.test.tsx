@@ -8,7 +8,7 @@ for (const k of ["window", "document", "navigator", "localStorage", "HTMLElement
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
 
 (async () => {
-  const { render, screen, fireEvent, act, cleanup } = await import("@testing-library/react");
+  const { render, screen, fireEvent, act, cleanup, within } = await import("@testing-library/react");
   const { MemoryRouter, Route, Routes } = await import("react-router-dom");
   const { ToastProvider } = await import("../../src/components/ui");
   const { AuthProvider } = await import("../../src/lib/auth");
@@ -30,7 +30,13 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   const before = (await api.listMapFeatures(mid)).length;
   await open(mid);
   ok(p().features.some((f: any) => f.state === "review") && p().features.some((f: any) => f.state === "rejected"), "features waiting for review (purple) and rejected (red) are coloured apart");
-  await click(/^Area$/);
+  await click(/^Polygon$/);
+  // every tool is a symbol: no visible words on the tool buttons, but each has a name for screen readers and a tooltip
+  const toolbar = screen.getByRole("toolbar", { name: "Editing tools" });
+  const btns = within(toolbar).getAllByRole("button");
+  ok(btns.length >= 6 && btns.every((b) => b.textContent === "" && !!b.querySelector("svg") && !!b.getAttribute("aria-label") && !!b.getAttribute("title")), "editing tools are symbols with names and tooltips, not words");
+  ok(["Select", "Reshape", "Move", "Split", "Cut", "Merge"].every((n) => !!within(toolbar).queryByRole("button", { name: n })), "every editing tool is still reachable by name");
+  ok(within(screen.getByRole("toolbar", { name: "Drawing tools" })).getByRole("button", { name: "Polygon" }).getAttribute("title") === "Polygon (G)", "the polygon tool shows its shortcut");
   for (let i = 0; i < 2; i++) await act(async () => { p().onDraw(poly(4 + i * 0.1)); });
   ok(p().drawMode === "Polygon", "owner: draw tool stays on");
   await click(/^Save all/, 0); await wait(600);
@@ -47,7 +53,6 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   const total = p().features.length;
   ok(grid.getAttribute("aria-rowcount") === String(total + 1), `table has a row for every feature (${total})`);
   const rowEl = (i: number) => screen.getAllByRole("row").find((r) => r.getAttribute("aria-rowindex") === String(i + 2))!;
-  const { within } = await import("@testing-library/react");
   const firstId = p().features[0].id;
   const cellInput = (i: number, col: string) => within(rowEl(i)).getByLabelText(new RegExp(`^${col} of `)) as HTMLInputElement;
 
@@ -68,15 +73,15 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await click(/Undo/, 0);
 
   // selecting: table -> map, map -> table, range
-  await act(async () => { fireEvent.click(within(rowEl(2)).getByText("Area")); });
+  await act(async () => { fireEvent.click(within(rowEl(2)).getByText("Polygon")); });
   ok(p().selectedIds.length === 1 && p().selectedIds[0] === p().features[2].id, "clicking a row selects that feature on the map");
-  await act(async () => { fireEvent.click(within(rowEl(5)).getByText("Area"), { shiftKey: true }); });
+  await act(async () => { fireEvent.click(within(rowEl(5)).getByText("Polygon"), { shiftKey: true }); });
   ok(p().selectedIds.length === 4, "shift-click selects a range of rows");
   await act(async () => { p().onSelect(p().features[7].id, false); });
   ok(rowEl(7).getAttribute("aria-selected") === "true", "picking a feature on the map highlights its row");
 
   // set a value for many rows at once
-  await act(async () => { fireEvent.click(within(rowEl(2)).getByText("Area")); fireEvent.click(within(rowEl(4)).getByText("Area"), { shiftKey: true }); });
+  await act(async () => { fireEvent.click(within(rowEl(2)).getByText("Polygon")); fireEvent.click(within(rowEl(4)).getByText("Polygon"), { shiftKey: true }); });
   await act(async () => { fireEvent.change(screen.getByLabelText("Column to fill"), { target: { value: "source" } }); fireEvent.change(screen.getByLabelText("Value to set"), { target: { value: "mapathon" } }); });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Apply to 3/ })); });
   ok(p().features.slice(2, 5).every((f: any) => f.properties.source === "mapathon") && !p().features[5].properties.source, "set-a-value fills exactly the selected rows");
@@ -120,7 +125,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   ok(!!locked && (within(locked).getAllByRole("textbox") as HTMLInputElement[]).every((i) => i.disabled), "contributor: someone else's approved feature is read-only in the table");
   await click(/Close the table/);
   await click(/^Select$/);
-  await click(/^Area$/);
+  await click(/^Polygon$/);
   await act(async () => { p().onDraw(poly(5)); });
   await click(/^Save all/, 0); await wait(600);
   const mine2 = (await api.listMapFeatures(mid)).filter((f: any) => f.created_by === "u1" && f.status === "submitted");
@@ -131,7 +136,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   // ---- campaign over: contributors cannot draw ----
   s.maps.find((m: any) => m.id === mid).ends_at = new Date(Date.now() - 864e5).toISOString();
   await open(mid);
-  await click(/^Area$/);
+  await click(/^Polygon$/);
   ok(p().drawMode == null && !!screen.queryByText(/Contributors cannot draw right now/), "contributor: after the campaign ends the draw tools stay off and the page says why");
   process.exit(process.exitCode ?? 0);
 })().catch((e) => { console.error("ERROR", e); process.exit(1); });

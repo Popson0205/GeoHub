@@ -7,7 +7,7 @@ export type Geometry =
   | { type: "Polygon"; coordinates: Position[][] };
 export type GeometryType = Geometry["type"];
 
-export const GEOMETRY_LABEL: Record<GeometryType, string> = { Point: "point", LineString: "line", Polygon: "area" };
+export const GEOMETRY_LABEL: Record<GeometryType, string> = { Point: "point", LineString: "line", Polygon: "polygon" };
 
 export type Role = "owner" | "admin" | "collector" | "viewer";
 export interface User { id: string; email: string; name: string }

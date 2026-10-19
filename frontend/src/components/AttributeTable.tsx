@@ -18,7 +18,7 @@ export interface TableRow {
 const ROW_H = 36;
 const OVERSCAN = 6;
 const COL_W = 160;
-const KIND_LABEL = { point: "Point", line: "Line", area: "Area" } as const;
+const KIND_LABEL = { point: "Point", line: "Line", area: "Polygon" } as const;
 const STATE_LABEL = { new: "New", mod: "Edited", clean: "Saved" } as const;
 const REVIEW_LABEL: Record<ReviewStatus, string> = { submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
 type Sort = { col: string; dir: 1 | -1 } | null;
@@ -205,7 +205,7 @@ export default function AttributeTable({ rows, selectedIds, height, onHeightChan
         <span className="field-hint" role="status">{shown.length === rows.length ? `${rows.length} features` : `${shown.length} of ${rows.length} features`}{selectedIds.length ? ` · ${selectedIds.length} selected` : ""}</span>
         <input className="input at-search" type="search" aria-label="Search the table" placeholder="Search values…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <select className="input at-select" aria-label="Kind of feature" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-          <option value="">All kinds</option><option value="point">Points</option><option value="line">Lines</option><option value="area">Areas</option>
+          <option value="">All kinds</option><option value="point">Points</option><option value="line">Lines</option><option value="area">Polygons</option>
         </select>
         <select className="input at-select" aria-label="Which features to show" value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
           <option value="all">All features</option><option value="selected">Selected only</option><option value="unsaved">Unsaved changes</option>

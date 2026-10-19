@@ -90,12 +90,12 @@ Edits are **staged**, not saved one by one. Draw as many features as you like, t
 | Tool | Key | What it does |
 | --- | --- | --- |
 | Select | V | Click a feature. Shift-click (or turn on Multi-select) for several. |
-| Point / Line / Area | P / L / A | Stays on after each feature. Double-click or Enter finishes a line or area. Backspace removes the last point. |
+| Point / Line / Polygon | P / L / G | Stays on after each feature. Double-click or Enter finishes a line or polygon (or click the green first point). A solid line, a dashed segment to the pointer and the live length or area show while you draw. Backspace removes the last point. |
 | Reshape | R | Drag points, drag a midpoint to add one, right-click or double-click a point to remove it. |
 | Move | M | Drag the selected features. |
 | Split | S | Click a line to cut it in two at that spot. |
-| Cut | C | Draw a line across lines or areas to cut them. Cuts the selection, or whatever the line crosses. |
-| Merge | | Joins selected lines (end to end) or areas (touching or overlapping). |
+| Cut | C | Draw a line across lines or polygons to cut them. Cuts the selection, or whatever the line crosses. |
+| Merge | | Joins selected lines (end to end) or polygons (touching or overlapping). |
 | Duplicate, Delete | Del | Act on the selection. |
 
 * **Tags for each new feature**: pick a preset (Building, Road, ...) or type tags once under Draw, and every new feature gets them. With several features selected, "Tags for all" adds tags to all of them.
@@ -115,7 +115,7 @@ A map can have people on it. Open **Team & stats** on a map card (or "Campaign p
 | Review | reviewers, owner (contributors see their own work and the reviewers' notes) | Filter by status or by person, look at features on the map, approve or reject in bulk with a note. |
 | Team | owner manages | Invitation link (on/off, new link), promote to reviewer, remove people. Anyone can leave. |
 | Campaign | owner | Turn the map into a mapping project or competition: goal, start and end, leaderboard on or off. |
-| Publish | owner | Publish the **approved** features to the Data hub, one kind (points, lines or areas) per dataset, with licence, visibility and contributor credits. Publish new versions later. |
+| Publish | owner | Publish the **approved** features to the Data hub, one kind (points, lines or polygons) per dataset, with licence, visibility and contributor credits. Publish new versions later. |
 
 * **Roles:** owner runs the map and publishes; reviewers approve work and can edit anything; contributors draw, and can change their own features until a reviewer approves them. Whatever the owner or a reviewer draws is approved straight away.
 * **Joining:** people open the invitation link (`/join/:code`) or paste it on the Web mapping page. In mock mode, try `/join/ibadan-flood`.
@@ -135,3 +135,7 @@ Press **T**, or use **Table (n)** on the map, to open a table of every digitized
 * **Find things:** search all values, filter by points, lines or areas, show only selected or only unsaved rows, sort any column (blanks always last), hide columns, download the shown rows as CSV.
 * **Roles:** rows you may not change (someone else's, or already approved) are read-only. State and review status are shown for each row.
 * Drag the top edge (or use the arrow keys on it) to resize. Only the rows in view are drawn, so large maps stay quick.
+
+## Toolbar symbols
+
+Every editing tool is a symbol (select, point, line, polygon, reshape, move, split, cut, merge, duplicate, delete, undo, redo, table, snap, multi-select). Hover for the name and shortcut; screen readers read the name. Save all shows a disk with the number of unsaved changes.
