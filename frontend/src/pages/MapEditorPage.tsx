@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import AttributeTable, { type TableRow } from "../components/AttributeTable";
 import MapView, { type Bbox, type MapFeature, type MapImagery } from "../components/MapView";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
@@ -49,6 +50,7 @@ const TOOL_HELP: Record<Tool, string> = {
 const EMPTY: GeoFeature[] = [];
 const DUPLICATE_OFFSET = 0.00015;                 // degrees, roughly 16 m, so a copy does not sit exactly on the original
 const draftKey = (mapId: string) => `geohub:map-draft:${mapId}`;
+const TABLE_H_KEY = "geohub:attribute-table-height";
 
 type Tag = { k: string; v: string };
 const toTags = (p: Props): Tag[] => Object.entries(p).map(([k, v]) => ({ k, v: String(v ?? "") }));
@@ -124,6 +126,8 @@ export default function MapEditorPage() {
   const [saving, setSaving] = useState(false);
   const [working, setWorking] = useState(false);            // a merge or cut is running
   const [name, setName] = useState<string | null>(null);
+  const [tableOpen, setTableOpen] = useState(false);
+  const [tableH, setTableH] = useState(() => { try { return Number(localStorage.getItem(TABLE_H_KEY)) || 280; } catch { return 280; } });
   const restoredFor = useRef<string | null>(null);
 
   const server = data?.features ?? EMPTY;
@@ -165,6 +169,13 @@ export default function MapEditorPage() {
     state: f.state !== "clean" ? f.state : f.meta?.status === "submitted" ? "review" : f.meta?.status === "rejected" ? "rejected" : "clean",
   })), [work]);
 
+  /** One row per feature for the attribute table, with whether this person may change it. */
+  const tableRows: TableRow[] = useMemo(() => work.map((f) => ({
+    id: f.id, kind: f.geometry.type === "Point" ? "point" : f.geometry.type === "LineString" ? "line" : "area", properties: f.properties, state: f.state,
+    status: f.meta?.status, author: f.meta?.author ?? (f.state === "new" ? user?.name : undefined),
+    editable: role !== "contributor" || f.state === "new" || (f.meta?.created_by === user?.id && f.meta?.status !== "approved"),
+  })), [work, role, user?.id, user?.name]);
+
   const sources = data?.map.sources ?? [];
   const imagery: MapImagery[] = useMemo(() => {
     const out: MapImagery[] = [];
@@ -181,6 +192,8 @@ export default function MapEditorPage() {
     }, 45 * 60 * 1000);
     return () => clearInterval(t);
   }, [data?.layers.imagery.length, mapId, setData]);
+
+  useEffect(() => { try { localStorage.setItem(TABLE_H_KEY, String(Math.round(tableH))); } catch { /* ignore */ } }, [tableH]);
 
   // Start clean when moving to another map.
   useEffect(() => { setHist(newHistory()); setSelectedIds([]); setTool("select"); }, [mapId]);
@@ -233,6 +246,7 @@ export default function MapEditorPage() {
       else if (mod || e.altKey) return;
       else if (e.key === "Delete" || (e.key === "Backspace" && !drawGeom)) { if (sel.length) { e.preventDefault(); removeSelected(); } }      // Backspace removes the last point while drawing instead
       else if (e.key === "Escape") { if (tool !== "select") setTool("select"); else setSelectedIds([]); }
+      else if (k === "t") { e.preventDefault(); setTableOpen((v) => !v); }
       else { const hit = (Object.keys(TOOL_KEY) as Tool[]).find((x) => TOOL_KEY[x].toLowerCase() === k); if (hit) { e.preventDefault(); chooseTool(hit); } }
     };
     window.addEventListener("keydown", onKey);
@@ -256,6 +270,34 @@ export default function MapEditorPage() {
   }
   function undoAct() { const h = undo(histRef.current); histRef.current = h; setHist(h); setTagsRev((r) => r + 1); }
   function redoAct() { const h = redo(histRef.current); histRef.current = h; setHist(h); setTagsRev((r) => r + 1); }
+
+  // ---------------- attribute table (edits are staged like everything else) ----------------
+  function setTag(props: Props, key: string, value: string): Props {
+    const out = { ...props };
+    if (value === "") delete out[key]; else out[key] = value;
+    return out;
+  }
+  function tableEdit(id: string, key: string, value: string) {
+    if (closed) { toast("This campaign is not open, so contributors cannot change features right now.", "info"); return; }
+    const f = byId.get(id);
+    if (!f || !editable([id]).length) return;
+    stage(setProperties(now(), serverRef.current, id, setTag(f.properties, key, value)), `cell:${id}:${key}`);
+    if (id === primaryId) setTagsRev((r) => r + 1);         // keep the tag list on the right in step
+  }
+  function tableFill(ids: string[], key: string, value: string) {
+    if (closed) { toast("This campaign is not open, so contributors cannot change features right now.", "info"); return; }
+    const ok = editable(ids);
+    if (!ok.length) return;
+    let next = now();
+    for (const id of ok) { const f = byId.get(id); if (f) next = setProperties(next, serverRef.current, id, setTag(f.properties, key, value)); }
+    stage(next);
+    setTagsRev((r) => r + 1);
+    toast(value === "" ? `Removed “${key}” from ${typeText(ok.length, "feature", "features")}.` : `Set “${key}” on ${typeText(ok.length, "feature", "features")}.`, "success");
+  }
+  function zoomTo(ids: string[]) {
+    const b = bboxOf(ids.map((id) => byId.get(id)?.geometry).filter((g): g is Geometry => !!g));
+    if (b) setFlyTo({ bounds: b as Bbox, key: Date.now() });
+  }
 
   // ---------------- editing (all staged, nothing is saved yet) ----------------
   function onDraw(g: Geometry) {
@@ -584,6 +626,7 @@ export default function MapEditorPage() {
             <Button small variant="danger" disabled={!sel.length || editable(sel, true).length === 0} title="Delete (Del)" onClick={removeSelected}>Delete</Button>
             <Button small disabled={!hist.past.length} title="Undo (Ctrl+Z)" onClick={undoAct}>Undo</Button>
           </div>
+          <Button small variant={tableOpen ? "primary" : "default"} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} title="Attribute table (T)">{tableOpen ? "Hide attribute table" : "Show attribute table"}</Button>
           <span className="field-hint">{TOOL_HELP[tool]}</span>
           <label className="check"><input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />Snap to nearby points</label>
           <label className="check"><input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} />Multi-select (tap to add)</label>
@@ -666,6 +709,7 @@ export default function MapEditorPage() {
         </div>
       </aside>
 
+      <div className="editor-center">
       <MapView
         features={mapFeatures}
         selectedIds={sel}
@@ -691,8 +735,15 @@ export default function MapEditorPage() {
           <Button small variant="ghost" disabled={!hist.past.length} onClick={undoAct} title="Undo (Ctrl+Z)">↶ Undo</Button>
           <Button small variant="ghost" disabled={!hist.future.length} onClick={redoAct} title="Redo (Ctrl+Shift+Z)">↷ Redo</Button>
           <Button small variant="primary" busy={saving} disabled={!dirty} onClick={() => void saveAll()} title="Save all (Ctrl+S)">{saveLabel}</Button>
+          <Button small variant={tableOpen ? "primary" : "ghost"} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} title="Attribute table (T)">Table ({work.length})</Button>
         </div>
       </MapView>
+      {tableOpen && (
+        <AttributeTable rows={tableRows} selectedIds={sel} height={tableH} onHeightChange={setTableH} onSelect={setSelectedIds} onZoom={zoomTo}
+          onEditCell={tableEdit} onFill={tableFill} onClose={() => setTableOpen(false)}
+          readOnlyNote={closed ? "Contributors cannot change features right now." : undefined} />
+      )}
+      </div>
 
       <aside className="side right" aria-label="Feature details" aria-live="polite">
         <datalist id="tag-keys">{COMMON_KEYS.map((k) => <option key={k} value={k} />)}</datalist>

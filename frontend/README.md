@@ -123,3 +123,15 @@ A map can have people on it. Open **Team & stats** on a map card (or "Campaign p
 * In the editor, features waiting for review are purple and rejected ones red. Contributors see approved and other people's features as locked.
 * Mock mode ships a demo campaign ("Osogbo building mapathon") with a team and review work, so the portal has something to show.
 * `npm run test:ui` renders the editor and portal pages against the mock backend (jsdom, with a stand-in for the WebGL map).
+
+
+## Attribute table
+
+Press **T**, or use **Table (n)** on the map, to open a table of every digitized feature under the map. One row per feature, one column per tag.
+
+* **Select:** click a row to select the feature on the map (Shift for a range, Ctrl/Cmd to add, arrow keys to move, Ctrl+A for all). Picking a feature on the map scrolls its row into view. ⌖ zooms to a feature; "Zoom to selected" zooms to all of them.
+* **Edit in place:** type in any cell and press Enter (Shift+Enter goes up) or leave the cell. Enter moves down the column. Emptying a cell removes the tag. Edits are staged like everything else, so Undo, Redo and **Save all** apply.
+* **Set a value for many rows:** select rows, name a column, type a value and press Apply. **Add column** creates a column for a tag no feature has yet.
+* **Find things:** search all values, filter by points, lines or areas, show only selected or only unsaved rows, sort any column (blanks always last), hide columns, download the shown rows as CSV.
+* **Roles:** rows you may not change (someone else's, or already approved) are read-only. State and review status are shown for each row.
+* Drag the top edge (or use the arrow keys on it) to resize. Only the rows in view are drawn, so large maps stay quick.

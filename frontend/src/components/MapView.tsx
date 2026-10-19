@@ -340,6 +340,15 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The map fills its box, which changes when panels open or are resized.
+  useEffect(() => {
+    const el = box.current, map = mapRef.current;
+    if (!ready || !el || !map || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ready]);
+
   // Features
   useEffect(() => {
     if (!ready) return;
