@@ -86,6 +86,8 @@ Production checklist:
 3. `CORS_ORIGINS` set to your app, hub and mobile origins only (Capacitor: `capacitor://localhost`, `http://localhost`).
 4. `PUBLIC_BASE_URL` is the public API URL (used inside tile URLs). `S3_PUBLIC_ENDPOINT` is the storage URL that
    browsers and phones can reach (used in presigned upload and download links).
+   On Cloudflare R2 set `S3_ENDPOINT` and `S3_PUBLIC_ENDPOINT` to `https://<account>.r2.cloudflarestorage.com` and
+   `S3_REGION=auto` (a region name, not a URL).
 5. **Bucket CORS.** Browsers upload imagery and photos straight to storage, so the bucket must allow your app
    origins to `PUT` and must expose the `ETag` header (needed to finish multipart uploads):
    ```json

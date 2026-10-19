@@ -5,10 +5,18 @@ from botocore.client import Config
 from .config import settings
 
 
+def _region() -> str:
+    """S3_REGION must be a region name ("auto" for Cloudflare R2). A URL pasted here crashes boto3 at import."""
+    r = (settings.s3_region or "").strip()
+    if not r or "://" in r or "/" in r or "." in r:
+        return "auto" if "r2.cloudflarestorage.com" in (settings.s3_endpoint or "") else "us-east-1"
+    return r
+
+
 def _client(endpoint: str):
     return boto3.client(
         "s3", endpoint_url=endpoint, aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key, region_name=settings.s3_region,
+        aws_secret_access_key=settings.s3_secret_key, region_name=_region(),
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}))
 
 
