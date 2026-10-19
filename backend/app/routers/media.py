@@ -12,7 +12,18 @@ from ..schemas import MediaCompleteIn, MediaOut, MediaUploadIn, MediaUploadOut
 from ..services.media import media_out
 
 router = APIRouter(tags=["media"])
-EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "weba",
+       "audio/ogg": "ogg", "audio/wav": "wav", "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov",
+       "application/pdf": "pdf", "text/plain": "txt", "text/csv": "csv"}
+
+
+def _kind(content_type: str) -> str:
+    major = content_type.split("/")[0]
+    return "photo" if major == "image" else major if major in ("audio", "video") else "file"
+
+
+def _limit(content_type: str) -> int:
+    return settings.max_photo_bytes if content_type.startswith("image/") else settings.max_media_bytes
 
 
 async def _media(conn, media_id) -> dict:
@@ -28,20 +39,22 @@ async def upload_url(body: MediaUploadIn, user=Depends(current_user), conn=Depen
     """Photos upload separately from their feature, so a feature never waits for its photos. Calling this
     again with the same id returns a fresh URL (use it to resume after a dropped connection)."""
     await require_role(conn, body.project_id, user["id"], "collector")
-    if body.size > settings.max_photo_bytes:
-        raise Problem(413, f"Photos are limited to {settings.max_photo_bytes // 1024 // 1024} MB.", code="too_large")
+    limit = _limit(body.content_type)
+    if body.size > limit:
+        what = "Photos" if body.content_type.startswith("image/") else "Files"
+        raise Problem(413, f"{what} are limited to {limit // 1024 // 1024} MB.", code="too_large")
     key = f"media/{body.project_id}/{body.id}/original.{EXT[body.content_type]}"
     await conn.execute(
-        "INSERT INTO media (id, project_id, content_type, storage_key, size, created_by) "
-        "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
-        (body.id, body.project_id, body.content_type, key, body.size, user["id"]))
+        "INSERT INTO media (id, project_id, kind, content_type, storage_key, size, created_by) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
+        (body.id, body.project_id, _kind(body.content_type), body.content_type, key, body.size, user["id"]))
     m = await _media(conn, body.id)
     if m["project_id"] != body.project_id or m["created_by"] != user["id"]:
         raise Problem(409, "That media id is already in use.", code="id_in_use")
     if m["status"] in ("uploaded", "ready"):
         raise Problem(409, "This photo was already uploaded.", code="already_uploaded")
     return {"id": body.id, "upload_url": storage.presign_put(m["storage_key"], m["content_type"]),
-            "headers": {"Content-Type": m["content_type"]}, "max_bytes": settings.max_photo_bytes}
+            "headers": {"Content-Type": m["content_type"]}, "max_bytes": limit}
 
 
 @router.post("/media/{media_id}/complete", response_model=MediaOut)
@@ -59,7 +72,7 @@ async def complete(media_id: UUID, body: MediaCompleteIn, user=Depends(current_u
     head = await storage.run(storage.head, m["storage_key"])
     if not head:
         raise Problem(409, "The file has not been uploaded yet.", code="upload_missing")
-    if head["ContentLength"] > settings.max_photo_bytes:
+    if head["ContentLength"] > _limit(m["content_type"]):
         await storage.run(storage.delete_keys, m["storage_key"])
         await conn.execute("DELETE FROM media WHERE id = %s", (media_id,))
         await conn.commit()
@@ -69,7 +82,11 @@ async def complete(media_id: UUID, body: MediaCompleteIn, user=Depends(current_u
         "size = %s, status = CASE WHEN status = 'ready' THEN status ELSE 'uploaded' END, uploaded_at = now() "
         "WHERE id = %s", (body.feature_id, body.field_id, body.width, body.height, head["ContentLength"], media_id))
     await conn.commit()
-    await dispatch_photo(str(media_id))          # resize in the worker; the original is always kept
+    if m["kind"] == "photo":
+        await dispatch_photo(str(media_id))      # resize in the worker; the original is always kept. Other files are served as uploaded.
+    else:
+        await conn.execute("UPDATE media SET status = 'ready' WHERE id = %s", (media_id,))
+        await conn.commit()
     return media_out(await _media(conn, media_id))
 
 

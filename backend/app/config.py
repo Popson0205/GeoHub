@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     max_imagery_bytes: int = 5 * 1024**3
     max_photo_bytes: int = 10 * 1024**2
+    max_media_bytes: int = 100 * 1024**2     # audio, video and documents
     max_import_mb: int = 50
     photo_web_px: int = 2048
 

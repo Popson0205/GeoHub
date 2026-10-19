@@ -87,12 +87,42 @@ class MemberOut(BaseModel):
 
 # ---------- forms ----------
 class FieldDef(BaseModel):
+    """One element of a form. Which optional properties apply to which type is checked by services/forms.py
+    (check_field_defs), so older forms that only use id, label, type, required, choices and max_items stay valid."""
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     label: str = Field(min_length=1, max_length=200)
-    type: Literal["text", "number", "choice", "multi_choice", "date", "photo"]
+    type: Literal["text", "number", "date", "time", "datetime", "choice", "multi_choice", "boolean", "ranking", "barcode",
+                  "photo", "audio", "video", "file", "signature", "note", "calculation", "group", "repeat"]
+    appearance: str | None = Field(None, max_length=30)
+    hint: str | None = Field(None, max_length=500)
+    placeholder: str | None = Field(None, max_length=200)
     required: bool = False
-    choices: list[str] = []
+    required_if: dict[str, Any] | None = None
+    visible: dict[str, Any] | None = None
+    readonly: bool | None = None
+    default: str | float | int | bool | list[str] | None = None
+    min: float | int | str | None = None
+    max: float | int | str | None = None
+    min_length: int | None = Field(None, ge=0, le=5000)
+    max_length: int | None = Field(None, ge=1, le=5000)
+    min_items: int | None = Field(None, ge=0, le=50)
     max_items: int | None = Field(None, ge=1, le=50)
+    pattern: str | None = Field(None, max_length=200)
+    pattern_message: str | None = Field(None, max_length=200)
+    choices: list[str] = Field(default=[], max_length=200)
+    integer: bool | None = None
+    decimals: int | None = Field(None, ge=0, le=10)
+    unit: str | None = Field(None, max_length=20)
+    must_be_true: bool | None = None
+    true_label: str | None = Field(None, max_length=40)
+    false_label: str | None = Field(None, max_length=40)
+    text: str | None = Field(None, max_length=2000)
+    calc: dict[str, Any] | None = None
+    store: bool | None = None
+    children: list["FieldDef"] | None = None
+
+
+FieldDef.model_rebuild()
 
 
 class FormIn(BaseModel):
@@ -259,7 +289,8 @@ class BundleOut(BaseModel):
 class MediaUploadIn(BaseModel):
     id: UUID = Field(description="Generated on the client")
     project_id: UUID
-    content_type: Literal["image/jpeg", "image/png", "image/webp"] = "image/jpeg"
+    content_type: Literal["image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/mp4", "audio/webm", "audio/ogg", "audio/wav",
+                          "video/mp4", "video/webm", "video/quicktime", "application/pdf", "text/plain", "text/csv"] = "image/jpeg"
     size: int = Field(gt=0)
 
 

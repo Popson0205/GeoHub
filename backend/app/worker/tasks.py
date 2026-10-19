@@ -16,7 +16,7 @@ from psycopg.types.json import Jsonb
 from .. import formats, storage
 from ..config import settings
 from ..db import connect_sync
-from ..services.forms import check_properties
+from ..services.forms import check_properties, column_fields, non_column_ids, top_level_fields
 from ..services.geo import check_geometry
 
 log = logging.getLogger("worker")
@@ -133,8 +133,9 @@ def snapshot(conn, job) -> dict:
     form = conn.execute(
         "SELECT v.geometry_type, v.fields FROM forms f JOIN form_versions v ON v.form_id = f.id AND v.version = f.version "
         "WHERE f.id = %s", (d["form_id"],)).fetchone()
-    fields = [f for f in form["fields"] if f["type"] != "photo"]      # media is not published in v1
-    photo_ids = [f["id"] for f in form["fields"] if f["type"] == "photo"]
+    # A dataset is flat: groups are looked through, and media, repeat sections, notes and unsaved calculations are not published.
+    fields = [{k: v for k, v in f.items() if k not in ("children", "visible", "required_if", "calc")} for f in column_fields(form["fields"])]
+    photo_ids = non_column_ids(form["fields"])
     version = d["latest_version"] + 1
     skey = f"snapshots/{did}/v{version}.geojson"
     conn.execute("INSERT INTO dataset_versions (dataset_id, version, fields, geometry_type, snapshot_key, published_by) "
@@ -363,14 +364,24 @@ def _coerce(fields: dict[str, dict], key: str, raw):
         return None
     t = f["type"]
     if t == "number":
-        return raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else float(str(raw).replace(",", "."))
+        n = raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else float(str(raw).replace(",", "."))
+        return int(n) if f.get("integer") and float(n).is_integer() else n
+    if t == "boolean":
+        if isinstance(raw, bool):
+            return raw
+        v = str(raw).strip().lower()
+        if v in ("true", "yes", "y", "1"):
+            return True
+        if v in ("false", "no", "n", "0"):
+            return False
+        raise ValueError(raw)
     if t == "choice":
         return _canon(f["choices"], str(raw)) or str(raw)
-    if t == "multi_choice":
+    if t in ("multi_choice", "ranking"):
         parts = raw if isinstance(raw, list) else re.split(r"[;|]", str(raw))
         return [_canon(f["choices"], p) or p.strip() for p in parts if str(p).strip()]
-    if t == "photo":
-        return None
+    if t in ("photo", "audio", "video", "file", "signature", "note", "group", "repeat", "calculation"):
+        return None                                          # files, notes and calculated values cannot be imported
     return raw if isinstance(raw, str) else str(raw)
 
 
@@ -397,7 +408,7 @@ def import_features(conn, job) -> dict:
     pid, uid, status = job["project_id"], job["created_by"], p["status"]
     form = conn.execute("SELECT f.id, f.version, v.geometry_type, v.fields FROM forms f JOIN form_versions v "
                         "ON v.form_id = f.id AND v.version = f.version WHERE f.id = %s", (p["form_id"],)).fetchone()
-    fields = {f["id"]: f for f in form["fields"]}
+    fields = {f["id"]: f for f in top_level_fields(form["fields"]) if f["type"] not in ("note", "group", "repeat", "calculation")}
     mapping = p["mapping"]
     kind = p["kind"]
     with tempfile.TemporaryDirectory() as t:
