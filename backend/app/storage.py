@@ -13,7 +13,20 @@ def _region() -> str:
     return r
 
 
-def _client(endpoint: str):
+def _endpoint(name: str, value: str) -> str:
+    """Accept host-only values by adding https://; reject anything that cannot be a URL, with a readable message."""
+    v = (value or "").strip().rstrip("/")
+    if v and "://" not in v and "." in v:
+        v = "https://" + v
+    if not v.startswith(("http://", "https://")) or "." not in v.split("://", 1)[1] and "localhost" not in v:
+        raise RuntimeError(
+            f"{name} must be a full URL such as https://<account-id>.r2.cloudflarestorage.com "
+            f"(EU buckets: https://<account-id>.eu.r2.cloudflarestorage.com), got {value!r}")
+    return v
+
+
+def _client(endpoint: str, name: str = "S3_ENDPOINT"):
+    endpoint = _endpoint(name, endpoint)
     return boto3.client(
         "s3", endpoint_url=endpoint, aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key, region_name=_region(),
@@ -21,7 +34,7 @@ def _client(endpoint: str):
 
 
 internal = _client(settings.s3_endpoint)            # API and worker traffic
-public = _client(settings.s3_public_endpoint)       # signs URLs that browsers and phones will call
+public = _client(settings.s3_public_endpoint, "S3_PUBLIC_ENDPOINT")       # signs URLs that browsers and phones will call
 B = settings.s3_bucket
 
 
