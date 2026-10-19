@@ -244,6 +244,7 @@ def _check_feature(g: dict, properties: dict) -> str | None:
 FEATURE_SQL = ("f.id, ST_AsGeoJSON(f.geom, 7)::jsonb AS geometry, f.properties, f.version, f.created_at, f.updated_at, "
                "f.status, f.created_by, u.name AS author, f.review_note")
 FEATURE_FROM = "FROM workspace_features f LEFT JOIN users u ON u.id = f.created_by"
+_KIND_NAME = {"point": "point", "line": "line", "area": "polygon"}      # what people see
 GEOM_LIKE = {"point": "%POINT", "line": "%LINESTRING", "area": "%POLYGON"}      # matched against GeometryType(geom)
 
 MAP_SELECT = (
@@ -657,7 +658,7 @@ async def publish_map(map_id: UUID, body: PublishIn, user=Depends(current_user),
     cur = await conn.execute("SELECT count(*)::int AS n FROM workspace_features WHERE map_id = %s AND status = 'approved' "
                              "AND GeometryType(geom) ILIKE %s", (map_id, GEOM_LIKE[body.geometry_type]))
     if (await cur.fetchone())["n"] == 0:
-        raise Problem(409, f"There are no approved {body.geometry_type} features yet. Approve some in the Review tab first.",
+        raise Problem(409, f"There are no approved {_KIND_NAME[body.geometry_type]} features yet. Approve some in the Review tab first.",
                       code="empty_dataset")
     cur = await conn.execute(
         "INSERT INTO datasets (slug, map_id, map_geometry, title, description, license, tags, visibility, statuses, "

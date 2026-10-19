@@ -185,6 +185,7 @@ def _tag_field_ids(keys: list[str]) -> dict[str, str]:
     return out
 
 
+_KIND_NAME = {"point": "point", "line": "line", "area": "polygon"}
 _GEOM_LIKE = {"point": "%POINT", "line": "%LINESTRING", "area": "%POLYGON"}
 
 
@@ -217,7 +218,7 @@ def _snapshot_map(conn, job, d) -> dict:
         "FROM workspace_features f WHERE f.map_id = %s AND f.status = 'approved' AND GeometryType(f.geom) ILIKE %s",
         (did, version, Jsonb(ids), mid, like)).rowcount
     if n == 0:
-        raise JobFailed(f"There are no approved {gtype} features to publish. Approve some in the map's Review tab first.", "empty_dataset")
+        raise JobFailed(f"There are no approved {_KIND_NAME[gtype]} features to publish. Approve some in the map's Review tab first.", "empty_dataset")
     bbox = conn.execute("SELECT ARRAY[ST_XMin(e), ST_YMin(e), ST_XMax(e), ST_YMax(e)] AS b FROM "
                         "(SELECT ST_Extent(geom) AS e FROM dataset_features WHERE dataset_id = %s AND version = %s) x",
                         (did, version)).fetchone()["b"]
