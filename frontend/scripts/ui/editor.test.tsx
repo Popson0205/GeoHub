@@ -31,10 +31,10 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await open(mid);
   ok(p().features.some((f: any) => f.state === "review") && p().features.some((f: any) => f.state === "rejected"), "features waiting for review (purple) and rejected (red) are coloured apart");
   await click(/^Polygon$/);
-  // every tool is a symbol: no visible words on the tool buttons, but each has a name for screen readers and a tooltip
+  // every tool is a symbol with a short visible caption, plus a full name for screen readers and a tooltip. The caption must be part of the name.
   const toolbar = screen.getByRole("toolbar", { name: "Editing tools" });
   const btns = within(toolbar).getAllByRole("button");
-  ok(btns.length >= 6 && btns.every((b) => b.textContent === "" && !!b.querySelector("svg") && !!b.getAttribute("aria-label") && !!b.getAttribute("title")), "editing tools are symbols with names and tooltips, not words");
+  ok(btns.length >= 6 && btns.every((b) => { const cap = (b.textContent ?? "").trim(); return cap.length > 0 && !!b.querySelector("svg") && !!b.getAttribute("title") && (b.getAttribute("aria-label") ?? "").toLowerCase().includes(cap.toLowerCase()); }), "editing tools are symbols with a visible caption, a full name and a tooltip");
   ok(["Select", "Reshape", "Move", "Split", "Cut", "Merge"].every((n) => !!within(toolbar).queryByRole("button", { name: n })), "every editing tool is still reachable by name");
   ok(within(screen.getByRole("toolbar", { name: "Drawing tools" })).getByRole("button", { name: "Polygon" }).getAttribute("title") === "Polygon (G)", "the polygon tool shows its shortcut");
   for (let i = 0; i < 2; i++) await act(async () => { p().onDraw(poly(4 + i * 0.1)); });

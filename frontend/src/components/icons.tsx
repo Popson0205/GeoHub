@@ -21,6 +21,14 @@ const ICONS = {
   save: <><path d="M5 3h11l4 4v13a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" /><path d="M8 3v5h7V3M8 21v-7h8v7" /></>,
   snap: <><path d="M6 3v8a6 6 0 0012 0V3h-4v8a2 2 0 01-4 0V3z" /><path d="M6 7h4M14 7h4" /></>,
   multi: <><rect x="4" y="4" width="16" height="16" rx="2.5" /><path d="M8 12.2l2.8 2.8L16 9.2" /></>,
+  /* navigation and chrome */
+  navMap: <><path d="M9 4L3 6.5v13L9 17l6 3 6-2.5v-13L15 7z" /><path d="M9 4v13M15 7v13" /></>,
+  navCollect: <><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M12 8.2c-1.7 0-3 1.3-3 3 0 2.2 3 5 3 5s3-2.8 3-5c0-1.7-1.3-3-3-3z" /></>,
+  navHub: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></>,
+  chevronDown: <path d="M6 9l6 6 6-6" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  logout: <><path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4" /><path d="M16 8l4 4-4 4M20 12H9" /></>,
 } satisfies Record<string, ReactNode>;
 export type IconName = keyof typeof ICONS;
 
@@ -33,13 +41,15 @@ export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
 }
 
 /** A square button that shows a symbol. The name is for screen readers and the hover tooltip, and shows the shortcut key. */
-export function IconButton({ icon, label, shortcut, active, danger, children, className = "", title, ...rest }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
+export function IconButton({ icon, label, shortcut, active, danger, children, caption, className = "", title, ...rest }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   icon: IconName; label: string; shortcut?: string; active?: boolean; danger?: boolean; busy?: boolean; children?: ReactNode;
+  /** Short visible text under the icon (a tool tile). The accessible name stays `label`, which must contain the caption. */
+  caption?: string;
 }) {
   return (
     <Button {...rest} aria-label={label} title={title ?? (shortcut ? `${label} (${shortcut})` : label)} variant={active ? "primary" : danger ? "danger" : "default"}
-      className={`icon-btn ${children ? "has-text" : ""} ${className}`}>
-      <Icon name={icon} />{children}
+      className={`icon-btn ${children ? "has-text" : ""} ${caption ? "icon-tile" : ""} ${className}`}>
+      <Icon name={icon} size={caption ? 20 : 22} />{caption ? <span className="icon-cap">{caption}</span> : children}
     </Button>
   );
 }

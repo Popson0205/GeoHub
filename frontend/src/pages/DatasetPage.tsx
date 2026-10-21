@@ -63,6 +63,7 @@ export default function DatasetPage() {
           ))}
         </section>
         <section className="card" aria-label="Details">
+          <h2>About this data</h2>
           <dl className="kv">
             <dt>Licence</dt><dd>{d.license}</dd>
             <dt>Features</dt><dd>{d.feature_count}</dd>

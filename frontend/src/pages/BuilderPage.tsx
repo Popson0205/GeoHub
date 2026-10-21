@@ -107,7 +107,8 @@ export default function BuilderPage() {
 
   return (
     <div className="builder" style={{ flex: 1 }}>
-      <aside className="side left">
+      <h1 className="sr-only">Form builder</h1>
+      <aside className="side left" aria-label="Add a field">
         <Link to={`/collect/${projectId}/forms`}>All forms</Link>
         <h2>Add a field</h2>
         {field && isContainer(field.type) && <span className="field-hint">New fields go inside “{field.label}”.</span>}
@@ -142,7 +143,7 @@ export default function BuilderPage() {
         </div>
       </section>
 
-      <aside className="side right">
+      <aside className="side right" aria-label="Field settings">
         <h2>Field settings</h2>
         {field ? (
           <Settings key={field.id} form={form} field={field} issues={issues[field.id]} patch={(p) => patchField(field.id, p)}

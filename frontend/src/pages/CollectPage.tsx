@@ -165,7 +165,8 @@ export default function CollectPage() {
   const drawMode = draft && !draft.geometry && placing && form ? form.geometry_type : null;
 
   return (
-    <div className="collect">
+    <main className="collect">
+      <h1 className="sr-only">Data collector</h1>
       <header className="collect-head">
         <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>
         <div className="grow"><small>Project</small><strong>{name}</strong></div>
@@ -260,6 +261,6 @@ export default function CollectPage() {
           <button key={t} aria-current={tab === t} onClick={() => setTab(t)}>{t === "collect" ? "Collect" : t === "data" ? "My data" : "Sync"}{t === "sync" && pending ? ` (${pending})` : ""}</button>
         ))}
       </nav>
-    </div>
+    </main>
   );
 }

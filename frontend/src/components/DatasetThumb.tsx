@@ -50,7 +50,7 @@ export default function DatasetThumb({ slug, version, title }: { slug: string; v
 
   const show = useMemo(() => visible && !!features && features.length > 0, [visible, features]);
   return (
-    <div ref={box} className={`thumb${show ? " thumb-map" : ""}`} {...(show ? {} : { "aria-hidden": true })}>
+    <div ref={box} className={`thumb${show ? " thumb-map" : ""}`} aria-hidden="true" {...({ inert: "" } as Record<string, string>)}>
       {show && (
         <Suspense fallback={null}>
           <MapView preview features={features!} fitKey={`${slug}@${version}`} label={`Map preview of ${title}`} />

@@ -585,17 +585,18 @@ export default function MapEditorPage() {
   const tileAssets = data.assets;
   const summaryBits = [counts.created && `${counts.created} new`, counts.modified && `${counts.modified} edited`, counts.deleted && `${counts.deleted} deleted`].filter(Boolean).join(" · ");
   const toolBtn = (t: Tool) => (
-    <IconButton key={t} icon={TOOL_ICON[t]} label={TOOL_LABEL[t]} shortcut={TOOL_KEY[t]} active={tool === t} aria-pressed={tool === t} onClick={() => chooseTool(tool === t && t !== "select" ? "select" : t)} />
+    <IconButton key={t} icon={TOOL_ICON[t]} label={TOOL_LABEL[t]} caption={TOOL_LABEL[t]} shortcut={TOOL_KEY[t]} active={tool === t} aria-pressed={tool === t} onClick={() => chooseTool(tool === t && t !== "select" ? "select" : t)} />
   );
   const saveLabel = dirty ? `Save all (${counts.total})` : "Save all";
 
   return (
     <div className="editor" style={{ flex: 1 }}>
+      <h1 className="sr-only">{name ?? data.map.name}: map editor</h1>
       <aside className="side left" aria-label="Map tools and imagery">
         <div className="stack">
           <Link to="/maps" className="field-hint" onClick={(e) => leaveGuard(e, "/maps")}>← All maps</Link>
-          <input aria-label="Map name" value={name ?? data.map.name} onChange={(e) => setName(e.target.value)} onBlur={rename}
-            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ font: "600 16px var(--font-ui)" }} />
+          <input className="map-title" aria-label="Map name" value={name ?? data.map.name} onChange={(e) => setName(e.target.value)} onBlur={rename}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
           <span className="field-hint">{data.features.length} saved feature{data.features.length === 1 ? "" : "s"}{role !== "owner" ? ` · you are a ${role}` : ""}</span>
           <Link className="btn btn-sm" to={`/maps/${mapId}/portal`} onClick={(e) => leaveGuard(e, `/maps/${mapId}/portal`)}>
             {data.map.is_campaign ? "Campaign portal" : "Team, review & publish"} →
@@ -615,7 +616,7 @@ export default function MapEditorPage() {
 
         <div className="stack">
           <h2>Draw</h2>
-          <div className="icon-grid" role="toolbar" aria-label="Drawing tools">{(["point", "line", "area"] as Tool[]).map((t) => toolBtn(t))}</div>
+          <div className="icon-grid tiles" role="toolbar" aria-label="Drawing tools">{(["point", "line", "area"] as Tool[]).map((t) => toolBtn(t))}</div>
           {drawGeom && tool !== "cut" && (
             <div className="stack" style={{ gap: 8 }}>
               <span className="field-hint">Tags for each new feature</span>
@@ -627,20 +628,22 @@ export default function MapEditorPage() {
 
         <div className="stack">
           <h2>Edit</h2>
-          <div className="icon-grid" role="toolbar" aria-label="Editing tools">
+          <div className="icon-grid tiles" role="toolbar" aria-label="Editing tools">
             {(["select", "reshape", "move", "split", "cut"] as Tool[]).map((t) => toolBtn(t))}
-            <IconButton icon="merge" label="Merge" disabled={sel.length < 2 || working} busy={working} title="Merge (join selected lines or polygons into one)" onClick={() => void mergeSelected()} />
+            <IconButton icon="merge" label="Merge" caption="Merge" disabled={sel.length < 2 || working} busy={working} title="Merge (join selected lines or polygons into one)" onClick={() => void mergeSelected()} />
           </div>
-          <div className="icon-grid" role="toolbar" aria-label="Actions">
-            <IconButton icon="duplicate" label="Duplicate" disabled={!sel.length} onClick={duplicateSelected} />
-            <IconButton icon="delete" label="Delete" shortcut="Del" danger disabled={!sel.length || editable(sel, true).length === 0} onClick={removeSelected} />
-            <IconButton icon="undo" label="Undo" shortcut="Ctrl+Z" disabled={!hist.past.length} onClick={undoAct} />
-            <IconButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" disabled={!hist.future.length} onClick={redoAct} />
-            <IconButton icon="table" label="Attribute table" shortcut="T" active={tableOpen} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} />
+          <h2>Actions</h2>
+          <div className="icon-grid tiles" role="toolbar" aria-label="Actions">
+            <IconButton icon="duplicate" label="Duplicate" caption="Duplicate" disabled={!sel.length} onClick={duplicateSelected} />
+            <IconButton icon="delete" label="Delete" caption="Delete" shortcut="Del" danger disabled={!sel.length || editable(sel, true).length === 0} onClick={removeSelected} />
+            <IconButton icon="undo" label="Undo" caption="Undo" shortcut="Ctrl+Z" disabled={!hist.past.length} onClick={undoAct} />
+            <IconButton icon="redo" label="Redo" caption="Redo" shortcut="Ctrl+Shift+Z" disabled={!hist.future.length} onClick={redoAct} />
+            <IconButton icon="table" label="Attribute table" caption="Table" shortcut="T" active={tableOpen} aria-pressed={tableOpen} onClick={() => setTableOpen((v) => !v)} />
           </div>
-          <div className="icon-grid" role="toolbar" aria-label="Options">
-            <IconButton icon="snap" label="Snap to nearby points" active={snap} aria-pressed={snap} onClick={() => setSnap((v) => !v)} />
-            <IconButton icon="multi" label="Multi-select (tap to add)" active={multi} aria-pressed={multi} onClick={() => setMulti((v) => !v)} />
+          <h2>Options</h2>
+          <div className="icon-grid tiles" role="toolbar" aria-label="Options">
+            <IconButton icon="snap" label="Snap to nearby points" caption="Snap" active={snap} aria-pressed={snap} onClick={() => setSnap((v) => !v)} />
+            <IconButton icon="multi" label="Multi-select (tap to add)" caption="Multi-select" active={multi} aria-pressed={multi} onClick={() => setMulti((v) => !v)} />
           </div>
           <span className="field-hint"><strong>{TOOL_LABEL[tool]}.</strong> {TOOL_HELP[tool]}</span>
         </div>
@@ -742,7 +745,7 @@ export default function MapEditorPage() {
         onGeometryChange={onGeometryChange}
         flyTo={flyTo}
         fitKey={mapId}
-        label="Map"
+        label="Drawing map"
       >
         <div className="map-bar" role="toolbar" aria-label="Edit actions">
           <IconButton icon="undo" label="Undo" shortcut="Ctrl+Z" disabled={!hist.past.length} onClick={undoAct} />
@@ -761,9 +764,22 @@ export default function MapEditorPage() {
       <aside className="side right" aria-label="Feature details" aria-live="polite">
         <datalist id="tag-keys">{COMMON_KEYS.map((k) => <option key={k} value={k} />)}</datalist>
         {!sel.length && (
-          <div className="state"><strong>Nothing selected</strong>
-            {drawGeom && tool !== "cut" ? "Click the map to draw. Each new feature is selected so you can tag it, and the tool stays on." : "Pick Point, Line or Polygon to draw, or click a feature on the map."}
-          </div>
+          <>
+            <div className="state"><strong>Nothing selected</strong>
+              {drawGeom && tool !== "cut" ? "Click the map to draw. Each new feature is selected so you can tag it, and the tool stays on." : "Pick Point, Line or Polygon to draw, or click a feature on the map."}
+            </div>
+            <section className="shortcuts" aria-label="Keyboard shortcuts">
+              <h2>Shortcuts</h2>
+              <dl>
+                <div><dt><kbd>P</kbd> <kbd>L</kbd> <kbd>A</kbd></dt><dd>Draw a point, line or area</dd></div>
+                <div><dt><kbd>V</kbd></dt><dd>Select and move</dd></div>
+                <div><dt><kbd>Shift</kbd> + click</dt><dd>Select several</dd></div>
+                <div><dt><kbd>T</kbd></dt><dd>Attribute table</dd></div>
+                <div><dt><kbd>Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo</dd></div>
+                <div><dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Save all</dd></div>
+              </dl>
+            </section>
+          </>
         )}
         {sel.length > 1 && (
           <>

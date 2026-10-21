@@ -32,7 +32,7 @@ export default function HubPage() {
             <article className="dataset" key={d.slug}>
               <DatasetThumb slug={d.slug} version={d.latest_version} title={d.title} />
               <div>
-                <h3><Link to={`/hub/${d.slug}`}>{d.title}</Link></h3>
+                <h2><Link to={`/hub/${d.slug}`}>{d.title}</Link></h2>
                 <p>{d.description || "No description yet."} {d.feature_count} features, updated {new Date(d.updated_at).toLocaleDateString()}.</p>
                 <div className="chips">
                   {d.formats.map((f) => <span className="chip" key={f}>{FORMAT_LABEL[f]}</span>)}

@@ -172,6 +172,7 @@ export default function EditorPage() {
   const editing = !!draft || !!selected;
   return (
     <div className="editor" style={{ flex: 1 }}>
+      <h1 className="sr-only">Review collected data</h1>
       <aside className="side left" aria-label="Layers and tools">
         <div><h2>Collected data</h2><strong>{data.project.name}</strong><Link to="/collect" className="field-hint">← All projects</Link></div>
         <div className="stack">

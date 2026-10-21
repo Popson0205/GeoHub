@@ -40,7 +40,7 @@ export default function LoginPage() {
           <p>Digitise over imagery, run field surveys offline, and publish reviewed data for everyone to use.</p>
         </div>
       </aside>
-      <div className="auth-main">
+      <main className="auth-main">
       <form onSubmit={submit}>
         <h1>{mode === "register" ? "Create your Geohub account" : "Sign in to Geohub"}</h1>
         {config.useMock && <div className="state"><span>Mock mode: no server needed. Use the filled-in demo account.</span></div>}
@@ -58,7 +58,7 @@ export default function LoginPage() {
           </p>
         )}
       </form>
-      </div>
+      </main>
     </div>
   );
 }
