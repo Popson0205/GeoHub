@@ -13,7 +13,7 @@ import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useOnline } from "../lib/hooks";
-import { useFormManifest } from "../lib/pwa";
+import { isCollectorApp, useFormManifest } from "../lib/pwa";
 import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, syncPublic, type SyncReport } from "../lib/sync";
 import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
 
@@ -28,6 +28,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const toast = useToast();
   const confirm = useConfirm();
   const online = useOnline();
+  // The installed app only collects: no "My data", no records on the map, nothing pulled from the server.
+  const collectOnly = isCollectorApp();
 
   const [forms, setForms] = useState<Form[] | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -57,27 +59,27 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
     setLoadError(null);
     if (pub) { setForms([pub.form]); setFromCache(false); setFormId(pub.form.id); setName(pub.project_name); return; }
     try {
-      const b = await loadBundle(projectId);
+      const b = await loadBundle(projectId, collectOnly);
       setForms(b.forms); setFromCache(b.fromCache);
       setFormId((cur) => cur || b.forms[0]?.id || "");
     } catch (e) { setLoadError(e); }
     try { const p = await (await loadApi()).getProject(projectId); setName(p.name); await db.meta.put({ key: `name:${projectId}`, value: p.name }); }
     catch { const cached = await db.meta.get(`name:${projectId}`); if (cached) setName(cached.value); }
-  }, [projectId, pub]);
+  }, [projectId, pub, collectOnly]);
   useEffect(() => { void load(); }, [load]);
 
   const sync = useCallback(async (quiet: boolean) => {
     if (syncing.current || !navigator.onLine) return;
     syncing.current = true; setSyncBusy(true);
     try {
-      const r = pub ? await syncPublic(pub.token, projectId) : await syncProject(projectId);
+      const r = pub ? await syncPublic(pub.token, projectId, { collectOnly }) : await syncProject(projectId, { collectOnly });
       setReport(r); setSyncError("");
       if (!quiet) toast(`Synced. Sent ${r.pushed}, received ${r.pulled}${r.conflicts ? `, ${r.conflicts} need a decision` : ""}.`, r.conflicts || r.rejected ? "info" : "success");
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : "Sync failed.");
       if (!quiet) toast("Couldn't sync. Your data is safe on this device.", "error");
     } finally { syncing.current = false; setSyncBusy(false); }
-  }, [projectId, pub, toast]);
+  }, [projectId, pub, toast, collectOnly]);
 
   useEffect(() => { if (online && forms) void sync(true); }, [online, forms, sync]);
   useEffect(() => { const t = setInterval(() => void sync(true), 60000); return () => clearInterval(t); }, [sync]);
@@ -87,10 +89,10 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
   const form = forms?.find((f) => f.id === (draft?.formId ?? formId)) ?? null;
   const mapFeatures: MapFeature[] = useMemo(() => {
-    const list: MapFeature[] = features.filter((f) => !f.deleted && f.id !== draft?.id).map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, pending: f.sync !== "synced" }));
+    const list: MapFeature[] = (collectOnly ? [] : features).filter((f) => !f.deleted && f.id !== draft?.id).map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, pending: f.sync !== "synced" }));
     if (draft?.geometry) list.push({ id: DRAFT_ID, geometry: draft.geometry, pending: true });
     return list;
-  }, [features, draft]);
+  }, [features, draft, collectOnly]);
 
   function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: applyDefaults(form.fields), newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
   async function cancelDraft() {
@@ -172,6 +174,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   }
 
   const mine = features.filter((f) => !f.deleted);
+  const rejected = features.filter((f) => f.sync === "rejected");
   const drawMode = draft && !draft.geometry && placing && form ? form.geometry_type : null;
 
   return (
@@ -189,7 +192,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         drawMode={drawMode}
         onDraw={(g) => { setDraft((d) => d && { ...d, geometry: g }); setPlacing(false); }}
         onCancelDraw={() => setPlacing(false)}
-        fitKey={`${projectId}:${features.length > 0}`}
+        fitKey={collectOnly ? projectId : `${projectId}:${features.length > 0}`}
         geolocate
         label="Collection map"
       />
@@ -262,13 +265,20 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
             <Button variant="primary" busy={syncBusy} disabled={!online} onClick={() => sync(false)}>Sync now</Button>
             {!online && <span className="field-hint">Connect to the internet to sync. Your records are safe on this device.</span>}
             {syncError && <div className="state state-error" role="alert"><strong>Last sync failed</strong>{syncError}</div>}
+            {collectOnly && rejected.length > 0 && (
+              <div className="state state-error" role="alert">
+                <strong>{rejected.length} record{rejected.length === 1 ? " was" : "s were"} not accepted</strong>
+                <span>The server refused {rejected.length === 1 ? "it" : "them"}. Discard {rejected.length === 1 ? "it" : "them"} and collect again.</span>
+                <Button small variant="danger" onClick={() => rejected.forEach((f) => void deleteFeatureLocal(f.id))}>Discard</Button>
+              </div>
+            )}
             {report && <div className="state"><strong>Last sync</strong>Sent {report.pushed} · received {report.pulled} · photos {report.photos}{report.conflicts ? ` · ${report.conflicts} conflicts` : ""}{report.rejected ? ` · ${report.rejected} not accepted` : ""}</div>}
           </>
         )}
       </section>
 
       <nav className="tabbar" aria-label="Collector sections">
-        {(["collect", "data", "sync"] as const).map((t) => (
+        {((collectOnly ? ["collect", "sync"] : ["collect", "data", "sync"]) as readonly ("collect" | "data" | "sync")[]).map((t) => (
           <button key={t} aria-current={tab === t} onClick={() => setTab(t)}>{t === "collect" ? "Collect" : t === "data" ? "My data" : "Sync"}{t === "sync" && pending ? ` (${pending})` : ""}</button>
         ))}
       </nav>

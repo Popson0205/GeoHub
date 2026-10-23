@@ -40,6 +40,16 @@ export function applyUpdate() { waiting?.postMessage({ type: "SKIP_WAITING" }); 
 
 export const isStandalone = () =>
   window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+/**
+ * True in the installed app (home-screen launch). That app is for collecting only: no data viewing, editing,
+ * map review or publishing. To try it in a normal browser tab, open any page with ?mode=collector once.
+ */
+export function isCollectorApp(): boolean {
+  try {
+    if (new URLSearchParams(window.location.search).get("mode") === "collector") sessionStorage.setItem("geohub.collector", "1");
+    return isStandalone() || sessionStorage.getItem("geohub.collector") === "1";
+  } catch { return isStandalone(); }
+}
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 export function usePwa() {

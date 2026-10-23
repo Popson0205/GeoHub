@@ -13,17 +13,20 @@ import type { Feature, Form, Geometry, Props } from "./types";
 const BATCH = 200;
 const cursorKey = (projectId: string) => `cursor:${projectId}`;
 
-export async function loadBundle(projectId: string): Promise<{ forms: Form[]; fromCache: boolean }> {
+/** The installed collector only needs the forms: records already collected (by anyone) are never stored on the phone. */
+export async function loadBundle(projectId: string, formsOnly = false): Promise<{ forms: Form[]; fromCache: boolean }> {
   try {
     const api = await loadApi();
     const bundle = await api.bundle(projectId);
     await db.transaction("rw", db.forms, db.features, db.meta, async () => {
       await db.forms.where("project_id").equals(projectId).delete();
       await db.forms.bulkPut(bundle.forms);
-      // Keep local unsynced work; replace everything that is already on the server.
-      const pending = new Set((await db.features.where("project_id").equals(projectId).toArray()).filter((f) => f.sync !== "synced").map((f) => f.id));
-      await db.features.bulkPut(bundle.features.filter((f) => !pending.has(f.id)).map((f) => ({ ...f, sync: "synced" as const })));
-      await db.meta.put({ key: cursorKey(projectId), value: bundle.cursor });
+      if (!formsOnly) {
+        // Keep local unsynced work; replace everything that is already on the server.
+        const pending = new Set((await db.features.where("project_id").equals(projectId).toArray()).filter((f) => f.sync !== "synced").map((f) => f.id));
+        await db.features.bulkPut(bundle.features.filter((f) => !pending.has(f.id)).map((f) => ({ ...f, sync: "synced" as const })));
+        await db.meta.put({ key: cursorKey(projectId), value: bundle.cursor });
+      }
     });
     return { forms: bundle.forms, fromCache: false };
   } catch (e) {
@@ -106,7 +109,20 @@ export async function pendingCount(projectId: string): Promise<number> {
 
 export interface SyncReport { pushed: number; conflicts: number; rejected: number; pulled: number; photos: number }
 
-export async function syncProject(projectId: string): Promise<SyncReport> {
+/** Collect-only devices don't keep sent records: once a record and its files are on the server it is removed from the phone. */
+async function purgeSent(projectId: string): Promise<void> {
+  const sent = await db.features.where("project_id").equals(projectId).filter((f) => f.sync === "synced").toArray();
+  for (const f of sent) {
+    const waiting = await db.media.where("feature_id").equals(f.id).filter((m) => m.uploaded === 0).count();
+    if (waiting) continue;
+    await db.transaction("rw", db.features, db.media, async () => {
+      await db.media.where("feature_id").equals(f.id).delete();
+      await db.features.delete(f.id);
+    });
+  }
+}
+
+export async function syncProject(projectId: string, opts: { collectOnly?: boolean } = {}): Promise<SyncReport> {
   const api = await loadApi();
   const report: SyncReport = { pushed: 0, conflicts: 0, rejected: 0, pulled: 0, photos: 0 };
 
@@ -150,7 +166,8 @@ export async function syncProject(projectId: string): Promise<SyncReport> {
     } catch { /* stays pending; retried next sync */ }
   }
 
-  // 3. pull
+  // 3. pull (a collect-only device never receives other people's records)
+  if (opts.collectOnly) { await purgeSent(projectId); return report; }
   let cursor = (await db.meta.get(cursorKey(projectId)))?.value ?? "";
   for (;;) {
     const page = await api.syncPull(projectId, cursor);
@@ -172,7 +189,7 @@ export async function syncProject(projectId: string): Promise<SyncReport> {
  * Sync for a form opened from a share link. Nobody is signed in, so there is no pull and no editing after sending:
  * each record is created once, then its photos upload. `key` is the local project key (never a real project id).
  */
-export async function syncPublic(token: string, key: string): Promise<SyncReport> {
+export async function syncPublic(token: string, key: string, opts: { collectOnly?: boolean } = {}): Promise<SyncReport> {
   const api = await loadApi();
   const report: SyncReport = { pushed: 0, conflicts: 0, rejected: 0, pulled: 0, photos: 0 };
   const queued: QueuedChange[] = await db.queue.where("project_id").equals(key).toArray();
@@ -198,6 +215,7 @@ export async function syncPublic(token: string, key: string): Promise<SyncReport
     try { await api.uploadPublicMedia(token, m.feature_id, m.id, m.blob, m.field_id); await db.media.update(m.id, { uploaded: 1 }); report.photos++; }
     catch { /* stays pending; retried next sync */ }
   }
+  if (opts.collectOnly) await purgeSent(key);
   return report;
 }
 

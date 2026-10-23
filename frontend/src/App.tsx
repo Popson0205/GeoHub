@@ -17,6 +17,8 @@ import JoinMapPage from "./pages/JoinMapPage";
 import SharePage from "./pages/SharePage";
 import PublicFormPage from "./pages/PublicFormPage";
 import DataPage from "./pages/DataPage";
+import CollectHomePage from "./pages/CollectHomePage";
+import { isCollectorApp } from "./lib/pwa";
 
 function NotFound() {
   return (
@@ -34,7 +36,21 @@ function LegacyProject({ to }: { to: "collect" | "forms" | "review" | "form" }) 
   return <Navigate to={path} replace />;
 }
 
+/** The installed app: sign in, pick a project, collect. Everything else is on the website for administrators. */
+function CollectorRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/f/:token" element={<PublicFormPage />} />
+      <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
+      <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/collect" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
+  if (isCollectorApp()) return <CollectorRoutes />;
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
