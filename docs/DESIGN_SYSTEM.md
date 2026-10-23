@@ -47,3 +47,13 @@ IBM Plex Sans for the interface, IBM Plex Mono for coordinates, codes and format
 - Check a new page with the accessibility scan described in `docs/DESIGN_QA.md`.
 
 Reference screenshots are in `docs/design/`.
+
+## Form builder: arranging fields by dragging
+Fields are arranged by dragging, not with move buttons.
+- **Mouse:** drag a field by its grip, or by the card itself. Drag a field type from the left list onto the form to add it at that spot (clicking it still adds it at the end).
+- **Touch:** drag by the grip. Touching the card body still scrolls the page.
+- **Keyboard:** Tab to a grip, press Space to pick the field up, use the up and down arrow keys to move it, Space to drop it, Escape to cancel. Each step is announced to screen readers.
+- A line shows where the field will land. Dropping into a group or repeat section nests it; the same rules as before apply (a repeat cannot sit inside another repeat, and nothing can go inside itself).
+- Near the top or bottom of the list, dragging scrolls it.
+
+The placement rules are plain functions in `src/lib/fieldSpec.ts` (`moveTo`, `canPlace`, `insertAt`) and `src/lib/dnd.ts`, tested by `npm run test:dnd`. The interaction is `src/components/useFieldDnd.tsx`.
