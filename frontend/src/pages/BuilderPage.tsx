@@ -77,7 +77,7 @@ export default function BuilderPage() {
       let saved = await api.saveForm(form!);
       if (publish) saved = await api.publishForm(saved.id);
       setForm(saved);
-      toast(publish ? `Published version ${saved.version}. Collectors get it on their next sync.` : "Draft saved.", "success");
+      toast(publish ? `Published version ${saved.version}. Open “Share and collect” to get the link.` : "Draft saved.", "success");
     } catch (e) { toast(e instanceof Error ? e.message : "Could not save the form.", "error"); }
     finally { setBusy(null); }
   }
@@ -163,6 +163,7 @@ export default function BuilderPage() {
           <Button className="grow" busy={busy === "save"} disabled={!!busy} onClick={() => persist(false)}>Save draft</Button>
           <Button className="grow" variant="primary" busy={busy === "publish"} disabled={!!busy} onClick={() => persist(true)}>Publish</Button>
         </div>
+        {form.status === "published" && <Link className="btn" to={`/collect/${form.project_id}/forms/${form.id}/share`}>Share and collect</Link>}
       </aside>
     </div>
   );

@@ -5,13 +5,15 @@ import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  Activity, ContributorsReport, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
+  Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
 import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects, seedSharedMaps } from "./seed";
 
 type Row = Feature & { seq: number };
 interface State {
   projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
+  sharing?: Record<string, { share_mode: ShareMode; share_token: string }>;
+  members?: Record<string, ProjectMember[]>;
   maps?: MockMap[]; mapFeatures?: MockFeat[];
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
@@ -125,6 +127,86 @@ export class MockApi implements Api {
     await wait(); this.auth();
     const r = this.s.features.find((f) => f.id === id);
     if (r) { r.deleted = true; r.seq = ++this.s.seq; r.version += 1; this.save(); }
+  }
+  async reviewFeature(id: string, decision: "approved" | "rejected", _note?: string) {
+    await wait(); this.auth();
+    const r = this.s.features.find((f) => f.id === id);
+    if (!r || r.deleted) throw new ApiError(404, "Feature not found.");
+    r.status = decision; r.version += 1; r.seq = ++this.s.seq; this.save();
+    return this.strip(r);
+  }
+
+  // ---- sharing and collaborators (mock: the share token is the form id's first 12 characters plus a salt) ----
+  private share(formId: string) {
+    const all = (this.s.sharing ??= {});
+    return (all[formId] ??= { share_mode: "collaborators", share_token: uuid().replace(/-/g, "") });
+  }
+  async getSharing(formId: string): Promise<Sharing> {
+    await wait(60); this.auth();
+    const f = await this.getForm(formId);
+    return { ...this.share(formId), published: f.version > 0 };
+  }
+  async setSharing(formId: string, patch: { share_mode?: ShareMode; regenerate_link?: boolean }): Promise<Sharing> {
+    await wait(); this.auth();
+    const f = await this.getForm(formId);
+    if (patch.share_mode === "public" && f.version === 0) throw new ApiError(409, "Publish the form before making its link public.");
+    const sh = this.share(formId);
+    if (patch.share_mode) sh.share_mode = patch.share_mode;
+    if (patch.regenerate_link) sh.share_token = uuid().replace(/-/g, "");
+    this.save();
+    return { ...sh, published: f.version > 0 };
+  }
+  private memberList(projectId: string): ProjectMember[] {
+    const all = (this.s.members ??= {});
+    return (all[projectId] ??= [{ id: DEMO_USER.id, user_id: DEMO_USER.id, email: DEMO_USER.email, name: DEMO_USER.name, role: "owner", status: "active" }]);
+  }
+  async listProjectMembers(projectId: string) { await wait(60); this.auth(); return [...this.memberList(projectId)]; }
+  async addProjectMember(projectId: string, email: string, role: Exclude<Role, "owner">) {
+    await wait(); this.auth();
+    const list = this.memberList(projectId);
+    const e = email.trim().toLowerCase();
+    if (list.some((m) => m.email.toLowerCase() === e)) throw new ApiError(409, "That person is already on this project.");
+    const m: ProjectMember = { id: uuid(), email: e, role, status: "invited" };
+    list.push(m); this.save();
+    return m;
+  }
+  async setProjectMemberRole(projectId: string, memberId: string, role: Role) {
+    await wait(); this.auth();
+    const m = this.memberList(projectId).find((x) => x.id === memberId);
+    if (!m) throw new ApiError(404, "Member not found.");
+    m.role = role; this.save();
+  }
+  async removeProjectMember(projectId: string, memberId: string) {
+    await wait(); this.auth();
+    const list = this.memberList(projectId);
+    const i = list.findIndex((x) => x.id === memberId);
+    if (i >= 0) list.splice(i, 1);
+    this.save();
+  }
+  private formByToken(token: string): { form: Form; mode: ShareMode } {
+    const found = this.s.forms.find((f) => this.s.sharing?.[f.id]?.share_token === token && f.version > 0);
+    if (!found) throw new ApiError(404, "This form link is not valid, or the form is not published.");
+    return { form: found, mode: this.s.sharing![found.id].share_mode };
+  }
+  async getPublicForm(token: string): Promise<PublicForm> {
+    await wait();
+    const { form, mode } = this.formByToken(token);
+    const project = this.s.projects.find((p) => p.id === form.project_id);
+    if (mode !== "public") {
+      if (!tokens.get()) throw new ApiError(401, "Sign in to use this form.");
+      return { token, form, project_name: project?.name ?? "", access: "member" };
+    }
+    return { token, form, project_name: project?.name ?? "", access: "public" };
+  }
+  async submitPublic(token: string, input: { id: string; geometry: Geometry; properties: Props }) {
+    await wait();
+    const { form, mode } = this.formByToken(token);
+    if (mode !== "public") throw new ApiError(403, "This form is not public.");
+    const errors = validateProperties(form, input.properties);
+    if (Object.keys(errors).length) throw new ApiError(422, "Some fields need attention.", errors);
+    if (this.s.features.some((f) => f.id === input.id)) return;
+    const row: Row = { id: input.id, project_id: form.project_id, form_id: form.id, form_version: form.version, geometry: input.geometry, properties: input.properties, status: "submitted", version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq };
+    this.s.features.push(row); this.save();
   }
 
   async bundle(projectId: string): Promise<Bundle> {

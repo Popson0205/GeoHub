@@ -244,3 +244,12 @@ export interface MapLayers {
   imagery: { id: string; name: string; bounds?: [number, number, number, number]; url: string }[];
 }
 export interface MapImportResult { imported: number; rejected: number; errors: { row: number; message: string }[] }
+
+
+// ---- sharing a form by link, and who may collect with it ----
+/** collaborators = only people added to the project (they sign in). public = anyone with the link, no sign-in. */
+export type ShareMode = "collaborators" | "public";
+export interface Sharing { share_mode: ShareMode; share_token: string; published: boolean }
+export interface ProjectMember { id: string; user_id?: string; email: string; name?: string; role: Role; status: "active" | "invited" }
+/** The form behind a share link. `access` is "member" when the person is a collaborator and should use the collector. */
+export interface PublicForm { token: string; form: Form; project_name: string; access: "public" | "member" }

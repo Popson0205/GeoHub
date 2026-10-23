@@ -458,3 +458,33 @@ class AuditOut(BaseModel):
     target_type: str | None
     target_id: str | None
     details: dict[str, Any]
+
+
+# ---------- sharing a form by link ----------
+class SharingOut(BaseModel):
+    share_mode: Literal["collaborators", "public"]
+    share_token: str
+    published: bool
+
+
+class SharingPatch(BaseModel):
+    share_mode: Literal["collaborators", "public"] | None = None
+    regenerate_link: bool = Field(False, description="Issue a new link; the old one stops working")
+
+
+class PublicFormOut(BaseModel):
+    token: str
+    form_id: UUID
+    project_id: UUID
+    project_name: str
+    name: str
+    geometry_type: GeometryType
+    version: int
+    fields: list[FieldDef]
+    access: Literal["public", "member"] = Field(description="member = the caller is a collaborator and should use the collector")
+
+
+class PublicSubmit(BaseModel):
+    id: UUID = Field(description="Generated on the client; makes a retry safe")
+    geometry: Geometry
+    properties: dict[str, Any] = {}

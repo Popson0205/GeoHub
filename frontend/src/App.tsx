@@ -14,6 +14,9 @@ import MapsPage from "./pages/MapsPage";
 import MapEditorPage from "./pages/MapEditorPage";
 import MapPortalPage from "./pages/MapPortalPage";
 import JoinMapPage from "./pages/JoinMapPage";
+import SharePage from "./pages/SharePage";
+import PublicFormPage from "./pages/PublicFormPage";
+import DataPage from "./pages/DataPage";
 
 function NotFound() {
   return (
@@ -35,6 +38,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* A form shared by link: public links work without signing in */}
+      <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
       <Route element={<Shell />}>
         <Route index element={<LandingPage />} />
@@ -49,6 +54,8 @@ export default function App() {
         <Route path="/collect" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
         <Route path="/collect/:projectId/review" element={<RequireAuth><EditorPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms" element={<RequireAuth><FormsPage /></RequireAuth>} />
+        <Route path="/collect/:projectId/forms/:formId/share" element={<RequireAuth><SharePage /></RequireAuth>} />
+        <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms/:formId" element={<RequireAuth><BuilderPage /></RequireAuth>} />
         <Route path="/projects" element={<LegacyProject to="collect" />} />
         <Route path="/projects/:projectId/editor" element={<LegacyProject to="review" />} />

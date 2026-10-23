@@ -6,7 +6,7 @@ from . import errors, logging_setup, ratelimit
 from .config import settings
 from .db import lifespan as db_lifespan
 from .db import pool
-from .routers import auth, datasets, features, forms, imagery, jobs, maps, media, projects, sync, tiles
+from .routers import auth, datasets, features, forms, imagery, jobs, maps, media, projects, sharing, sync, tiles
 from contextlib import asynccontextmanager
 
 logging_setup.setup()

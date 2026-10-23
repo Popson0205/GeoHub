@@ -53,7 +53,8 @@ export default function ProjectsPage() {
               <div className="actions">
                 <Link className="btn btn-primary" to={`/collect/${p.id}`}>Collect</Link>
                 {(p.role === "owner" || p.role === "admin") && <Link className="btn" to={`/collect/${p.id}/forms`}>Forms</Link>}
-                <Link className="btn" to={`/collect/${p.id}/review`}>Review data</Link>
+                <Link className="btn" to={`/collect/${p.id}/data`}>Collected data</Link>
+                <Link className="btn" to={`/collect/${p.id}/review`}>Map review</Link>
                 {(p.role === "owner" || p.role === "admin") && <Button onClick={() => setPublishing(p)}>Publish</Button>}
               </div>
             </article>
@@ -64,7 +65,7 @@ export default function ProjectsPage() {
   );
 }
 
-function PublishPanel({ project, onClose }: { project: Project; onClose: () => void }) {
+export function PublishPanel({ project, onClose }: { project: Project; onClose: () => void }) {
   const toast = useToast();
   const [title, setTitle] = useState(project.name);
   const [description, setDescription] = useState("");

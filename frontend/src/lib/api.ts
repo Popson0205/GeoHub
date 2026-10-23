@@ -3,7 +3,7 @@ import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  Activity, ContributorsReport, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
+  Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
 
@@ -34,6 +34,19 @@ export interface Api {
   createFeature(f: NewFeature): Promise<Feature>;
   updateFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }): Promise<Feature>;
   deleteFeature(id: string): Promise<void>;
+  /** Approve or reject a collected feature. Only approved features go to the Data hub. */
+  reviewFeature(id: string, decision: "approved" | "rejected", note?: string): Promise<Feature>;
+
+  // ---- sharing a form by link; collaborators on a project ----
+  getSharing(formId: string): Promise<Sharing>;
+  setSharing(formId: string, patch: { share_mode?: ShareMode; regenerate_link?: boolean }): Promise<Sharing>;
+  listProjectMembers(projectId: string): Promise<ProjectMember[]>;
+  addProjectMember(projectId: string, email: string, role: Exclude<Role, "owner">): Promise<ProjectMember>;
+  setProjectMemberRole(projectId: string, memberId: string, role: Role): Promise<void>;
+  removeProjectMember(projectId: string, memberId: string): Promise<void>;
+  /** Works without signing in when the link is public. Throws 401 (sign in) or 403 (not a collaborator) otherwise. */
+  getPublicForm(token: string): Promise<PublicForm>;
+  submitPublic(token: string, input: { id: string; geometry: Geometry; properties: Props }): Promise<void>;
 
   bundle(projectId: string): Promise<Bundle>;
   syncPush(projectId: string, changes: Change[]): Promise<PushResult[]>;
@@ -285,6 +298,25 @@ class HttpApi implements Api {
     return toFeature(await this.req("PATCH", `/features/${id}`, patch));
   }
   deleteFeature(id: string) { return this.req<void>("DELETE", `/features/${id}`); }
+  async reviewFeature(id: string, decision: "approved" | "rejected", note?: string) { return toFeature(await this.req("POST", `/features/${id}/review`, { decision, note })); }
+
+  async getSharing(formId: string) { return this.req<Sharing>("GET", `/forms/${formId}/sharing`); }
+  async setSharing(formId: string, patch: { share_mode?: ShareMode; regenerate_link?: boolean }) { return this.req<Sharing>("PATCH", `/forms/${formId}/sharing`, patch); }
+  async listProjectMembers(projectId: string) {
+    const page = await this.req<Wire>("GET", `/projects/${projectId}/members?limit=200`);
+    return page.items.map((m: Wire): ProjectMember => ({ id: m.id, user_id: m.user_id ?? undefined, email: m.email, name: m.name ?? undefined, role: m.role, status: m.status }));
+  }
+  async addProjectMember(projectId: string, email: string, role: Exclude<Role, "owner">) {
+    const m = await this.req<Wire>("POST", `/projects/${projectId}/members`, { email, role });
+    return { id: m.id, user_id: m.user_id ?? undefined, email: m.email, name: m.name ?? undefined, role: m.role, status: m.status } as ProjectMember;
+  }
+  async setProjectMemberRole(projectId: string, memberId: string, role: Role) { await this.req("PATCH", `/projects/${projectId}/members/${memberId}`, { role }); }
+  removeProjectMember(projectId: string, memberId: string) { return this.req<void>("DELETE", `/projects/${projectId}/members/${memberId}`); }
+  async getPublicForm(token: string): Promise<PublicForm> {
+    const f = await this.req<Wire>("GET", `/public/forms/${token}`);
+    return { token, project_name: f.project_name, access: f.access, form: toForm({ ...f, id: f.form_id, status: "published" }, f.project_id) };
+  }
+  async submitPublic(token: string, input: { id: string; geometry: Geometry; properties: Props }) { await this.req("POST", `/public/forms/${token}/submissions`, input); }
 
   async bundle(projectId: string): Promise<Bundle> {
     const b = await this.req<Wire>("GET", `/projects/${projectId}/bundle`);

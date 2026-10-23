@@ -44,6 +44,7 @@ export default function FormsPage() {
           <div className="list-item" key={f.id}>
             <div className="grow"><strong>{f.name}</strong><small>{GEOMETRY_LABEL[f.geometry_type]} · {f.fields.length} fields · version {f.version}</small></div>
             <span className={`badge ${f.status === "published" ? "badge-ok" : "badge-warn"}`}>{f.status === "published" ? "Published" : "Draft"}</span>
+            {f.status === "published" && <Link className="btn btn-sm" to={`/collect/${projectId}/forms/${f.id}/share`}>Share</Link>}
             <Link className="btn btn-sm" to={`/collect/${projectId}/forms/${f.id}`}>Edit</Link>
           </div>
         ))}
