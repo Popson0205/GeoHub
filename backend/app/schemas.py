@@ -488,3 +488,9 @@ class PublicSubmit(BaseModel):
     id: UUID = Field(description="Generated on the client; makes a retry safe")
     geometry: Geometry
     properties: dict[str, Any] = {}
+
+
+class PublicMediaIn(BaseModel):
+    id: UUID = Field(description="Generated on the client")
+    content_type: str
+    size: int = Field(ge=1)

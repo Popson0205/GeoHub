@@ -1,4 +1,4 @@
-import { loadApi } from "./api";
+import { ApiError, loadApi } from "./api";
 import { db, type LocalFeature, type QueuedChange } from "./db";
 import { uuid } from "./forms";
 import type { Feature, Form, Geometry, Props } from "./types";
@@ -164,6 +164,39 @@ export async function syncProject(projectId: string): Promise<SyncReport> {
     cursor = page.cursor;
     await db.meta.put({ key: cursorKey(projectId), value: cursor });
     if (!page.has_more) break;
+  }
+  return report;
+}
+
+/**
+ * Sync for a form opened from a share link. Nobody is signed in, so there is no pull and no editing after sending:
+ * each record is created once, then its photos upload. `key` is the local project key (never a real project id).
+ */
+export async function syncPublic(token: string, key: string): Promise<SyncReport> {
+  const api = await loadApi();
+  const report: SyncReport = { pushed: 0, conflicts: 0, rejected: 0, pulled: 0, photos: 0 };
+  const queued: QueuedChange[] = await db.queue.where("project_id").equals(key).toArray();
+  for (const q of queued) {
+    if (q.op !== "create") { await db.queue.delete(q.seq!); continue; }
+    try {
+      await api.submitPublic(token, { id: q.id, geometry: q.geometry as Geometry, properties: q.properties ?? {} });
+      await db.features.update(q.id, { version: 1, sync: "synced", errors: undefined });
+      await db.queue.delete(q.seq!);
+      report.pushed++;
+    } catch (e) {
+      // A 4xx (other than "slow down") means the server will never accept this record as it is; keep it for the person to see.
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 429) {
+        await db.features.update(q.id, { sync: "rejected", errors: e.fields ?? { form: e.message } });
+        await db.queue.delete(q.seq!);
+        report.rejected++;
+      } else throw e;
+    }
+  }
+  for (const m of await db.media.where("uploaded").equals(0).toArray()) {
+    const f = await db.features.get(m.feature_id);
+    if (!f || f.project_id !== key || f.sync !== "synced") continue;
+    try { await api.uploadPublicMedia(token, m.feature_id, m.id, m.blob, m.field_id); await db.media.update(m.id, { uploaded: 1 }); report.photos++; }
+    catch { /* stays pending; retried next sync */ }
   }
   return report;
 }

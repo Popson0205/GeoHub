@@ -5,20 +5,24 @@ import { useLiveQuery } from "dexie-react-hooks";
 import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
 import SignaturePad from "../components/SignaturePad";
 import MapView, { type MapFeature } from "../components/MapView";
+import { BrandMark } from "../components/Shell";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useOnline } from "../lib/hooks";
-import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, type SyncReport } from "../lib/sync";
-import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props } from "../lib/types";
+import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, syncPublic, type SyncReport } from "../lib/sync";
+import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
 
 interface Draft { id: string; formId: string; geometry: Geometry | null; props: Props; newMedia: string[]; existing: boolean }
 const DRAFT_ID = "__draft";
 
-export default function CollectPage() {
-  const { projectId = "" } = useParams();
+/** `pub` is set when the collector is opened from a share link: no sign-in, records are sent through the public route. */
+export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
+  const { projectId: routeProjectId = "" } = useParams();
+  // Records made through a share link are kept under their own local key so they never mix with a signed-in collector's data.
+  const projectId = pub ? `public:${pub.token}` : routeProjectId;
   const toast = useToast();
   const confirm = useConfirm();
   const online = useOnline();
@@ -49,6 +53,7 @@ export default function CollectPage() {
 
   const load = useCallback(async () => {
     setLoadError(null);
+    if (pub) { setForms([pub.form]); setFromCache(false); setFormId(pub.form.id); setName(pub.project_name); return; }
     try {
       const b = await loadBundle(projectId);
       setForms(b.forms); setFromCache(b.fromCache);
@@ -56,21 +61,21 @@ export default function CollectPage() {
     } catch (e) { setLoadError(e); }
     try { const p = await (await loadApi()).getProject(projectId); setName(p.name); await db.meta.put({ key: `name:${projectId}`, value: p.name }); }
     catch { const cached = await db.meta.get(`name:${projectId}`); if (cached) setName(cached.value); }
-  }, [projectId]);
+  }, [projectId, pub]);
   useEffect(() => { void load(); }, [load]);
 
   const sync = useCallback(async (quiet: boolean) => {
     if (syncing.current || !navigator.onLine) return;
     syncing.current = true; setSyncBusy(true);
     try {
-      const r = await syncProject(projectId);
+      const r = pub ? await syncPublic(pub.token, projectId) : await syncProject(projectId);
       setReport(r); setSyncError("");
       if (!quiet) toast(`Synced. Sent ${r.pushed}, received ${r.pulled}${r.conflicts ? `, ${r.conflicts} need a decision` : ""}.`, r.conflicts || r.rejected ? "info" : "success");
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : "Sync failed.");
       if (!quiet) toast("Couldn't sync. Your data is safe on this device.", "error");
     } finally { syncing.current = false; setSyncBusy(false); }
-  }, [projectId, toast]);
+  }, [projectId, pub, toast]);
 
   useEffect(() => { if (online && forms) void sync(true); }, [online, forms, sync]);
   useEffect(() => { const t = setInterval(() => void sync(true), 60000); return () => clearInterval(t); }, [sync]);
@@ -168,8 +173,8 @@ export default function CollectPage() {
     <main className="collect">
       <h1 className="sr-only">Data collector</h1>
       <header className="collect-head">
-        <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>
-        <div className="grow"><small>Project</small><strong>{name}</strong></div>
+        {pub ? <BrandMark size={24} /> : <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>}
+        <div className="grow"><small>{pub ? "Shared form" : "Project"}</small><strong>{name}</strong></div>
         <span className={`badge ${online ? "badge-ok" : "badge-warn"}`}>{online ? "Online" : "Offline"}{pending ? ` · ${pending} to sync` : ""}</span>
       </header>
 
@@ -237,8 +242,8 @@ export default function CollectPage() {
                   <strong>{titleOf(f)}</strong>
                   <small>{f.sync === "synced" ? "Synced" : f.sync === "pending" ? "Waiting to sync" : f.sync === "conflict" ? "Needs a decision" : `Not accepted: ${Object.values(f.errors ?? {}).join(" ")}`}</small>
                 </div>
-                <Button small onClick={() => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); }}>Edit</Button>
-                <Button small variant="danger" onClick={async () => { if (await confirm({ title: "Delete this record?", message: "It is removed from this device and will not be sent.", confirmLabel: "Delete record", danger: true })) void deleteFeatureLocal(f.id); }}>Delete</Button>
+                {(!pub || f.sync !== "synced") && <Button small onClick={() => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); }}>Edit</Button>}
+                {(!pub || f.sync !== "synced") && <Button small variant="danger" onClick={async () => { if (await confirm({ title: "Delete this record?", message: "It is removed from this device and will not be sent.", confirmLabel: "Delete record", danger: true })) void deleteFeatureLocal(f.id); }}>Delete</Button>}
               </div>
             ))}
           </>

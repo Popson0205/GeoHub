@@ -47,6 +47,8 @@ export interface Api {
   /** Works without signing in when the link is public. Throws 401 (sign in) or 403 (not a collaborator) otherwise. */
   getPublicForm(token: string): Promise<PublicForm>;
   submitPublic(token: string, input: { id: string; geometry: Geometry; properties: Props }): Promise<void>;
+  /** A photo, recording or file for a record already sent through a public link. */
+  uploadPublicMedia(token: string, featureId: string, mediaId: string, blob: Blob, fieldId?: string): Promise<void>;
 
   bundle(projectId: string): Promise<Bundle>;
   syncPush(projectId: string, changes: Change[]): Promise<PushResult[]>;
@@ -317,6 +319,13 @@ class HttpApi implements Api {
     return { token, project_name: f.project_name, access: f.access, form: toForm({ ...f, id: f.form_id, status: "published" }, f.project_id) };
   }
   async submitPublic(token: string, input: { id: string; geometry: Geometry; properties: Props }) { await this.req("POST", `/public/forms/${token}/submissions`, input); }
+  async uploadPublicMedia(token: string, featureId: string, mediaId: string, blob: Blob, fieldId?: string) {
+    const content_type = MEDIA_TYPES_OK.includes(blob.type) ? blob.type : "image/jpeg";
+    const up = await this.req<{ upload_url: string; headers: Record<string, string> }>("POST", `/public/forms/${token}/media/upload-url`, { id: mediaId, content_type, size: blob.size });
+    const put = await fetch(up.upload_url, { method: "PUT", body: blob, headers: up.headers });
+    if (!put.ok) throw new ApiError(put.status, "Upload failed");
+    await this.req("POST", `/public/forms/${token}/media/${mediaId}/complete`, { feature_id: featureId, field_id: fieldId ?? null });
+  }
 
   async bundle(projectId: string): Promise<Bundle> {
     const b = await this.req<Wire>("GET", `/projects/${projectId}/bundle`);

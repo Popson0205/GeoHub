@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     rate_register_per_hour: int = 10
     rate_anon_export_per_hour: int = 20
     rate_anon_read_per_min: int = 120
-    rate_public_submit_per_hour: int = 60
+    rate_public_submit_per_hour: int = 300
 
     max_imagery_bytes: int = 5 * 1024**3
     max_photo_bytes: int = 10 * 1024**2

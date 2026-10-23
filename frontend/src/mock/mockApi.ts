@@ -209,6 +209,7 @@ export class MockApi implements Api {
     this.s.features.push(row); this.save();
   }
 
+  async uploadPublicMedia() { await wait(60); }
   async bundle(projectId: string): Promise<Bundle> {
     await wait(); this.auth();
     return {
