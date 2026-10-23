@@ -1,8 +1,11 @@
 /* ==========================================================================
    Layout: app shell, page structure, work surfaces (editor, builder, collector)
    ========================================================================== */
-.app { display: flex; flex-direction: column; height: 100%; }
-.page { flex: 1; overflow: auto; min-height: 0; }
+.app { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.page { position: relative; flex: 1; overflow: auto; min-height: 0; }
+/* Visually hidden helpers (.sr-only) are absolutely positioned. A scrolling panel that is not itself positioned does not
+   contain them, so one deep inside a long panel stretched the whole document and left an empty strip when you scrolled. */
+.side, .editor, .builder { position: relative; }
 
 /* ---- top bar ---- */
 .topbar { position: relative; z-index: 50; flex: 0 0 auto; display: flex; align-items: center; gap: var(--s-2); height: var(--topbar-h); padding: 0 var(--s-5);
