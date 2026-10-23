@@ -23,6 +23,7 @@ export default function PublicFormPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [step, setStep] = useState<"place" | "answer">("place");
   const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
@@ -84,7 +85,7 @@ export default function PublicFormPage() {
     } finally { setBusy(false); }
   }
   function again() {
-    setId(uuid()); setProps(applyDefaults(form.fields)); setGeometry(null); setPlacing(true); setErrors({}); setDone(false);
+    setId(uuid()); setProps(applyDefaults(form.fields)); setGeometry(null); setPlacing(true); setStep("place"); setErrors({}); setDone(false);
   }
 
   if (done) {
@@ -97,25 +98,44 @@ export default function PublicFormPage() {
     );
   }
 
+  const clearGeometryError = () => setErrors((e) => { const { geometry: _g, ...rest } = e; return rest; });
+
+  // Step 1: pick the location on a full-size map, like the collector does.
+  if (step === "place") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100dvh", maxWidth: 640, margin: "0 auto" }}>
+        <header style={{ padding: "12px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandMark size={22} /><strong>Geohub</strong></div>
+          <h1 style={{ margin: "8px 0 0", fontSize: "1.25rem" }}>{form.name}</h1>
+          <span className="meta">{pf.project_name} · Step 1 of 2: choose the location</span>
+        </header>
+        <div style={{ flex: 1, display: "flex", minHeight: 240 }}>
+          <MapView features={mapFeatures} selectedId={geometry ? "answer" : null} drawMode={placing ? form.geometry_type : null}
+            onDraw={(g) => { setGeometry(g); setPlacing(false); clearGeometryError(); }}
+            onCancelDraw={() => setPlacing(false)} fitKey={form.id} geolocate label="Where is it?" />
+        </div>
+        <footer style={{ padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {placing && <span className="meta grow">{PLACE_HINT[form.geometry_type]}</span>}
+          {!placing && <Button onClick={() => { setGeometry(null); setPlacing(true); }}>Place again</Button>}
+          <span className="grow" />
+          <Button variant="primary" disabled={!geometry} onClick={() => setStep("answer")}>Continue</Button>
+        </footer>
+      </div>
+    );
+  }
+
+  // Step 2: the questions, with the chosen location shown above them.
   return shell(
     <>
       <h1 style={{ marginBottom: 4 }}>{form.name}</h1>
-      <p className="meta" style={{ marginTop: 0 }}>{pf.project_name}</p>
-
+      <p className="meta" style={{ marginTop: 0 }}>{pf.project_name} · Step 2 of 2: answer the questions</p>
       <section aria-label="Location" style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: "var(--fs-lg, 1.1rem)" }}>Location</h2>
-        <div style={{ position: "relative", height: 320, borderRadius: 8, overflow: "hidden" }}>
-          <MapView features={mapFeatures} selectedId={geometry ? "answer" : null} drawMode={placing ? form.geometry_type : null}
-            onDraw={(g) => { setGeometry(g); setPlacing(false); setErrors((e) => { const { geometry: _g, ...rest } = e; return rest; }); }}
-            onCancelDraw={() => setPlacing(false)} geolocate label="Where is it?" />
+        <div style={{ height: 160, display: "flex", borderRadius: 8, overflow: "hidden" }}>
+          <MapView features={mapFeatures} selectedId="answer" preview fitKey={id} label="Chosen location" />
         </div>
-        <div className="row" style={{ marginTop: 8 }}>
-          {placing ? <span className="meta">{PLACE_HINT[form.geometry_type]}</span>
-            : <Button small onClick={() => { setGeometry(null); setPlacing(true); }}>{geometry ? "Place again" : "Mark on map"}</Button>}
-        </div>
+        <div className="row" style={{ marginTop: 8 }}><Button small onClick={() => setStep("place")}>Change location</Button></div>
         {errors.geometry && <p role="alert" className="field-error">{errors.geometry}</p>}
       </section>
-
       <FormRenderer form={form} value={props} onChange={setProps} errors={errors} />
       {submitError && <div className="state state-error" role="alert"><strong>Not sent</strong><span>{submitError}</span></div>}
       <div className="row" style={{ marginTop: 16 }}><Button variant="primary" busy={busy} onClick={() => void submit()}>Send</Button></div>
