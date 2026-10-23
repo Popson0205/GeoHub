@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { BrandMark } from "../components/Shell";
 import { ErrorState, Loading } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
+import { tokenFromParam } from "../lib/share";
 import type { PublicForm } from "../lib/types";
 import CollectPage from "./CollectPage";
 
@@ -18,7 +19,8 @@ const frame = (children: ReactNode) => (
  * Once the link checks out, people get the same field-map collector as signed-in collectors.
  */
 export default function PublicFormPage() {
-  const { token = "" } = useParams();
+  const { token: param = "" } = useParams();
+  const token = tokenFromParam(param);
   const nav = useNavigate();
   const [pf, setPf] = useState<PublicForm | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -31,12 +33,20 @@ export default function PublicFormPage() {
         if (live) setPf(f);
       } catch (e) {
         if (!live) return;
-        if (e instanceof ApiError && e.status === 401) nav("/login", { replace: true, state: { from: `/f/${token}` } });
+        if (e instanceof ApiError && e.status === 401) nav("/login", { replace: true, state: { from: `/f/${param}` } });
         else setError(e);
       }
     })();
     return () => { live = false; };
   }, [token, nav]);
+
+  // The tab and the share sheet of the phone show the form's name, not the app's.
+  useEffect(() => {
+    if (!pf) return;
+    const before = document.title;
+    document.title = pf.form.name;
+    return () => { document.title = before; };
+  }, [pf]);
 
   if (error != null) {
     const status = error instanceof ApiError ? error.status : 0;
@@ -45,7 +55,7 @@ export default function PublicFormPage() {
         <h1 style={{ marginTop: 0 }}>{status === 403 ? "You do not have access yet" : status === 404 ? "This link does not work" : "Could not open the form"}</h1>
         <p>{error instanceof Error ? error.message : "Something went wrong."}</p>
         {status === 403 && <p className="meta">Ask the form's owner to add your email as a collaborator, or sign in with a different account.</p>}
-        {status === 403 && <Link className="btn" to="/login" state={{ from: `/f/${token}` }}>Use a different account</Link>}
+        {status === 403 && <Link className="btn" to="/login" state={{ from: `/f/${param}` }}>Use a different account</Link>}
         {status === 0 && <ErrorState error={error} onRetry={() => window.location.reload()} />}
       </div>,
     );

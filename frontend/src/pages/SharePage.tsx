@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { shareUrl } from "../lib/share";
 import type { Role, ShareMode } from "../lib/types";
 
 const MODES: { id: ShareMode; title: string; text: string }[] = [
@@ -10,7 +11,6 @@ const MODES: { id: ShareMode; title: string; text: string }[] = [
   { id: "collaborators", title: "Collaborators only", text: "Only people you add below. They sign in (or create an account) to collect." },
 ];
 const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", collector: "Collector", viewer: "Viewer" };
-const shareUrl = (token: string) => `${window.location.origin}/f/${token}`;
 
 /** Where a form owner copies the link, decides who may use it, and adds collaborators. */
 export default function SharePage() {
@@ -28,7 +28,7 @@ export default function SharePage() {
   const err = form.error ?? sharing.error;
   if (err != null || !form.data || !sharing.data) return <div className="container"><ErrorState error={err} onRetry={() => { void form.reload(); void sharing.reload(); }} /></div>;
   const s = sharing.data;
-  const url = shareUrl(s.share_token);
+  const url = shareUrl(form.data.name, s.share_token);
 
   async function copy() {
     try { await navigator.clipboard.writeText(url); toast("Link copied.", "success"); }

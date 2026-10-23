@@ -77,9 +77,35 @@ if settings.web_dir:
     from pathlib import Path
 
     from fastapi import HTTPException
-    from fastapi.responses import FileResponse
+    import html as _html
+    import re
+
+    from fastapi.responses import FileResponse, HTMLResponse
 
     _web = Path(settings.web_dir).resolve()
+    _SHARE_PATH = re.compile(r"^f/(?:.*-)?([0-9a-f]{32})/?$")
+
+    async def _share_page(index: Path, token: str) -> str | None:
+        """index.html with the form's name as the page title and link preview (WhatsApp, Slack, ...), so a shared
+        link reads as the form and not as the app. Any problem falls back to the plain page."""
+        try:
+            async with pool.connection() as c:
+                cur = await c.execute(
+                    "SELECT v.name, p.name AS project FROM forms f JOIN projects p ON p.id = f.project_id "
+                    "JOIN form_versions v ON v.form_id = f.id AND v.version = f.version "
+                    "WHERE f.share_token = %s AND f.share_mode = 'public' AND f.version > 0", (token,))
+                row = await cur.fetchone()
+            if not row:
+                return None
+            name, project = _html.escape(row["name"], quote=True), _html.escape(row["project"], quote=True)
+            desc = f"Fill in this form for {project}."
+            tags = (f'<title>{name}</title><meta property="og:title" content="{name}">'
+                    f'<meta property="og:description" content="{desc}"><meta property="og:type" content="website">'
+                    f'<meta name="description" content="{desc}">')
+            page = re.sub(r"<title>.*?</title>", "", index.read_text(encoding="utf-8"), flags=re.S)
+            return page.replace("</head>", tags + "</head>", 1)
+        except Exception:  # noqa: BLE001
+            return None
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def web_app(full_path: str):
@@ -88,6 +114,11 @@ if settings.web_dir:
         f = (_web / full_path).resolve()
         if full_path and f.is_file() and _web in f.parents:
             return FileResponse(f)
+        m = _SHARE_PATH.match(full_path)
+        if m:
+            page = await _share_page(_web / "index.html", m.group(1))
+            if page:
+                return HTMLResponse(page)
         return FileResponse(_web / "index.html")
 elif not P:
     @app.get("/", include_in_schema=False)
