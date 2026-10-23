@@ -132,7 +132,7 @@
 
 /* ---- mobile collector ---- */
 .collect { display: flex; flex-direction: column; height: 100%; max-width: 560px; margin: 0 auto; background: var(--paper); }
-.collect-head { display: flex; align-items: center; gap: 10px; padding: 12px var(--s-4); color: #eaf1ed; background: linear-gradient(180deg, var(--ink-800), var(--ink-900)); }
+.collect-head { display: flex; align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top, 0px)) var(--s-4) 12px; color: #eaf1ed; background: linear-gradient(180deg, var(--ink-800), var(--ink-900)); }
 .collect-head .grow { flex: 1; min-width: 0; }
 .collect-head small { display: block; color: #a9bdb4; font-size: var(--fs-xs); }
 .collect-head strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--fs-md); }

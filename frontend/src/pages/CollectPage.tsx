@@ -6,12 +6,14 @@ import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
 import SignaturePad from "../components/SignaturePad";
 import MapView, { type MapFeature } from "../components/MapView";
 import { BrandMark } from "../components/Shell";
+import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useOnline } from "../lib/hooks";
+import { useFormManifest } from "../lib/pwa";
 import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, syncPublic, type SyncReport } from "../lib/sync";
 import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
 
@@ -79,6 +81,9 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
   useEffect(() => { if (online && forms) void sync(true); }, [online, forms, sync]);
   useEffect(() => { const t = setInterval(() => void sync(true), 60000); return () => clearInterval(t); }, [sync]);
+
+  // Installing from a shared form's page installs that form, opening on its own link.
+  useFormManifest(pub ? { name: pub.form.name, startUrl: window.location.pathname } : null);
 
   const form = forms?.find((f) => f.id === (draft?.formId ?? formId)) ?? null;
   const mapFeatures: MapFeature[] = useMemo(() => {
@@ -252,6 +257,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         {tab === "sync" && (
           <>
             <h2>Sync</h2>
+            <InstallCard />
             <div className="list-item"><div className="grow"><strong>{online ? "You're online" : "You're offline"}</strong><small>{pending} change{pending === 1 ? "" : "s"} waiting to send</small></div></div>
             <Button variant="primary" busy={syncBusy} disabled={!online} onClick={() => sync(false)}>Sync now</Button>
             {!online && <span className="field-hint">Connect to the internet to sync. Your records are safe on this device.</span>}

@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { BrandMark } from "../components/Shell";
 import { ErrorState, Loading } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
+import { db } from "../lib/db";
 import { tokenFromParam } from "../lib/share";
 import type { PublicForm } from "../lib/types";
 import CollectPage from "./CollectPage";
@@ -30,9 +31,15 @@ export default function PublicFormPage() {
     (async () => {
       try {
         const f = await (await loadApi()).getPublicForm(token);
+        // Keep the form on the device so the link still opens in the field with no signal.
+        if (f.access === "public") void db.meta.put({ key: `pubform:${token}`, value: JSON.stringify(f) }).catch(() => undefined);
         if (live) setPf(f);
       } catch (e) {
         if (!live) return;
+        if (!(e instanceof ApiError) || e.status === 0) {
+          const saved = await db.meta.get(`pubform:${token}`).catch(() => undefined);
+          if (saved) { try { setPf(JSON.parse(saved.value) as PublicForm); return; } catch { /* unreadable: show the error */ } }
+        }
         if (e instanceof ApiError && e.status === 401) nav("/login", { replace: true, state: { from: `/f/${param}` } });
         else setError(e);
       }
