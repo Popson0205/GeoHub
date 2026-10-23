@@ -187,6 +187,37 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
   return <label className="check"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />{label}</label>;
 }
 
+/** One input per option. Blank rows stay on screen while typing but are not saved, so Enter / "Add option" always gives a new row. */
+function ChoicesEditor({ choices, onChange }: { choices: string[]; onChange: (c: string[]) => void }) {
+  const [rows, setRows] = useState<string[]>(choices.length ? choices : [""]);
+  const [focus, setFocus] = useState<number | null>(null);
+  const commit = (next: string[]) => { setRows(next); onChange(next.map((r) => r.trim()).filter(Boolean)); };
+  useEffect(() => {
+    if (focus === null) return;
+    document.getElementById(`s-ch-${focus}`)?.focus();
+    setFocus(null);
+  }, [focus]);
+  const addAfter = (i: number) => { const n = [...rows]; n.splice(i + 1, 0, ""); setRows(n); setFocus(i + 1); };
+  return (
+    <div className="field">
+      <span id="s-ch-label">Options</span>
+      <div className="stack" role="group" aria-labelledby="s-ch-label" style={{ gap: 6 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 6 }}>
+            <input id={`s-ch-${i}`} value={r} aria-label={`Option ${i + 1}`} placeholder={`Option ${i + 1}`}
+              onChange={(e) => commit(rows.map((x, j) => (j === i ? e.target.value : x)))}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAfter(i); } }} />
+            <Button small type="button" aria-label={`Remove option ${i + 1}`} disabled={rows.length === 1 && !r}
+              onClick={() => { const n = rows.filter((_, j) => j !== i); commit(n.length ? n : [""]); }}><Icon name="close" size={16} /></Button>
+          </div>
+        ))}
+      </div>
+      <div><Button small type="button" onClick={() => addAfter(rows.length - 1)}>+ Add option</Button></div>
+      <span className="field-hint">Changing an option's wording after publishing does not change answers already collected.</span>
+    </div>
+  );
+}
+
 interface SettingsProps {
   form: Form; field: FormField; issues?: string[];
   patch: (p: Partial<FormField>) => void; moveTo: (into: string | null) => void; remove: () => void;
@@ -232,10 +263,7 @@ function Settings({ form, field, issues, patch, moveTo, remove }: SettingsProps)
 
       {hasChoices(t) && (
         <Section title="Choices">
-          <div className="field"><label htmlFor="s-ch">One per line</label>
-            <textarea id="s-ch" value={(field.choices ?? []).join("\n")} onChange={(e) => patch({ choices: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })} />
-            <span className="field-hint">Changing a choice's wording after publishing does not change answers already collected.</span>
-          </div>
+          <ChoicesEditor choices={field.choices ?? []} onChange={(c) => patch({ choices: c })} />
         </Section>
       )}
 
