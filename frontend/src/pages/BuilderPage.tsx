@@ -3,10 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import CalcEditor from "../components/CalcEditor";
 import ConditionEditor from "../components/ConditionEditor";
 import FormRenderer from "../components/FormRenderer";
+import { Icon } from "../components/icons";
+import { useFieldDnd } from "../components/useFieldDnd";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import {
-  PALETTE, PALETTE_CATEGORIES, TYPE_SPECS, allFields, allows, findField, hasChoices, inRepeat, isContainer, mapField, moveField, moveInto, newField, topLevelFields,
+  PALETTE, PALETTE_CATEGORIES, TYPE_SPECS, allFields, allows, findField, hasChoices, inRepeat, isContainer, mapField, moveInto, newField, topLevelFields,
   type PaletteItem, type Prop,
 } from "../lib/fieldSpec";
 import { checkFieldDefs } from "../lib/forms";
@@ -35,6 +37,7 @@ export default function BuilderPage() {
   const [previewVal, setPreviewVal] = useState({});
 
   useEffect(() => { if (data) setForm(data); }, [data]);
+  const dnd = useFieldDnd({ fields: form?.fields ?? [], enabled: !preview, onChange: (fields) => setForm((f) => (f ? { ...f, fields } : f)), onSelect: setSel });
   if (loading) return <Loading label="Loading form…" />;
   if (error != null || !form) return <div className="container"><ErrorState error={error ?? "Form not found."} onRetry={reload} /></div>;
 
@@ -85,22 +88,25 @@ export default function BuilderPage() {
       const spec = TYPE_SPECS[f.type];
       const bad = issues[f.id];
       return (
-        <div key={f.id} style={{ marginLeft: depth ? 16 : 0 }} className={depth ? "tree-child" : undefined}>
-          <button className="field-card" aria-pressed={sel === f.id} onClick={() => setSel(f.id)} aria-describedby={bad ? `bad-${f.id}` : undefined}>
-            <strong>{f.label || "(no label)"}</strong>
-            <small>
-              {spec.label}
-              {f.appearance && f.appearance !== spec.appearances[0] ? ` · ${f.appearance.replace(/_/g, " ")}` : ""}
-              {f.required || f.must_be_true ? " · required" : f.required_if ? " · sometimes required" : ""}
-              {f.visible ? " · conditional" : ""}
-              {f.type === "calculation" ? " · calculated" : ""}
-              {f.readonly ? " · read-only" : ""}
-            </small>
-            {bad && <small id={`bad-${f.id}`} className="field-error">{bad[0]}</small>}
-          </button>
+        <div key={f.id} ref={dnd.blockRef(f.id)} style={{ marginLeft: depth ? 16 : 0 }} className={`${depth ? "tree-child" : ""}${dnd.moving === f.id ? " is-moving" : ""}`.trim() || undefined}>
+          <div className="field-row">
+            <button type="button" className="drag-handle" aria-label={`Reorder ${f.label || "field"}`} aria-describedby="dnd-help" title="Drag to reorder" {...dnd.handleProps(f)}><Icon name="grip" size={18} /></button>
+            <button ref={dnd.cardRef(f.id)} className="field-card" aria-pressed={sel === f.id} onClick={() => setSel(f.id)} aria-describedby={bad ? `bad-${f.id}` : undefined} {...dnd.cardProps(f)}>
+              <strong>{f.label || "(no label)"}</strong>
+              <small>
+                {spec.label}
+                {f.appearance && f.appearance !== spec.appearances[0] ? ` · ${f.appearance.replace(/_/g, " ")}` : ""}
+                {f.required || f.must_be_true ? " · required" : f.required_if ? " · sometimes required" : ""}
+                {f.visible ? " · conditional" : ""}
+                {f.type === "calculation" ? " · calculated" : ""}
+                {f.readonly ? " · read-only" : ""}
+              </small>
+              {bad && <small id={`bad-${f.id}`} className="field-error">{bad[0]}</small>}
+            </button>
+          </div>
           {f.children && (f.children.length > 0
-            ? <div className="tree-kids">{tree(f.children, depth + 1)}</div>
-            : <div className="tree-kids field-hint" style={{ marginLeft: 16 }}>Empty. Select this {spec.label.toLowerCase()} and add fields to it.</div>)}
+            ? <div className="tree-kids" ref={dnd.kidsRef(f.id)}>{tree(f.children, depth + 1)}</div>
+            : <div className="tree-kids field-hint" ref={dnd.kidsRef(f.id)} style={{ marginLeft: 16 }}>Empty. Drag a field in here, or select this {spec.label.toLowerCase()} and add one.</div>)}
         </div>
       );
     });
@@ -116,15 +122,17 @@ export default function BuilderPage() {
           <div key={cat} className="palette-group" role="group" aria-label={cat}>
             <h3 className="palette-h">{cat}</h3>
             {PALETTE.filter((p) => p.category === cat).map((p) => (
-              <Button key={p.key} small onClick={() => add(p)} style={{ justifyContent: "flex-start" }}>{p.label}</Button>
+              <Button key={p.key} small onClick={() => add(p)} className="palette-item" style={{ justifyContent: "flex-start" }} {...dnd.paletteProps(p)}>{p.label}</Button>
             ))}
           </div>
         ))}
+        <span className="field-hint">Click a field type to add it, or drag it onto the form.</span>
         <span className="field-hint">The point, line or area is drawn on the map, so the form only asks for the details.</span>
       </aside>
 
       <section className="canvas" aria-label="Form preview">
-        <div className="stack">
+        <div className="stack dnd-wrap" ref={dnd.wrapRef}>
+          <p id="dnd-help" className="sr-only">Press Space to pick this field up, use the up and down arrow keys to move it, press Space to drop it, or Escape to cancel.</p>
           <div className="row">
             <div className="field grow"><label htmlFor="form-name">Form name</label><input id="form-name" value={form.name} onChange={(e) => update({ name: e.target.value })} /></div>
             <span className="badge badge-ok">{GEOMETRY_LABEL[form.geometry_type]}</span>
@@ -138,8 +146,10 @@ export default function BuilderPage() {
           {preview ? (
             <div className="card"><FormRenderer form={form} value={previewVal} onChange={setPreviewVal} renderMedia={(f) => <span className="field-hint">{TYPE_SPECS[f.type].label} capture opens here on the phone.</span>} /></div>
           ) : form.fields.length === 0 ? (
-            <div className="state"><strong>No fields yet</strong>Add a field from the left to start.</div>
+            <div className={`state${dnd.overEmpty ? " drop-ready" : ""}`}><strong>No fields yet</strong>Click a field type on the left, or drag one here.</div>
           ) : tree(form.fields, 0)}
+          {!preview && form.fields.length > 1 && <span className="field-hint">Drag a field by its grip to reorder it, or into a group. With the keyboard: Tab to the grip, Space to pick up, arrow keys to move, Space to drop.</span>}
+          {dnd.overlay}
         </div>
       </section>
 
@@ -147,7 +157,6 @@ export default function BuilderPage() {
         <h2>Field settings</h2>
         {field ? (
           <Settings key={field.id} form={form} field={field} issues={issues[field.id]} patch={(p) => patchField(field.id, p)}
-            up={() => setFields(moveField(form.fields, field.id, -1))} down={() => setFields(moveField(form.fields, field.id, 1))}
             moveTo={(into) => setFields(moveInto(form.fields, field.id, into))} remove={() => remove(field.id)} />
         ) : <span className="field-hint">Select a field to change its label, choices or rules.</span>}
         <div className="row" style={{ marginTop: "auto" }}>
@@ -180,9 +189,9 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 
 interface SettingsProps {
   form: Form; field: FormField; issues?: string[];
-  patch: (p: Partial<FormField>) => void; up: () => void; down: () => void; moveTo: (into: string | null) => void; remove: () => void;
+  patch: (p: Partial<FormField>) => void; moveTo: (into: string | null) => void; remove: () => void;
 }
-function Settings({ form, field, issues, patch, up, down, moveTo, remove }: SettingsProps) {
+function Settings({ form, field, issues, patch, moveTo, remove }: SettingsProps) {
   const t = field.type;
   const spec = TYPE_SPECS[t];
   const has = (p: Prop) => allows(t, p);
@@ -286,10 +295,7 @@ function Settings({ form, field, issues, patch, up, down, moveTo, remove }: Sett
       {issues?.map((m) => <span className="field-error" role="alert" key={m}>{m}</span>)}
 
       <Section title="Arrange">
-        <div className="row">
-          <Button small onClick={up}>Move up</Button>
-          <Button small onClick={down}>Move down</Button>
-        </div>
+        <span className="field-hint">Drag this field by its grip in the list to change its position.</span>
         {(containers.length > 0 || inside || allFields(outer).some((c) => c.children?.some((k) => k.id === field.id))) && (
           <div className="field"><label htmlFor="s-move">Put inside</label>
             <select id="s-move" value="" onChange={(e) => { if (e.target.value !== "") moveTo(e.target.value === "__top" ? null : e.target.value); }}>

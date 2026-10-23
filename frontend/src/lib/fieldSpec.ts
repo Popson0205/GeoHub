@@ -153,6 +153,38 @@ export function moveInto(fields: FormField[], id: string, intoId: string | null)
   if (!intoId) return [...without, f];
   return mapField(without, intoId, (t) => ({ ...t, children: [...(t.children ?? []), f] }));
 }
+/** True when this field is a repeat or contains one anywhere inside it. */
+export const holdsRepeat = (f: FormField): boolean => f.type === "repeat" || (f.children ?? []).some(holdsRepeat);
+
+/** May a field of this type sit directly inside `parentId` (null = the top level)? `movingId` is set when an existing field is being moved. */
+export function canPlace(fields: FormField[], type: FieldType, parentId: string | null, movingId?: string): boolean {
+  if (parentId === null) return true;
+  const parent = findField(fields, parentId);
+  if (!parent || !isContainer(parent.type)) return false;
+  const moving = movingId ? findField(fields, movingId) : null;
+  if (moving && (parentId === moving.id || findField(moving.children ?? [], parentId))) return false;   // never into itself or its own contents
+  const insideRepeat = parent.type === "repeat" || inRepeat(fields, parentId);
+  if (insideRepeat && (type === "repeat" || (moving && holdsRepeat(moving)))) return false;           // a repeat cannot hold another repeat
+  return true;
+}
+
+/** Inserts a field at `index` (clamped) in a container's children, or at the top level when `parentId` is null. */
+export function insertAt(fields: FormField[], field: FormField, parentId: string | null, index: number): FormField[] {
+  const put = (list: FormField[]): FormField[] => { const i = Math.max(0, Math.min(list.length, index)); return [...list.slice(0, i), field, ...list.slice(i)]; };
+  return parentId === null ? put(fields) : mapField(fields, parentId, (p) => ({ ...p, children: put(p.children ?? []) }));
+}
+
+/** Moves a field to a position: `index` counts the slots of the target list as they look before the move (so dropping just below
+ * a field's own position is a no-op). Returns the same tree when the move is not allowed or changes nothing. */
+export function moveTo(fields: FormField[], id: string, parentId: string | null, index: number): FormField[] {
+  const loc = locate(fields, id);
+  const f = findField(fields, id);
+  if (!loc || !f || !canPlace(fields, f.type, parentId, id)) return fields;
+  const sameList = (loc.parent?.id ?? null) === parentId;
+  if (sameList && (index === loc.index || index === loc.index + 1)) return fields;
+  const at = sameList && index > loc.index ? index - 1 : index;      // taking the field out shifts later slots up by one
+  return insertAt(mapField(fields, id, () => null), f, parentId, at);
+}
 export function inRepeat(fields: FormField[], id: string): boolean {
   let found = false;
   walk(fields, (f) => { if (f.type === "repeat" && f.children && findField(f.children, id)) found = true; });

@@ -163,6 +163,8 @@
   .editor-center > .map-wrap { flex: none; min-height: 55vh; }   /* a map must never collapse: fitBounds needs room */
   .at { height: 320px !important; }
   .builder { flex-direction: column; overflow: auto; }
+  .builder .canvas { order: -2; flex: none; overflow: visible; padding: var(--s-5) var(--s-4); }   /* on a phone: the form first, then the selected field's settings, then the field types */
+  .builder .side.right { order: -1; }
   .two-col, .review-grid { grid-template-columns: 1fr; }
   .review-map { height: 320px; }
 }
@@ -196,3 +198,26 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 
 /* A map placed in a fixed-height box must fill it. (Without this the map container has no height and MapLibre falls back to a 300px canvas.) */
 .preview > .map-wrap, .review-map > .map-wrap { position: absolute; inset: 0; flex: none; min-height: 0; }
+
+/* ---- form builder: drag and drop ---- */
+.dnd-wrap { position: relative; }
+.field-row { display: flex; align-items: stretch; gap: 6px; }
+.field-row .field-card { flex: 1; min-width: 0; }
+.drag-handle { flex: none; width: 30px; display: grid; place-items: center; border: 1px solid transparent; border-radius: var(--r-md); background: transparent; color: var(--n-500); cursor: grab; touch-action: none; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
+.drag-handle:hover { background: var(--n-100); color: var(--ink-900); }
+.drag-handle:active, .drag-handle[aria-pressed="true"] { cursor: grabbing; }
+.drag-handle[aria-pressed="true"] { background: var(--green-50); border-color: var(--green-600); color: var(--green-700); }
+@media (pointer: coarse) { .drag-handle { width: 40px; } }
+.field-card { cursor: grab; }
+.is-moving > .field-row { opacity: .45; }
+.is-moving > .field-row .field-card { border-style: dashed; }
+.drop-line { position: absolute; z-index: 30; height: 3px; border-radius: 2px; background: var(--green-600); box-shadow: 0 0 0 3px rgba(23, 99, 76, .16); pointer-events: none; }
+.drop-line::before, .drop-line::after { content: ""; position: absolute; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--green-600); }
+.drop-line::before { left: -4px; }
+.drop-line::after { right: -4px; }
+.drag-ghost { position: fixed; z-index: 3000; max-width: 280px; padding: 8px 14px; border: 1px solid var(--green-600); border-radius: var(--r-md); background: var(--n-0); color: var(--ink-900); font: 600 var(--fs-sm)/1.3 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--sh-lg); pointer-events: none; }
+.drag-ghost.is-blocked { border-color: var(--danger-600); color: var(--danger-700); background: var(--danger-50); }
+.state.drop-ready { border-color: var(--green-600); border-style: solid; background: var(--green-50); }
+.palette-item { cursor: grab; touch-action: pan-y; }
+body.is-dnd { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+body.is-dnd * { cursor: grabbing !important; }
