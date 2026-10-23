@@ -3,9 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import MapView, { type MapFeature } from "../components/MapView";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { config } from "../lib/config";
-import { loadApi } from "../lib/api";
+import { ApiError, loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
-import type { ExportFormat } from "../lib/types";
+import type { ExportFormat, FeatureCollection } from "../lib/types";
 
 const FORMATS: { id: ExportFormat; label: string }[] = [
   { id: "geojson", label: "GeoJSON" }, { id: "gpkg", label: "GeoPackage" }, { id: "shp", label: "Shapefile" }, { id: "csv", label: "CSV" },
@@ -14,7 +14,15 @@ const FORMATS: { id: ExportFormat; label: string }[] = [
 export default function DatasetPage() {
   const { slug = "" } = useParams();
   const toast = useToast();
-  const { data, error, loading, reload } = useAsync(async (api) => ({ dataset: await api.getDataset(slug), fc: await api.datasetFeatures(slug) }), [slug]);
+  const { data, error, loading, reload } = useAsync(async (api) => {
+    const dataset = await api.getDataset(slug);
+    // A dataset whose first snapshot has not finished (or failed) has no features to show yet. That is not an error page.
+    try { return { dataset, fc: await api.datasetFeatures(slug), unpublished: false }; }
+    catch (e) {
+      if (e instanceof ApiError && e.status === 409) return { dataset, fc: { type: "FeatureCollection" as const, features: [] } as FeatureCollection, unpublished: true };
+      throw e;
+    }
+  }, [slug]);
   const [busy, setBusy] = useState<ExportFormat | null>(null);
   const [progress, setProgress] = useState(0);
 
@@ -50,6 +58,7 @@ export default function DatasetPage() {
       <div>
         <Link to="/hub">Back to datasets</Link>
         <h1 style={{ margin: "8px 0 16px", fontSize: 34 }}>{d.title}</h1>
+        {data.unpublished && <div className="state" role="status"><strong>Not published yet</strong><span>This dataset has no finished version. Publishing may still be running, or it failed (for example, no records were approved). Go back to Collected data and publish again.</span></div>}
         <div className="preview"><MapView features={features} fitKey={d.slug} label="Dataset preview" /></div>
         <p style={{ marginTop: 20, maxWidth: 640, lineHeight: 1.6 }}>{d.description || "No description yet."}</p>
       </div>

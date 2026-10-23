@@ -71,6 +71,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
   const [description, setDescription] = useState("");
   const [license, setLicense] = useState<License>("ODbL");
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
   const { data: forms, loading: formsLoading } = useAsync((api) => api.listForms(project.id), [project.id]);
   const published = (forms ?? []).filter((f) => f.version > 0);
   const [formId, setFormId] = useState("");
@@ -80,11 +81,21 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
     e.preventDefault();
     setBusy(true);
     try {
-      const d = await (await loadApi()).publishDataset(project.id, { form_id: formId, title, description, license });
-      toast(`Published "${d.title}" (version ${d.latest_version}).`, "success");
+      const api = await loadApi();
+      const { dataset, job: first } = await api.publishDataset(project.id, { form_id: formId, title, description, license });
+      // The snapshot is built in the background. Wait for it, so we only say "published" when it really is.
+      let job = first;
+      for (let i = 0; i < 60 && (job.status === "queued" || job.status === "running"); i++) {
+        setStatus(job.status === "queued" ? "Waiting for the publisher to start…" : `Publishing… ${Math.round(job.progress)}%`);
+        await new Promise((r) => setTimeout(r, 1500));
+        job = await api.getJob(job.id);
+      }
+      if (job.status === "failed") throw new Error(job.error || "Publishing failed.");
+      if (job.status !== "done") throw new Error("Publishing has not started. The background worker may not be running on the server; the dataset stays unpublished until it is.");
+      toast(`Published "${dataset.title}" (version ${Math.max(dataset.latest_version, 1)}).`, "success");
       onClose();
     } catch (err) { toast(err instanceof Error ? err.message : "Could not publish.", "error"); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setStatus(""); }
   }
   return (
     <form className="card" onSubmit={submit} style={{ marginBottom: 20, maxWidth: 560 }} aria-label="Publish dataset">
@@ -105,7 +116,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
           {(["ODbL", "CC BY 4.0", "CC0", "Private"] as License[]).map((l) => <option key={l}>{l}</option>)}
         </select>
       </div>
-      <div className="row"><Button type="submit" variant="primary" busy={busy} disabled={!formId}>Publish</Button><Button onClick={onClose}>Cancel</Button></div>
+      <div className="row"><Button type="submit" variant="primary" busy={busy} disabled={!formId}>Publish</Button><Button onClick={onClose}>Cancel</Button>{status && <span className="meta" role="status">{status}</span>}</div>
     </form>
   );
 }

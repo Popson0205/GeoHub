@@ -133,7 +133,7 @@ export default function DataPage() {
           </div>
 
           {publishing && project.data && <PublishPanel project={project.data} onClose={() => setPublishing(false)} />}
-          {publishing && <p className="meta" style={{ marginTop: -8 }}>Only approved records are published. {counts.approved ?? 0} approved, {counts.submitted ?? 0} still waiting for this form.</p>}
+          {publishing && <p className="meta" style={{ marginTop: -8 }}>Approved and waiting records are published; rejected ones are left out. This form has {counts.approved ?? 0} approved and {counts.submitted ?? 0} waiting. Approve the good ones first if you only want checked data public.</p>}
 
           {canManage && picked.size > 0 && (
             <div className="row" role="toolbar" aria-label="Selected records" style={{ marginBottom: 8 }}>

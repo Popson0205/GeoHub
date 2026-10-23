@@ -620,13 +620,14 @@ export class MockApi implements Api {
     await wait(); this.auth();
     const slug = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuid().slice(0, 8);
     const existing = this.s.datasets.find((d) => d.slug === slug);
-    if (existing) { existing.latest_version += 1; existing.updated_at = new Date().toISOString(); this.save(); return existing; }
+    const doneJob: Job = { id: uuid(), kind: "snapshot", status: "done", progress: 100 };
+    if (existing) { existing.latest_version += 1; existing.updated_at = new Date().toISOString(); this.save(); return { dataset: existing, job: doneJob }; }
     const d: Dataset = {
       slug, project_id: projectId, title: input.title, description: input.description, license: input.license, tags: [], kind: "vector",
       feature_count: 0, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
     };
     this.s.datasets.push(d); this.save();
-    return d;
+    return { dataset: d, job: doneJob };
   }
   async createExport(slug: string, format: ExportFormat): Promise<Job> {
     await wait();

@@ -101,7 +101,8 @@ export interface Api {
   getDataset(slug: string): Promise<Dataset>;
   /** All features of a dataset; `limit` stops after that many (enough for a preview). */
   datasetFeatures(slug: string, opts?: { limit?: number }): Promise<FeatureCollection>;
-  publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<Dataset>;
+  /** Starts publishing. The snapshot is built by a background job: poll `job` with getJob before saying it worked. */
+  publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<{ dataset: Dataset; job: Job }>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
   getJob(id: string): Promise<Job>;
 }
@@ -512,7 +513,7 @@ class HttpApi implements Api {
       // There is no review screen in the web app yet, so new features stay "submitted". Include them.
       statuses: ["submitted", "approved"],
     });
-    return toDataset(r.dataset);
+    return { dataset: toDataset(r.dataset), job: toJob(r.job) };
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
