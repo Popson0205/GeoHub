@@ -7,6 +7,7 @@ const BUILD = "__BUILD__";
 const PRECACHE = /*__PRECACHE__*/[];
 const DEV = BUILD === "__BUILD__"; // not built by `vite build`: act as a pass-through so the dev server is never cached
 const SHELL = "geohub-shell-" + BUILD;
+const META = "geohub-meta";
 const TILES = "geohub-tiles-v1";
 const MAX_TILES = 3000;
 const TILE_RE = /\/\d{1,2}\/\d+\/\d+(@2x)?\.(png|jpe?g|webp|pbf|mvt)(\?.*)?$/i;
@@ -19,12 +20,22 @@ self.addEventListener("install", (event) => {
     // never stops the app from installing. "reload" skips the browser's HTTP cache so a new build never stores old files.
     await cache.put("/index.html", await fetch("/index.html", { cache: "reload" }));
     await Promise.allSettled(PRECACHE.map((u) => cache.add(new Request(u, { cache: "reload" }))));
+    // Take over straight away: nobody has to clear their data or close the app to get a new version.
+    // Collected records live in the app's own database, which an update never touches.
+    await self.skipWaiting();
   })());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k.startsWith("geohub-shell-") && k !== SHELL) await caches.delete(k);
+    // Keep the version just before this one for a while: a page still open on it may need one of its files.
+    const meta = await caches.open(META);
+    const saved = await meta.match("/version");
+    const info = saved ? await saved.json() : {};
+    const prev = info.current && info.current !== BUILD ? info.current : info.prev;
+    await meta.put("/version", new Response(JSON.stringify({ current: BUILD, prev: prev || null })));
+    const keep = new Set([SHELL, prev ? "geohub-shell-" + prev : ""]);
+    for (const k of await caches.keys()) if (k.startsWith("geohub-shell-") && !keep.has(k)) await caches.delete(k);
     await self.clients.claim();
   })());
 });
@@ -35,6 +46,11 @@ self.addEventListener("message", (e) => { if (e.data && e.data.type === "SKIP_WA
 async function trimTiles(cache) {
   const keys = await cache.keys();
   if (keys.length > MAX_TILES) await Promise.all(keys.slice(0, keys.length - MAX_TILES).map((k) => cache.delete(k)));
+}
+
+// This version's own copy first (so a new page never gets an old file), then any older version still kept.
+async function fromShell(req) {
+  return (await (await caches.open(SHELL)).match(req)) || (await caches.match(req));
 }
 
 self.addEventListener("fetch", (event) => {
@@ -69,18 +85,18 @@ self.addEventListener("fetch", (event) => {
       try {
         const ctl = new AbortController();
         const timer = setTimeout(() => ctl.abort(), 4000);
-        const res = await fetch(req, { signal: ctl.signal });
+        const res = await fetch(req, { signal: ctl.signal, cache: "no-cache" });
         clearTimeout(timer);
         if (res.ok) return res;
       } catch { /* offline or too slow */ }
-      return (await caches.match("/index.html")) || Response.error();
+      return (await fromShell("/index.html")) || Response.error();
     })());
     return;
   }
 
   // Built files, fonts, icons: the saved copy first; anything not yet saved is fetched and kept
   event.respondWith((async () => {
-    const hit = await caches.match(req);
+    const hit = await fromShell(req);
     if (hit) return hit;
     const res = await fetch(req);
     if (res.ok && res.type === "basic") (await caches.open(SHELL)).put(req, res.clone());

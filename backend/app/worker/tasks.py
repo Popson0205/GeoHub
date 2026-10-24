@@ -16,7 +16,7 @@ from psycopg.types.json import Jsonb
 from .. import formats, storage
 from ..config import settings
 from ..db import connect_sync
-from ..services.forms import check_properties, column_fields, non_column_ids, top_level_fields
+from ..services.forms import SYSTEM_FIELDS, SYSTEM_IDS, check_properties, column_fields, non_column_ids, top_level_fields
 from ..services.geo import check_geometry
 
 log = logging.getLogger("worker")
@@ -136,6 +136,13 @@ def snapshot(conn, job) -> dict:
     # A dataset is flat: groups are looked through, and media, repeat sections, notes and unsaved calculations are not published.
     fields = [{k: v for k, v in f.items() if k not in ("children", "visible", "required_if", "calc")} for f in column_fields(form["fields"])]
     photo_ids = non_column_ids(form["fields"])
+    # Location quality recorded by the collector (elevation, accuracy) is published as columns when any record has it.
+    have = {r["k"] for r in conn.execute(
+        "SELECT k FROM (SELECT DISTINCT jsonb_object_keys(f.properties) AS k FROM features f WHERE f.form_id = %s "
+        "AND f.deleted_at IS NULL AND f.status = ANY(%s)) t WHERE k = ANY(%s)",
+        (d["form_id"], statuses, sorted(SYSTEM_IDS))).fetchall()}
+    taken = {f["id"] for f in fields}
+    fields += [dict(s) for s in SYSTEM_FIELDS if s["id"] in have and s["id"] not in taken]
     version = d["latest_version"] + 1
     skey = f"snapshots/{did}/v{version}.geojson"
     conn.execute("INSERT INTO dataset_versions (dataset_id, version, fields, geometry_type, snapshot_key, published_by) "

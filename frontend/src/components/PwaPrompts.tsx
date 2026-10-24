@@ -1,14 +1,15 @@
-import { applyUpdate, usePwa } from "../lib/pwa";
+import { applyUpdate, isCollectorApp, usePwa } from "../lib/pwa";
 import { Button } from "./ui";
 
 /** Shown over any screen when a new version of the app has been downloaded. Applied only when the person agrees. */
 export function UpdateBanner() {
-  const { updateReady } = usePwa();
+  const { updateReady, updateWaiting } = usePwa();
   if (!updateReady) return null;
+  const auto = isCollectorApp();
   return (
     <div role="status" style={{ position: "fixed", left: 12, right: 12, bottom: "calc(12px + env(safe-area-inset-bottom, 0px))", zIndex: 1000, maxWidth: 520, margin: "0 auto", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 12, background: "#14302a", color: "#fff", boxShadow: "0 8px 24px rgba(0,0,0,.25)" }}>
-      <span style={{ flex: 1 }}>A new version is ready. Save your work first, then update.</span>
-      <Button variant="accent" onClick={applyUpdate}>Update</Button>
+      <span style={{ flex: 1 }}>{auto ? (updateWaiting ? "A new version is ready. It will load as soon as you finish this record." : "Updating…") : "A new version is ready. Save your work, then reload."}</span>
+      {!auto && <Button variant="accent" onClick={applyUpdate}>Reload</Button>}
     </div>
   );
 }

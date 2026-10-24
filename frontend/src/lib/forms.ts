@@ -1,3 +1,4 @@
+import { GPS_KEYS } from "./gps";
 import { TYPE_SPECS, allFields, hasChoices, slugifyFieldId, topLevelFields, walk } from "./fieldSpec";
 import { calcRefs, conditionRefs, isEmpty, resolve } from "./logic";
 import type { FieldType, Form, FormField, Props } from "./types";
@@ -113,7 +114,9 @@ export function pruneProperties(form: Pick<Form, "fields">, props: Props): Props
     }
     return out;
   };
-  return build(form.fields, values, "");
+  const out = build(form.fields, values, "");
+  for (const k of GPS_KEYS) if (props[k] != null) out[k] = props[k];   // recorded by the collector, not form answers
+  return out;
 }
 
 /** Fills in default values for a new feature or a new repeat row. `$today` and `$now` become the current date or time. */

@@ -5,6 +5,7 @@ A repeat stores a list of rows under its own id. Everything here mirrors fronten
 backend/tests/test_form_fields.py checks the two type tables agree.
 """
 import math
+from typing import Any
 import re
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -583,6 +584,27 @@ def spec_media(t: str) -> bool:
     return TYPE_SPECS[t]["media"]
 
 
+# Values the collector records from the device beside the form's own answers (location quality, not questions).
+# Stored under the feature's properties and published as extra columns. Keys fit a shapefile's 10-character limit.
+SYSTEM_FIELDS = [
+    {"id": "gps_elev_m", "type": "number", "label": "Elevation (m)"},
+    {"id": "gps_hacc_m", "type": "number", "label": "Horizontal accuracy (m)"},
+    {"id": "gps_vacc_m", "type": "number", "label": "Vertical accuracy (m)"},
+    {"id": "gps_src", "type": "text", "label": "Location source"},
+]
+SYSTEM_IDS = {f["id"] for f in SYSTEM_FIELDS}
+
+
+def check_system_value(key: str, v: Any) -> str | None:
+    if key == "gps_src":
+        return None if v in ("gps", "map") else "must be \"gps\" or \"map\""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return "must be a number"
+    if key == "gps_elev_m":
+        return None if -1000 <= v <= 10000 else "must be between -1000 and 10000 metres"
+    return None if 0 <= v <= 100000 else "must be zero or more"
+
+
 def check_properties(fields: list[dict], props: dict, *, enforce_required: bool = True) -> dict[str, list[str]]:
     """Validate feature properties against a form version. Unknown keys are rejected; hidden fields are skipped
     (their answers are ignored, not an error, so an old client that still sends them keeps working)."""
@@ -592,8 +614,14 @@ def check_properties(fields: list[dict], props: dict, *, enforce_required: bool 
     def level(lst: list[dict], vals: dict, prefix: str) -> None:
         stored = {f["id"] for f in top_level_fields(lst) if TYPE_SPECS[f["type"]]["stores"] != "none"}
         for k in vals:
-            if k not in stored:
-                errors.setdefault(prefix + k, []).append("unknown field")
+            if k in stored:
+                continue
+            if prefix == "" and k in SYSTEM_IDS:
+                bad = check_system_value(k, vals[k])
+                if bad:
+                    errors.setdefault(k, []).append(bad)
+                continue
+            errors.setdefault(prefix + k, []).append("unknown field")
         for f in top_level_fields(lst):
             fid, t, key = f["id"], f["type"], prefix + f["id"]
             if key in hidden or TYPE_SPECS[t]["stores"] == "none":

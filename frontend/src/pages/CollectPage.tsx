@@ -9,11 +9,12 @@ import { BrandMark } from "../components/Shell";
 import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
+import { combineFixes, gpsProps, withoutGps, type Fix } from "../lib/gps";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
 import { useOnline } from "../lib/hooks";
-import { isCollectorApp, useFormManifest } from "../lib/pwa";
+import { isCollectorApp, setBusy, useFormManifest } from "../lib/pwa";
 import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, syncPublic, type SyncReport } from "../lib/sync";
 import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
 
@@ -96,23 +97,47 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
   function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: applyDefaults(form.fields), newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
   async function cancelDraft() {
+    stopWatch();
     if (draft?.newMedia.length) await db.media.bulkDelete(draft.newMedia);
     setDraft(null); setPlacing(false); setErrors({});
   }
+  // While a record is open, an app update waits instead of reloading the page and losing it.
+  const drafting = draft !== null;
+  useEffect(() => { setBusy(drafting); return () => setBusy(false); }, [drafting]);
+
+  // Capturing watches the GPS for a few seconds and averages the good readings, instead of trusting a single one.
+  const watchRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const stopWatch = useCallback(() => {
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    watchRef.current = timerRef.current = null;
+    setLocating(false);
+  }, []);
+  useEffect(() => stopWatch, [stopWatch]);
+
   function capture() {
     if (!navigator.geolocation) { toast("This device can't provide a location. Place the point on the map instead.", "error"); return; }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
+    stopWatch(); setLocating(true); setAccuracy(null);
+    const fixes: Fix[] = [];
+    const GOOD = 3, MAX_FIXES = 12, MAX_MS = 15000;
+    watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        setAccuracy(Math.round(pos.coords.accuracy)); setLocating(false);
-        setDraft((d) => d && { ...d, geometry: { type: "Point", coordinates: [pos.coords.longitude, pos.coords.latitude] } });
+        const c = pos.coords;
+        fixes.push({ lon: c.longitude, lat: c.latitude, acc: c.accuracy, alt: c.altitude, altAcc: c.altitudeAccuracy });
+        const r = combineFixes(fixes);
+        setAccuracy(Math.round(r.hacc));
+        setDraft((d) => d && { ...d, geometry: { type: "Point", coordinates: [r.lon, r.lat] }, props: { ...withoutGps(d.props), ...gpsProps(r) } });
+        if ((fixes.length >= 3 && r.hacc <= GOOD) || fixes.length >= MAX_FIXES) stopWatch();
       },
       (err) => {
-        setLocating(false);
+        stopWatch();
+        if (fixes.length) return;   // a reading was already taken; keep it
         toast(err.code === 1 ? "Location permission is off. Allow it in settings, or place the point on the map." : "Couldn't get a location fix. Move to open sky and try again, or place the point on the map.", "error");
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
+    timerRef.current = window.setTimeout(() => { if (fixes.length) stopWatch(); }, MAX_MS);
   }
 
   async function save() {
@@ -190,7 +215,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         features={mapFeatures}
         selectedId={draft?.geometry ? DRAFT_ID : null}
         drawMode={drawMode}
-        onDraw={(g) => { setDraft((d) => d && { ...d, geometry: g }); setPlacing(false); }}
+        onDraw={(g) => { setAccuracy(null); setDraft((d) => d && { ...d, geometry: g, props: { ...withoutGps(d.props), gps_src: "map" } }); setPlacing(false); }}
         onCancelDraw={() => setPlacing(false)}
         fitKey={collectOnly ? projectId : `${projectId}:${features.length > 0}`}
         geolocate
@@ -217,14 +242,14 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         ) : !draft.geometry ? (
           <>
             <h2>New {form?.name.toLowerCase()}</h2>
-            <span className="field-hint">Step 1: set the location.</span>
+            <span className="field-hint">Step 1: set the location.{locating && accuracy != null ? ` Holding still improves it. Now ±${accuracy} m.` : ""}</span>
             {form?.geometry_type === "Point" && <Button variant="accent" busy={locating} onClick={capture}>Capture at my location</Button>}
             <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? "Place on the map" : `Draw the ${form ? GEOMETRY_LABEL[form.geometry_type] : "shape"} on the map`}</Button>
             <Button variant="ghost" onClick={cancelDraft}>Cancel</Button>
           </>
         ) : form && (
           <>
-            <div className="row"><h2 className="grow">{draft.existing ? "Edit" : "New"} {form.name.toLowerCase()}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m</span>}</div>
+            <div className="row"><h2 className="grow">{draft.existing ? "Edit" : "New"} {form.name.toLowerCase()}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${draft.props.gps_elev_m} m elev.` : ""}{locating ? " · averaging…" : ""}</span>}</div>
             <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
             <div className="row" style={{ position: "sticky", bottom: 0, background: "#fff", padding: "8px 0" }}>
               <Button onClick={cancelDraft}>Cancel</Button>

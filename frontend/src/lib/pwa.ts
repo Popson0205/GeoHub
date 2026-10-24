@@ -4,9 +4,24 @@ import { useCallback, useEffect, useState } from "react";
 interface InstallEvent extends Event { prompt(): Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> }
 
 let installEvent: InstallEvent | null = null;
-let waiting: ServiceWorker | null = null;
+let updated = false;          // a newer version has taken over from the one on screen
+let reloadPending = false;
+let busy = false;             // the person is part-way through something that a reload would lose
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
+
+/** Tell the app whether a reload right now would lose unsaved work (for example a record being filled in). */
+export function setBusy(on: boolean) { busy = on; if (!on) tryReload(); }
+
+const typing = () => {
+  const a = document.activeElement as HTMLElement | null;
+  return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable);
+};
+function tryReload() {
+  if (!reloadPending || busy || typing()) return;
+  reloadPending = false;
+  window.location.reload();
+}
 
 /** Run once at start-up: register the service worker, keep data safe from eviction, listen for install. */
 export function initPwa() {
@@ -18,25 +33,31 @@ export function initPwa() {
 
   // In `npm run dev` the worker is a pass-through (it caches nothing), so installability can still be tested on localhost.
   if (!("serviceWorker" in navigator)) return;
+  // Was the page already under a service worker when it opened? Then a change of worker means a real update.
+  const hadController = !!navigator.serviceWorker.controller;
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").then((reg) => {
-      const watch = (w: ServiceWorker | null) => w?.addEventListener("statechange", () => {
-        // "installed" with a controller already present means a new version is ready and waiting.
-        if (w.state === "installed" && navigator.serviceWorker.controller) { waiting = w; notify(); }
-      });
-      if (reg.waiting && navigator.serviceWorker.controller) { waiting = reg.waiting; notify(); }
-      reg.addEventListener("updatefound", () => watch(reg.installing));
-      // Look for a new version when the app comes back to the front, and once an hour while it stays open.
+    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((reg) => {
+      // Look for a new version whenever it is likely to exist: coming back to the app, getting a connection, hourly.
       const check = () => void reg.update().catch(() => undefined);
-      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { check(); tryReload(); } });
+      window.addEventListener("online", check);
       setInterval(check, 60 * 60 * 1000);
+      check();
     }).catch(() => undefined);
-    let reloading = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloading) { reloading = true; window.location.reload(); } });
   });
+  // The new version activates by itself. The collector then reloads at the first quiet moment (never mid-record or
+  // mid-typing); the website only offers a Reload button, so an administrator's unsaved edits are never thrown away.
+  let first = !hadController;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (first) { first = false; return; }   // the very first install taking control is not an update
+    updated = true; notify();
+    if (isCollectorApp()) { reloadPending = true; tryReload(); }
+  });
+  setInterval(tryReload, 3000);
+  document.addEventListener("focusout", () => setTimeout(tryReload, 300));
 }
 
-export function applyUpdate() { waiting?.postMessage({ type: "SKIP_WAITING" }); }
+export function applyUpdate() { window.location.reload(); }
 
 export const isStandalone = () =>
   window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -67,7 +88,9 @@ export function usePwa() {
     /** iPhone and iPad have no install button for web apps; the person adds it from the Share menu. */
     iosHint: isIos() && !isStandalone(),
     install,
-    updateReady: !!waiting,
+    updateReady: updated,
+    /** The collector is waiting for a quiet moment (for example until the open record is saved) to reload by itself. */
+    updateWaiting: reloadPending,
     applyUpdate,
   };
 }

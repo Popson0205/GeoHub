@@ -83,6 +83,11 @@ if settings.web_dir:
     from fastapi.responses import FileResponse, HTMLResponse
 
     _web = Path(settings.web_dir).resolve()
+    # A redeploy must show up without anyone clearing their cache. Built files under /assets carry a hash in their
+    # name, so they can be kept forever; everything else (the page, the service worker, the manifest) is re-checked
+    # on every load (a cheap "not modified" answer when nothing changed).
+    _FOREVER = {"Cache-Control": "public, max-age=31536000, immutable"}
+    _REVALIDATE = {"Cache-Control": "no-cache"}
     _SHARE_PATH = re.compile(r"^f/(?:.*-)?([0-9a-f]{32})/?$")
 
     async def _share_page(index: Path, token: str) -> str | None:
@@ -113,13 +118,15 @@ if settings.web_dir:
             raise HTTPException(404)
         f = (_web / full_path).resolve()
         if full_path and f.is_file() and _web in f.parents:
-            return FileResponse(f)
+            return FileResponse(f, headers=_FOREVER if full_path.startswith("assets/") else _REVALIDATE)
+        if full_path.startswith("assets/"):
+            raise HTTPException(404)   # a file from an older build: say so, never answer with the page
         m = _SHARE_PATH.match(full_path)
         if m:
             page = await _share_page(_web / "index.html", m.group(1))
             if page:
-                return HTMLResponse(page)
-        return FileResponse(_web / "index.html")
+                return HTMLResponse(page, headers=_REVALIDATE)
+        return FileResponse(_web / "index.html", headers=_REVALIDATE)
 elif not P:
     @app.get("/", include_in_schema=False)
     async def root():
