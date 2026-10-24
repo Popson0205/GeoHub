@@ -179,3 +179,52 @@
 /* Checkbox lists inside a .field: the global ".field input" rule makes every input full width, which stretched these. */
 .field .cols input[type="checkbox"], .dash-pagebar input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; min-height: 0; padding: 0; flex: none; accent-color: var(--green-600); }
 .field .cols label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+
+/* ======================================================================================================
+   One screen, no page scrolling (view mode, laptop and larger).
+   The dashboard fills the space under the top bar. The grid is stretched to that height and its rows share it, so a
+   tile with "5 rows" gets five parts of the height rather than 5 x 64px. Edit mode, tablets and phones scroll as before.
+   If a page has so many charts that tiles would get too small, the grid keeps a minimum row height and scrolls instead.
+   ====================================================================================================== */
+@media screen and (min-width: 1101px) and (min-height: 560px) {
+  .container.dash-app.is-fit { flex: 1; min-height: 0; max-width: none; display: flex; flex-direction: column; overflow: hidden; padding: 8px 12px; }
+  .is-fit > * { flex: none; }
+  .is-fit .dash-layout { flex: 1 1 auto; min-height: 0; align-items: stretch; overflow: auto; }
+  .is-fit .dash-grid { --dash-gap: 8px; grid-auto-rows: minmax(18px, 1fr); height: 100%; min-height: 0; }
+
+  /* header: title and actions in one slim row */
+  .is-fit .dash-header { padding: 6px 12px; margin-bottom: 6px; }
+  .is-fit .dash-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .is-fit .dash-title h1 { font-size: var(--fs-lg); }
+  .is-fit .dash-title .meta { margin: 0; }
+  .is-fit .dash-actions .btn, .is-fit .dash-actions button { min-height: 30px; padding-block: 0; font-size: var(--fs-sm); }
+
+  /* tabs left, filters right, on one line */
+  .is-fit .dash-bar { position: static; display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 6px; padding: 0; background: transparent; }
+  .is-fit .dash-tabs { flex: none; margin: 0; border-bottom: 0; }
+  .is-fit .dash-tab { padding: 4px 14px; }
+  .is-fit .dash-filters { flex: 1 1 auto; justify-content: flex-end; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; gap: 6px 14px; align-items: center; }
+  .is-fit .dash-filters > div:not(.chips) { display: flex; align-items: center; gap: 6px; }
+  .is-fit .dash-filters label { margin: 0; white-space: nowrap; }
+  .is-fit .dash-filters select, .is-fit .dash-filters input { min-height: 28px; padding-block: 0; }
+  .is-fit .dash-filters .count { margin-left: 4px; white-space: nowrap; }
+
+  /* tiles: tighter, and every body fills what is left */
+  .is-fit .widget { padding: 8px 10px; gap: 4px; }
+  .is-fit .widget-head { padding-bottom: 4px; }
+  .is-fit .widget-head .btn { min-height: 22px; padding: 0 6px; }
+  .is-fit .widget-body { overflow: hidden; }
+  .is-fit .widget-body.is-table { overflow: auto; }
+  .is-fit .widget.t-kpi { padding: 4px 10px 4px 14px; gap: 0; justify-content: center; }
+  .is-fit .widget.t-kpi .widget-head { padding: 0; }
+  .is-fit .widget-body.is-kpi { flex: none; }
+  .is-fit .kpi-value { font-size: clamp(22px, 4.6vh, 44px); line-height: 1.05; }
+
+  /* bars share the tile height; the legend scrolls only if it truly cannot fit */
+  .is-fit .bars { height: 100%; gap: 2px; }
+  .is-fit .bar-row { flex: 1 1 0; min-height: 18px; max-height: 34px; padding-block: 0; }
+  .is-fit .legend { max-height: 100%; overflow: auto; }
+  .is-fit .donut svg { max-height: 100%; }
+  .is-fit .widget-body.is-line .line-chart { min-height: 0; height: 100%; }
+  .is-fit .dash-table td, .is-fit .dash-table th { padding: 3px 10px; }
+}

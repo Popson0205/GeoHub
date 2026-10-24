@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { fmt, type Slice } from "../lib/dashboard";
 
 const color = (i: number) => `var(--chart-${(i % 8) + 1})`;
@@ -66,7 +67,17 @@ const niceMax = (v: number) => { if (v <= 0) return 1; const p = 10 ** Math.floo
 
 /** A line over time with a soft area under it. Hover a point for its value. */
 export function LineChart({ data }: { data: Slice[] }) {
-  const W = 600, H = 220, L = 44, R = 12, T = 12, B = 26;
+  // Draw at the size the tile really has, so the chart fills it with text at its normal size (600 x 220 until measured).
+  const ref = useRef<SVGSVGElement>(null);
+  const [size, setSize] = useState({ W: 600, H: 220 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => { const { width, height } = e.contentRect; if (width > 120 && height > 80) setSize((o) => (Math.abs(o.W - width) < 1 && Math.abs(o.H - height) < 1 ? o : { W: Math.round(width), H: Math.round(height) })); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const { W, H } = size, L = 44, R = 12, T = 12, B = 26;
   const top = niceMax(Math.max(...data.map((d) => d.value), 0));
   const x = (i: number) => (data.length === 1 ? (L + W - R) / 2 : L + (i / (data.length - 1)) * (W - L - R));
   const y = (v: number) => T + (1 - v / top) * (H - T - B);
@@ -74,7 +85,7 @@ export function LineChart({ data }: { data: Slice[] }) {
   const ticks = [0, top / 2, top];
   const every = Math.max(1, Math.ceil(data.length / 6));
   return (
-    <svg className="line-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Line chart over time, ${data.length} points`}>
+    <svg ref={ref} className="line-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Line chart over time, ${data.length} points`}>
       {ticks.map((t) => (
         <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="grid" /><text x={L - 6} y={y(t) + 4} textAnchor="end" className="axis">{fmt(t)}</text></g>
       ))}

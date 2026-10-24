@@ -159,7 +159,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const time = loadedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="container dash-app" style={{ width: "100%" }}>
+    <div className={`container dash-app${editing ? "" : " is-fit"}`} style={{ width: "100%" }}>
       <header className="dash-header">
         <div className="dash-title">
           {editing
