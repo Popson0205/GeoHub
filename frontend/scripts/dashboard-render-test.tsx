@@ -78,8 +78,8 @@ ok(activeTab(jointView("/?page=nope")) === "Overview", "an unknown page falls ba
 const filtered = jointView("/?page=army&status=approved");
 ok(filtered.includes("10 of 30 records") && filtered.includes('<option value="approved" selected'), "filters in the address are applied and shown");
 ok(jointView("/?page=navy&status=approved").includes("5 records"), "the same filter carries to another page");
-ok(/class="widget s6" style="grid-row:span 2"/.test(first), "two number cards share a line, two rows tall");
+ok(/class="widget t-kpi s6" style="grid-row:span 2"/.test(first), "two number cards share a line, two rows tall");
 const army = jointView("/?page=army");
-ok(/widget s4/.test(army) && /widget s6/.test(army) && army.includes("grid-row:span 5"), "a page of mixed charts is packed into rows");
+ok(/widget t-\w+ s4/.test(army) && /widget t-\w+ s6/.test(army) && army.includes("grid-row:span 5"), "a page of mixed charts is packed into rows");
 ok(!jointView("/", false).includes("Edit dashboard") && !jointView("/", false).includes("Add page"), "viewers see the pages but cannot edit");
 ok(!view().includes("Dashboard pages"), "a one-page dashboard shows no tabs");

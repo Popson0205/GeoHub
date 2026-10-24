@@ -159,29 +159,28 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const time = loadedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="container" style={{ width: "100%" }}>
-      <div className="page-head">
-        {editing
-          ? <input type="text" aria-label="Dashboard name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} style={{ fontSize: "var(--fs-2xl)", fontWeight: 600 }} />
-          : <h1>{name}</h1>}
-        <span className="grow" />
-        <Link className="btn" to={`/collect/${projectId}/dashboards`}>All dashboards</Link>
-      </div>
-      {editing
-        ? <div className="field"><label htmlFor="ddesc">Description</label><input id="ddesc" value={cfg.description ?? ""} maxLength={300} placeholder="What this dashboard reports, and for whom" onChange={(e) => setCfg({ ...cfg, description: e.target.value || undefined })} /></div>
-        : cfg.description && <p className="meta">{cfg.description}</p>}
-
-      <div className="dash-toolbar">
-        {!editing && time && <span className="meta">Data as of {time}</span>}
-        <span className="grow" />
-        {!editing && <Button onClick={onRefresh}>Refresh data</Button>}
-        {!editing && <Button onClick={() => window.print()}>Print / PDF</Button>}
-        {canEdit && !editing && <Button variant="primary" onClick={() => setEditing(true)}>Edit dashboard</Button>}
-        {editing && <>
-          <Button onClick={() => void cancel()}>Cancel</Button>
-          <Button variant="primary" busy={saving} disabled={!dirty} onClick={() => void save()}>Save dashboard</Button>
-        </>}
-      </div>
+    <div className="container dash-app" style={{ width: "100%" }}>
+      <header className="dash-header">
+        <div className="dash-title">
+          {editing
+            ? <input type="text" aria-label="Dashboard name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} style={{ fontSize: "var(--fs-2xl)", fontWeight: 600 }} />
+            : <h1>{name}</h1>}
+          {editing
+            ? <div className="field"><label htmlFor="ddesc">Description</label><input id="ddesc" value={cfg.description ?? ""} maxLength={300} placeholder="What this dashboard reports, and for whom" onChange={(e) => setCfg({ ...cfg, description: e.target.value || undefined })} /></div>
+            : cfg.description && <p className="meta">{cfg.description}</p>}
+        </div>
+        <div className="dash-actions">
+          {!editing && time && <span className="meta">Data as of {time}</span>}
+          <Link className="btn" to={`/collect/${projectId}/dashboards`}>All dashboards</Link>
+          {!editing && <Button onClick={onRefresh}>Refresh data</Button>}
+          {!editing && <Button onClick={() => window.print()}>Print / PDF</Button>}
+          {canEdit && !editing && <Button variant="primary" onClick={() => setEditing(true)}>Edit dashboard</Button>}
+          {editing && <>
+            <Button onClick={() => void cancel()}>Cancel</Button>
+            <Button variant="primary" busy={saving} disabled={!dirty} onClick={() => void save()}>Save dashboard</Button>
+          </>}
+        </div>
+      </header>
 
       <div className="dash-bar">
         {(cfg.pages.length > 1 || editing) && (
@@ -294,11 +293,11 @@ function WidgetCard({ w, span, height, source, hasForm, showSource, filters, edi
   else body = <LineChart data={data} />;
 
   return (
-    <section className={`widget s${span}${editing ? " is-editable" : ""}${selected ? " is-selected" : ""}`} style={{ gridRow: `span ${height}` }} aria-label={title}
+    <section className={`widget t-${w.type} s${span}${editing ? " is-editable" : ""}${selected ? " is-selected" : ""}`} style={{ gridRow: `span ${height}` }} aria-label={title}
       onClick={editing ? onSelect : undefined}>
       <div className="widget-head">
         <h3>{title}</h3>
-        {showSource && source && <small className="meta">{source.form.name}</small>}
+        {showSource && source && !title.startsWith(source.form.name) && <small className="meta">{source.form.name}</small>}
         {!editing && data && data.length > 0 && <Button small variant="ghost" onClick={csv} aria-label={`Download ${title} as CSV`}>CSV</Button>}
       </div>
       <div className={`widget-body is-${w.type}`}>{body}</div>
