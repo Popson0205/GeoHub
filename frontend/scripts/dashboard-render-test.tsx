@@ -35,6 +35,7 @@ ok(none.includes("No charts yet"), "an empty page says so");
 
 // ---- edit mode and the settings panel ----
 import { WidgetSettings } from "../src/pages/DashboardPage";
+import TemplatePicker from "../src/components/TemplatePicker";
 import { dashboardFields, newWidget } from "../src/lib/dashboard";
 const editHtml = (h => h.replace(/<!-- -->/g, ""))(renderToString(
   <MemoryRouter initialEntries={[{ pathname: "/", state: { edit: true } }]}><ToastProvider><ConfirmProvider>
@@ -54,6 +55,12 @@ for (const t of ["kpi", "bar", "pie", "line", "table", "map"] as const) {
   ok(h.includes("Position and size") && h.includes("Left (column)") && h.includes("Top (row)") && h.includes("Tall (rows)") && h.includes("Full row"), "settings offer exact position and size once layout is free");
   ok(h.includes('value="5"') && h.includes('value="3"') && h.includes('value="6"'), "the boxes show the chart's current column (1-based), row, width and height");
   ok(!h.includes("Move earlier") && !h.includes("Move later"), "the order buttons go away when charts are placed by hand");
+}
+{
+  const h = renderToString(<TemplatePicker value="executive" onChange={() => {}} />);
+  ok(["Standard overview", "Executive summary", "Map focus", "Review queue", "Trends and analysis", "Blank"].every((n) => h.includes(n)), "the template picker offers every template");
+  ok((h.match(/type="radio"/g) ?? []).length === 6 && h.includes("checked") && (h.match(/<svg/g) ?? []).length === 6, "one radio and one thumbnail per template, with the chosen one marked");
+  ok(editHtml.includes("Apply a template"), "the editor can apply a template to a page");
 }
 const tbl = renderToString(<WidgetSettings w={newWidget("table", defs)} defs={defs} index={0} count={1} onChange={() => {}} onMove={() => {}} onRemove={() => {}} onClose={() => {}} />);
 ok(tbl.includes("Elevation (m)") && tbl.includes("Review status"), "table columns offer the form's fields, GPS elevation and status");

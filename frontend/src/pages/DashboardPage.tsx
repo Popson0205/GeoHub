@@ -11,6 +11,7 @@ import {
   pageFormIds, slicesCsv, starterWidgets, tableRows, timeSeries, widgetProblem,
   type FieldDef, type Filters, type Rect, type Slice,
 } from "../lib/dashboard";
+import { TEMPLATES, templateWidgets, type TemplateId } from "../lib/dashboardTemplates";
 import { useAsync } from "../lib/hooks";
 import type { Dashboard, DashboardConfig, DashPage, Feature, FeatureStatus, Form, Metric, Widget, WidgetType } from "../lib/types";
 
@@ -146,6 +147,13 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     patchPage((pg) => ({ ...pg, form_id: next.id, widgets: starterWidgets(next) }));
     setFilters(noFilters()); setSelected(null);
   }
+  async function applyTemplate(id: TemplateId) {
+    const form = forms.find((f) => f.id === page.form_id);
+    if (!form) return;
+    const name = TEMPLATES.find((t) => t.id === id)?.name ?? "template";
+    if (page.widgets.length && !(await confirm({ title: `Apply “${name}”?`, message: "The charts on this page are replaced. Other pages are not touched. Nothing is saved until you press Save dashboard, and Cancel brings everything back.", confirmLabel: "Replace charts" }))) return;
+    patchPage((pg) => ({ ...pg, widgets: templateWidgets(id, form) })); setSelected(null);
+  }
   function addPage() {
     if (cfg.pages.length >= MAX_PAGES) { toast(`A dashboard can have up to ${MAX_PAGES} pages.`, "error"); return; }
     const p = newPage("New page");
@@ -248,6 +256,11 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             <select id="pform" value={page.form_id ?? ""} onChange={(e) => void choosePageForm(e.target.value)}>
               <option value="" disabled>{page.form_id ? "" : "Choose a form…"}</option>
               {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="ptpl">Template</label>
+            <select id="ptpl" value="" disabled={!pageForm} title={pageForm ? undefined : "Choose the form this page shows first"} onChange={(e) => void applyTemplate(e.target.value as TemplateId)}>
+              <option value="">Apply a template…</option>
+              {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select></div>
           <div className="row">
             <Button small onClick={() => movePage(-1)} disabled={pageIndex <= 0}>Move page left</Button>

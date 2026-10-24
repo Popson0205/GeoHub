@@ -260,3 +260,22 @@
 .dash-rect .field label { font-size: var(--fs-xs); color: var(--muted); }
 .dash-rect .field input { width: 100%; }
 @media print { .rh, .grip { display: none !important; } }
+
+/* ---- template gallery (New dashboard) ---- */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-3); margin-top: var(--s-1, 4px); }
+.tpl-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: var(--s-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; font-weight: 400; }
+.tpl-card:hover { border-color: var(--green-300); background: var(--green-50); }
+.tpl-card.is-picked { border-color: var(--green-500); box-shadow: 0 0 0 2px var(--green-500); }
+.tpl-card:focus-within { outline: 2px solid var(--focus, var(--green-500)); outline-offset: 2px; }
+.tpl-card input { position: absolute; opacity: 0; pointer-events: none; }
+.tpl-card strong { font-size: var(--fs-sm); }
+.tpl-card small { color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; }
+.tpl-thumb { width: 100%; height: 110px; padding: 4px; background: var(--n-50, #f7f9f8); border: 1px solid var(--line); border-radius: var(--r-sm, 6px); box-sizing: border-box; }
+.tpl-thumb .tt { fill: var(--chart-1); opacity: .85; }
+.tpl-thumb .tt-kpi { fill: var(--chart-4); }
+.tpl-thumb .tt-bar { fill: var(--chart-3); }
+.tpl-thumb .tt-pie { fill: var(--chart-5); }
+.tpl-thumb .tt-line { fill: var(--chart-1); }
+.tpl-thumb .tt-map { fill: var(--chart-6); }
+.tpl-thumb .tt-table { fill: var(--chart-8); }
+.tpl-thumb .tpl-empty { font-size: 9px; fill: var(--n-500); }

@@ -1,4 +1,5 @@
 import { arrangeRects, autoLayout, bucketKey, isManualLayout, layoutRects, placeAll, resetRects, setWidgetRect, settle, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
+import { TEMPLATES, templatePages, templateSketch, templateWidgets, type TemplateId } from "../src/lib/dashboardTemplates";
 import type { Feature, Form } from "../src/lib/types";
 
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
@@ -147,6 +148,45 @@ const inside = (ws: ReturnType<typeof mkw>[]) => rectsOf(ws).every((r) => r.col 
   const preview = arrangeRects(layoutRects(frozen), base[0].id, { ...layoutRects(frozen).get(base[0].id)!, row: 4 });
   const order = placeAll(frozen, preview).map((p) => p.row! * 100 + p.col!);
   ok(order.every((v, i) => i === 0 || v >= order[i - 1]), "charts are listed top to bottom, left to right");
+}
+
+// ---------- templates ----------
+{
+  const bare = { id: "b", project_id: "p", name: "Bare", version: 1, status: "published", fields: [{ id: "note", label: "Note", type: "text" }] } as unknown as Form;   // no choices, no numbers, no location
+  const flat = { ...form, id: "g", name: "No location", geometry_type: undefined } as unknown as Form;
+  const overlap = (a: { col: number; row: number; cols: number; rows: number }, b: typeof a) => a.col < b.col + b.cols && b.col < a.col + a.cols && a.row < b.row + b.rows && b.row < a.row + a.rows;
+  for (const t of TEMPLATES) {
+    for (const [label, fm] of [["a form with everything", form], ["a bare form", bare], ["a form with no location", flat]] as const) {
+      let i = 0;
+      const ws = templateWidgets(t.id, fm, () => `t${i++}`), d = dashboardFields(fm);
+      if (t.id === "blank") { ok(ws.length === 0, `blank is empty (${label})`); continue; }
+      ok(ws.length > 0 && ws.length <= 30 && new Set(ws.map((w) => w.id)).size === ws.length, `${t.name}: charts with unique ids (${label})`);
+      ok(ws.every((w) => widgetProblem(w, d) === null), `${t.name}: every chart can be drawn (${label})`);
+      if (t.id === "standard") { ok(!isManualLayout(ws), "the standard overview stays on the automatic layout"); continue; }
+      const r = [...layoutRects(ws)].map(([, x]) => x);
+      ok(ws.every((w) => w.col !== undefined) && r.every((x) => x.col >= 0 && x.col + x.cols <= 12 && x.cols >= 2 && x.rows >= 2), `${t.name}: every chart sits on the grid (${label})`);
+      ok(r.every((a, x) => r.every((b, y) => x === y || !overlap(a, b))), `${t.name}: nothing overlaps (${label})`);
+      const same = (x: unknown): string => JSON.stringify(x, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([p], [q]) => p.localeCompare(q))) : v));
+      ok(same(normalizeConfig({ pages: [{ id: "p", title: "P", widgets: ws }] }).pages[0].widgets) === same(ws), `${t.name}: survives saving and reopening (${label})`);
+    }
+  }
+  ok(templateWidgets("map", form).some((w) => w.type === "map") && !templateWidgets("map", flat).some((w) => w.type === "map") && templateWidgets("map", flat).some((w) => w.type === "line"), "Map focus uses a map when the form has locations and a time chart when it has none");
+  const two = { ...form, fields: [...(form as unknown as { fields: unknown[] }).fields, { id: "width", label: "Width", type: "number" }] } as unknown as Form;
+  const kpis = (fm: Form) => templateWidgets("executive", fm).filter((w) => w.type === "kpi").length;
+  ok(kpis(bare) === 1 && kpis(form) === 3 && kpis(two) === 4, "number cards follow the number fields the form has (1, 3 or 4)");
+  ok(templateWidgets("review", form).find((w) => w.type === "table")!.columns.slice(0, 2).join() === "__status,__updated", "Review queue's table leads with status and date changed");
+  const strips = templateWidgets("executive", form).filter((w) => w.row === 0);
+  ok(strips.reduce((n, w) => n + w.cols!, 0) === 12, "a band of charts fills the whole 12 columns");
+  let a = 0, b = 0;
+  const std = templateWidgets("standard", form, () => `x${a++}`), old = starterWidgets(form, () => `x${b++}`);
+  ok(JSON.stringify(std) === JSON.stringify(old), "the standard template is exactly the starter set it always was");
+  ok(templatePages("blank", [form, bare], true).length === 2 && templatePages("blank", [form, bare], true).every((p) => p.widgets.length === 0), "a blank dashboard has one empty page per form and no overview");
+  ok(templatePages("executive", [form, bare], true)[0].title === "Overview" && templatePages("executive", [form, bare], false).length === 2, "templates give a page per form, plus the overview when asked");
+  ok(templatePages("trends", [], true).length === 1, "no forms still gives a page");
+  for (const t of TEMPLATES) {
+    const sk = templateSketch(t.id as TemplateId);
+    ok(t.id === "blank" ? sk.length === 0 : sk.length > 2 && sk.every((x) => x.col + x.cols <= 12), `${t.name}: has a thumbnail`);
+  }
 }
 
 // ---------- pages ----------

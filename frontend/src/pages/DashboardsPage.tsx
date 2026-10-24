@@ -2,7 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
-import { MAX_PAGES, newPage, starterPages } from "../lib/dashboard";
+import TemplatePicker from "../components/TemplatePicker";
+import { MAX_PAGES } from "../lib/dashboard";
+import { templatePages, type TemplateId } from "../lib/dashboardTemplates";
 import { useAsync } from "../lib/hooks";
 
 /** The project's dashboards: charts over the collected data. Administrators build them; viewers read them. */
@@ -18,7 +20,7 @@ export default function DashboardsPage() {
   const [description, setDescription] = useState("");
   const [picked, setPicked] = useState<string[] | null>(null);          // forms that become pages; null = all of them
   const [overview, setOverview] = useState(true);
-  const [starter, setStarter] = useState(true);
+  const [template, setTemplate] = useState<TemplateId>("standard");
   const [busy, setBusy] = useState(false);
 
   if (project.loading || forms.loading || list.loading) return <div className="container"><Loading /></div>;
@@ -36,7 +38,7 @@ export default function DashboardsPage() {
     setBusy(true);
     try {
       // One page per chosen form (say Army, Air Force, Navy), plus a joint overview when there are several.
-      const pages = starter ? starterPages(chosen, overview) : chosen.map((f) => ({ ...newPage(f.name.slice(0, 60), f.id) }));
+      const pages = templatePages(template, chosen, overview);
       const d = await (await loadApi()).createDashboard(projectId, name.trim(), { description: description.trim() || undefined, pages });
       nav(`/collect/${projectId}/dashboards/${d.id}`, { state: { edit: true } });
     } catch (e2) { toast(e2 instanceof Error ? e2.message : "Could not create the dashboard.", "error"); setBusy(false); }
@@ -56,7 +58,7 @@ export default function DashboardsPage() {
 
       {canEdit && (allForms.length === 0
         ? <div className="state"><span>Create a form and collect some data first.</span><Link to={`/collect/${projectId}/forms`}>Go to forms</Link></div>
-        : <form className="card" onSubmit={(e) => void create(e)} style={{ maxWidth: 560, marginBottom: "var(--s-5)" }}>
+        : <form className="card" onSubmit={(e) => void create(e)} style={{ maxWidth: 940, marginBottom: "var(--s-5)" }}>
           <h2>New dashboard</h2>
           <p className="meta">Make one dashboard for each department or team. Each form you pick becomes a page of that dashboard.</p>
           <div className="field"><label htmlFor="dn">Name</label><input id="dn" required value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="For example, Ministry of Defence" /></div>
@@ -66,8 +68,10 @@ export default function DashboardsPage() {
               {allForms.map((f) => <label key={f.id} style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={chosen.some((c) => c.id === f.id)} onChange={() => toggle(f.id)} />{f.name}</label>)}
             </div>
             <small className="meta">You can rename, reorder, add and remove pages later.</small></div>
-          {chosen.length > 1 && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={overview} disabled={!starter} onChange={(e) => setOverview(e.target.checked)} />Add an overview page that compares them</label>}
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} />Start with suggested charts</label>
+          {chosen.length > 1 && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={overview} disabled={template === "blank"} onChange={(e) => setOverview(e.target.checked)} />Add an overview page that compares them</label>}
+          <div className="field"><span id="dtl" className="label">Start from a template</span>
+            <TemplatePicker value={template} onChange={setTemplate} />
+            <small className="meta">Every template can be changed afterwards: move and resize charts, add and remove them, or apply a different template to a page.</small></div>
           <div><Button type="submit" variant="primary" busy={busy} disabled={!name.trim() || !chosen.length}>Create dashboard</Button></div>
         </form>)}
 
