@@ -17,6 +17,8 @@ import JoinMapPage from "./pages/JoinMapPage";
 import SharePage from "./pages/SharePage";
 import PublicFormPage from "./pages/PublicFormPage";
 import DataPage from "./pages/DataPage";
+import DashboardsPage from "./pages/DashboardsPage";
+import DashboardPage from "./pages/DashboardPage";
 import CollectHomePage from "./pages/CollectHomePage";
 import { isCollectorApp } from "./lib/pwa";
 
@@ -72,6 +74,8 @@ export default function App() {
         <Route path="/collect/:projectId/forms" element={<RequireAuth><FormsPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms/:formId/share" element={<RequireAuth><SharePage /></RequireAuth>} />
         <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
+        <Route path="/collect/:projectId/dashboards" element={<RequireAuth><DashboardsPage /></RequireAuth>} />
+        <Route path="/collect/:projectId/dashboards/:dashboardId" element={<RequireAuth><DashboardPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms/:formId" element={<RequireAuth><BuilderPage /></RequireAuth>} />
         <Route path="/projects" element={<LegacyProject to="collect" />} />
         <Route path="/projects/:projectId/editor" element={<LegacyProject to="review" />} />

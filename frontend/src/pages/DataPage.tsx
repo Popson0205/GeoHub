@@ -110,6 +110,7 @@ export default function DataPage() {
       <div className="page-head">
         <h1>Collected data</h1><span className="grow" />
         {shareLink && canManage && <Link className="btn" to={shareLink}>Share form</Link>}
+        <Link className="btn" to={`/collect/${projectId}/dashboards`}>Dashboards</Link>
         <Link className="btn" to="/collect">Back to projects</Link>
       </div>
       <p className="meta" style={{ marginTop: 0 }}>{project.data?.name}</p>

@@ -3,6 +3,7 @@ import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
+  Dashboard, DashboardConfig,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
@@ -29,6 +30,13 @@ export interface Api {
   createForm(projectId: string, name: string, geometryType: GeometryType): Promise<Form>;
   saveForm(form: Form): Promise<Form>;
   publishForm(id: string): Promise<Form>;
+
+  // ---- dashboards: saved chart layouts over a project's collected data ----
+  listDashboards(projectId: string): Promise<Dashboard[]>;
+  getDashboard(id: string): Promise<Dashboard>;
+  createDashboard(projectId: string, name: string, config?: DashboardConfig): Promise<Dashboard>;
+  saveDashboard(d: Pick<Dashboard, "id" | "name" | "config">): Promise<Dashboard>;
+  deleteDashboard(id: string): Promise<void>;
 
   listFeatures(projectId: string): Promise<Feature[]>;
   createFeature(f: NewFeature): Promise<Feature>;
@@ -199,6 +207,30 @@ function flattenFields(fields?: Record<string, string[] | string> | null, detail
   return out;
 }
 
+/** The API sends nulls for unset options and the app uses undefined; these two functions are the only place that differs. */
+function toDashboard(w: Wire): Dashboard {
+  return {
+    id: w.id, project_id: w.project_id, name: w.name, updated_at: w.updated_at,
+    config: {
+      form_id: w.config?.form_id ?? undefined,
+      widgets: (w.config?.widgets ?? []).map((x: Wire) => ({
+        id: x.id, type: x.type, title: x.title ?? "", width: x.width ?? 1, metric: x.metric ?? "count",
+        metric_field: x.metric_field ?? undefined, field: x.field ?? undefined, bucket: x.bucket ?? "month",
+        limit: x.limit ?? 8, columns: x.columns ?? [],
+      })),
+    },
+  };
+}
+function toWireConfig(c: DashboardConfig) {
+  return {
+    form_id: c.form_id ?? null,
+    widgets: c.widgets.map((x) => ({
+      id: x.id, type: x.type, title: x.title, width: x.width, metric: x.metric, metric_field: x.metric_field ?? null,
+      field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,
+    })),
+  };
+}
+
 class HttpApi implements Api {
   /** Signed tile URLs from GET /projects/{id}/layers, filled in by listImagery(). */
   private tileUrls = new Map<string, string>();
@@ -282,6 +314,19 @@ class HttpApi implements Api {
     return toForm(await this.req("PATCH", `/forms/${form.id}`, { name: form.name, fields: form.fields.map(toWireField) }));
   }
   async publishForm(id: string) { return toForm(await this.req("POST", `/forms/${id}/publish`)); }
+
+  async listDashboards(projectId: string) {
+    const page = await this.req<Wire>("GET", `/projects/${projectId}/dashboards`);
+    return page.items.map(toDashboard) as Dashboard[];
+  }
+  async getDashboard(id: string) { return toDashboard(await this.req("GET", `/dashboards/${id}`)); }
+  async createDashboard(projectId: string, name: string, config: DashboardConfig = { widgets: [] }) {
+    return toDashboard(await this.req("POST", `/projects/${projectId}/dashboards`, { name, config: toWireConfig(config) }));
+  }
+  async saveDashboard(d: Pick<Dashboard, "id" | "name" | "config">) {
+    return toDashboard(await this.req("PATCH", `/dashboards/${d.id}`, { name: d.name, config: toWireConfig(d.config) }));
+  }
+  async deleteDashboard(id: string) { await this.req("DELETE", `/dashboards/${id}`); }
 
   async listFeatures(projectId: string) {
     const out: Feature[] = [];

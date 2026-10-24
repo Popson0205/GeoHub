@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 Role = Literal["owner", "admin", "collector", "viewer"]
 GeometryType = Literal["point", "line", "area"]
@@ -494,3 +494,50 @@ class PublicMediaIn(BaseModel):
     id: UUID = Field(description="Generated on the client")
     content_type: str
     size: int = Field(ge=1)
+
+
+# ---------- dashboards ----------
+class DashboardWidget(BaseModel):
+    """One chart, number, table or map on a dashboard. Mirrors `Widget` in frontend/src/lib/types.ts."""
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    type: Literal["kpi", "bar", "pie", "line", "table", "map"]
+    title: str = Field("", max_length=120)
+    width: Literal[1, 2, 3] = Field(1, description="Columns wide, out of 3")
+    metric: Literal["count", "sum", "avg", "min", "max"] = "count"
+    metric_field: str | None = Field(None, max_length=80, description="Number field the metric is taken from")
+    field: str | None = Field(None, max_length=80, description="Field to group by (bar, pie) or the date to plot (line)")
+    bucket: Literal["day", "week", "month"] = "month"
+    limit: int = Field(8, ge=1, le=50)
+    columns: list[str] = Field(default_factory=list, max_length=12, description="Table columns (field ids)")
+
+
+class DashboardConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    form_id: UUID | None = Field(None, description="The form whose records the dashboard shows")
+    widgets: list[DashboardWidget] = Field(default_factory=list, max_length=40)
+
+    @model_validator(mode="after")
+    def _unique_ids(self):
+        ids = [w.id for w in self.widgets]
+        if len(ids) != len(set(ids)):
+            raise ValueError("widget ids must be unique")
+        return self
+
+
+class DashboardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    config: DashboardConfig = Field(default_factory=DashboardConfig)
+
+
+class DashboardPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=120)
+    config: DashboardConfig | None = None
+
+
+class DashboardOut(BaseModel):
+    id: UUID
+    project_id: UUID
+    name: str
+    config: DashboardConfig
+    updated_at: datetime

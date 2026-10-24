@@ -2,6 +2,7 @@ import { ApiError, tokens, type Api } from "../lib/api";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type {
+  Dashboard, DashboardConfig,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -11,7 +12,7 @@ import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects, seed
 
 type Row = Feature & { seq: number };
 interface State {
-  projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
+  dashboards?: Dashboard[]; projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
   sharing?: Record<string, { share_mode: ShareMode; share_token: string }>;
   members?: Record<string, ProjectMember[]>;
   maps?: MockMap[]; mapFeatures?: MockFeat[];
@@ -100,6 +101,29 @@ export class MockApi implements Api {
     f.version += 1; f.status = "published"; this.save();
     return f;
   }
+
+  // ---- dashboards ----
+  private get dashboards(): Dashboard[] { return (this.s.dashboards ??= []); }
+  async listDashboards(projectId: string) { await wait(60); this.auth(); return this.dashboards.filter((d) => d.project_id === projectId); }
+  async getDashboard(id: string) {
+    await wait(60); this.auth();
+    const d = this.dashboards.find((x) => x.id === id);
+    if (!d) throw new ApiError(404, "Dashboard not found.");
+    return d;
+  }
+  async createDashboard(projectId: string, name: string, config: DashboardConfig = { widgets: [] }) {
+    await wait(); this.auth();
+    const d: Dashboard = { id: uuid(), project_id: projectId, name, config, updated_at: new Date().toISOString() };
+    this.dashboards.push(d); this.save();
+    return d;
+  }
+  async saveDashboard(p: Pick<Dashboard, "id" | "name" | "config">) {
+    await wait(); this.auth();
+    const d = await this.getDashboard(p.id);
+    d.name = p.name; d.config = p.config; d.updated_at = new Date().toISOString(); this.save();
+    return d;
+  }
+  async deleteDashboard(id: string) { await wait(); this.auth(); this.s.dashboards = this.dashboards.filter((d) => d.id !== id); this.save(); }
 
   async listFeatures(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted).map((r) => this.strip(r)); }
   async createFeature(nf: NewFeature) {

@@ -253,3 +253,24 @@ export interface Sharing { share_mode: ShareMode; share_token: string; published
 export interface ProjectMember { id: string; user_id?: string; email: string; name?: string; role: Role; status: "active" | "invited" }
 /** The form behind a share link. `access` is "member" when the person is a collaborator and should use the collector. */
 export interface PublicForm { token: string; form: Form; project_name: string; access: "public" | "member" }
+
+
+// ---- dashboards ----
+// A saved layout of charts over one form's records. The numbers are never stored; they are computed when it opens.
+export type WidgetType = "kpi" | "bar" | "pie" | "line" | "table" | "map";
+export type Metric = "count" | "sum" | "avg" | "min" | "max";
+export type Bucket = "day" | "week" | "month";
+export interface Widget {
+  id: string;
+  type: WidgetType;
+  title: string;
+  width: 1 | 2 | 3;          // columns wide, out of 3
+  metric: Metric;
+  metric_field?: string;     // the number field a sum / average / min / max is taken from
+  field?: string;            // bar, pie: what to group by. line: the date to plot ("__updated" = when the record changed)
+  bucket: Bucket;            // line: group by day, week or month
+  limit: number;             // bar, pie: how many groups. table: how many rows
+  columns: string[];         // table: field ids
+}
+export interface DashboardConfig { form_id?: string; widgets: Widget[] }
+export interface Dashboard { id: string; project_id: string; name: string; config: DashboardConfig; updated_at: string }
