@@ -34,13 +34,16 @@ async def _load(conn, dashboard_id) -> dict:
     return row
 
 
-async def _check_form(conn, project_id, config: DashboardConfig) -> None:
-    if config.form_id is None:
+async def _check_forms(conn, project_id, config: DashboardConfig) -> None:
+    """Every form a page or chart draws on must belong to this project."""
+    wanted = config.form_ids()
+    if not wanted:
         return
-    cur = await conn.execute("SELECT 1 FROM forms WHERE id = %s AND project_id = %s", (config.form_id, project_id))
-    if not await cur.fetchone():
+    cur = await conn.execute("SELECT id FROM forms WHERE project_id = %s AND id = ANY(%s)", (project_id, list(wanted)))
+    missing = wanted - {r["id"] for r in await cur.fetchall()}
+    if missing:
         raise Problem(422, "That form is not in this project.", code="validation",
-                      fields={"config.form_id": ["Pick a form from this project."]})
+                      fields={"config.pages": ["Pick forms from this project."]})
 
 
 @router.get("/projects/{project_id}/dashboards", response_model=Page[DashboardOut])
@@ -55,7 +58,7 @@ async def list_dashboards(project_id: UUID, user=Depends(current_user), conn=Dep
 async def create_dashboard(project_id: UUID, body: DashboardIn, request: Request,
                            user=Depends(current_user), conn=Depends(get_conn)):
     await require_role(conn, project_id, user["id"], "admin")
-    await _check_form(conn, project_id, body.config)
+    await _check_forms(conn, project_id, body.config)
     cur = await conn.execute("SELECT count(*) AS n FROM dashboards WHERE project_id = %s", (project_id,))
     if (await cur.fetchone())["n"] >= MAX_PER_PROJECT:
         raise Problem(409, f"A project can have up to {MAX_PER_PROJECT} dashboards.", code="conflict")
@@ -81,7 +84,7 @@ async def update_dashboard(dashboard_id: UUID, body: DashboardPatch, user=Depend
     d = await _load(conn, dashboard_id)
     await require_role(conn, d["project_id"], user["id"], "admin")
     if body.config is not None:
-        await _check_form(conn, d["project_id"], body.config)
+        await _check_forms(conn, d["project_id"], body.config)
     await conn.execute(
         "UPDATE dashboards SET name = COALESCE(%s, name), config = COALESCE(%s, config), updated_at = now() WHERE id = %s",
         (body.name, Jsonb(body.config.model_dump(mode="json")) if body.config is not None else None, dashboard_id))

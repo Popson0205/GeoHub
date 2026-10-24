@@ -13,15 +13,34 @@
 .chip-x { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px 2px 10px; border: 1px solid var(--green-300); border-radius: var(--r-full); background: var(--green-50); color: var(--green-800); font-size: var(--fs-sm); }
 .chip-x button { border: 0; background: transparent; cursor: pointer; font-size: var(--fs-lg); line-height: 1; color: inherit; }
 
+.dash-bar { position: static; z-index: 20; background: var(--paper, var(--n-50, #fff)); padding-top: var(--s-2); margin-bottom: var(--s-4); }
+.dash-bar .dash-filters { margin-bottom: 0; }
+.dash-tabs { display: flex; align-items: center; gap: var(--s-1, 4px); margin-bottom: var(--s-3); overflow-x: auto; border-bottom: 1px solid var(--line); }
+.dash-tab { flex: none; padding: var(--s-2) var(--s-4); margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; color: var(--n-700); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.dash-tab:hover { background: var(--green-50); }
+.dash-tab.is-active { background: var(--card); border-color: var(--line); color: var(--green-800); font-weight: 600; box-shadow: inset 0 -2px 0 var(--green-500); }
+.dash-pagebar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-4); background: var(--green-50); border: 1px dashed var(--green-300); border-radius: var(--r-lg); }
+.dash-pagebar .field { margin: 0; }
+.dash-pagebar .row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.print-only { display: none; }
 .dash-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-items: start; }
 .dash-layout.has-aside { grid-template-columns: minmax(0, 1fr) 320px; }
-.dash-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); }
-.widget { grid-column: span 1; display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; padding: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs); break-inside: avoid; }
-.widget.w2 { grid-column: span 2; }
-.widget.w3 { grid-column: span 3; }
+/* The grid: 12 equal columns and rows of one fixed height. Every chart is placed by the layout engine (lib/dashboard.ts
+   autoLayout) as "span N columns, M rows", so edges line up exactly and nothing is ever dragged or sized by hand. */
+.dash-grid { --dash-row: 64px; --dash-gap: var(--s-4); display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--dash-row); gap: var(--dash-gap); max-width: 1440px; margin-inline: auto; }
+.widget { grid-column: span 12; display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; min-height: 0; overflow: hidden; padding: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs); break-inside: avoid; }
+.widget.s3 { grid-column: span 3; }
+.widget.s4 { grid-column: span 4; }
+.widget.s6 { grid-column: span 6; }
+.widget.s8 { grid-column: span 8; }
+.widget-body { flex: 1; min-height: 0; overflow: auto; }
+.widget-body.is-kpi { display: flex; align-items: center; overflow: hidden; }
+.widget-body.is-map { position: relative; overflow: hidden; min-height: 120px; }
+.widget-body.is-line .line-chart { height: 100%; }
 .widget.is-editable { cursor: pointer; }
 .widget.is-selected { outline: 2px solid var(--green-500); outline-offset: 1px; }
 .widget-head { display: flex; align-items: center; gap: var(--s-2); }
+.widget-head small { white-space: nowrap; }
 .widget-head h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--n-700); }
 .widget-note { padding: var(--s-4); border: 1px dashed var(--line-strong, var(--n-300)); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-sm); text-align: center; }
 .widget-note.is-problem { border-color: var(--accent-500); color: var(--accent-500); }
@@ -57,7 +76,7 @@
 .line-chart .point { fill: var(--chart-1); }
 
 .dash-table { overflow-x: auto; }
-.dash-map { position: relative; height: 320px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
+.dash-map { position: absolute; inset: 0; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
 
 .dash-aside { position: sticky; top: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .dash-aside h2 { margin: 0; font-size: var(--fs-lg); }
@@ -66,14 +85,26 @@
 .dash-aside .cols label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
 .dash-aside .row { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
+/* Laptop and tablet: 6 columns. Narrow cards pair up, wider ones take the row. Phone: one column. */
+@media (min-width: 901px) { .dash-bar { position: sticky; top: 0; } }
+@media (max-width: 1100px) {
+  .dash-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .widget, .widget.s4, .widget.s6, .widget.s8 { grid-column: span 6; }
+  .widget.s3 { grid-column: span 3; }
+}
 @media (max-width: 900px) {
   .dash-layout.has-aside { grid-template-columns: minmax(0, 1fr); }
-  .dash-grid { grid-template-columns: minmax(0, 1fr); }
-  .widget, .widget.w2, .widget.w3 { grid-column: 1 / -1; }
   .dash-aside { position: static; }
 }
+@media (max-width: 640px) {
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+  .widget, .widget.s3, .widget.s4, .widget.s6, .widget.s8 { grid-column: 1 / -1; }
+}
 @media print {
-  .topbar, .dash-toolbar, .dash-filters .btn, .dash-aside, .widget-head .btn { display: none !important; }
+  .topbar, .dash-toolbar, .dash-tabs, .dash-pagebar, .dash-filters .btn, .dash-aside, .widget-head .btn { display: none !important; }
+  .print-only { display: block; }
+  .dash-bar { position: static; }
   .dash-layout.has-aside { grid-template-columns: minmax(0, 1fr); }
-  .widget { box-shadow: none; }
+  .dash-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .widget.s3 { grid-column: span 3; } .widget.s4 { grid-column: span 4; } .widget.s6 { grid-column: span 6; } .widget.s8 { grid-column: span 8; } .widget { grid-column: span 12; box-shadow: none; }
 }

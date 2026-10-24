@@ -1,4 +1,5 @@
 import { config } from "./config";
+import { normalizeConfig } from "./dashboard";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
@@ -209,24 +210,17 @@ function flattenFields(fields?: Record<string, string[] | string> | null, detail
 
 /** The API sends nulls for unset options and the app uses undefined; these two functions are the only place that differs. */
 function toDashboard(w: Wire): Dashboard {
-  return {
-    id: w.id, project_id: w.project_id, name: w.name, updated_at: w.updated_at,
-    config: {
-      form_id: w.config?.form_id ?? undefined,
-      widgets: (w.config?.widgets ?? []).map((x: Wire) => ({
-        id: x.id, type: x.type, title: x.title ?? "", width: x.width ?? 1, metric: x.metric ?? "count",
-        metric_field: x.metric_field ?? undefined, field: x.field ?? undefined, bucket: x.bucket ?? "month",
-        limit: x.limit ?? 8, columns: x.columns ?? [],
-      })),
-    },
-  };
+  return { id: w.id, project_id: w.project_id, name: w.name, updated_at: w.updated_at, config: normalizeConfig(w.config) };
 }
 function toWireConfig(c: DashboardConfig) {
   return {
-    form_id: c.form_id ?? null,
-    widgets: c.widgets.map((x) => ({
-      id: x.id, type: x.type, title: x.title, width: x.width, metric: x.metric, metric_field: x.metric_field ?? null,
-      field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,
+    description: c.description ?? "",
+    pages: c.pages.map((p) => ({
+      id: p.id, title: p.title, form_id: p.form_id ?? null,
+      widgets: p.widgets.map((x) => ({
+        id: x.id, type: x.type, title: x.title, wide: x.wide ?? false, form_id: x.form_id ?? null, metric: x.metric,
+        metric_field: x.metric_field ?? null, field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,
+      })),
     })),
   };
 }
@@ -320,7 +314,7 @@ class HttpApi implements Api {
     return page.items.map(toDashboard) as Dashboard[];
   }
   async getDashboard(id: string) { return toDashboard(await this.req("GET", `/dashboards/${id}`)); }
-  async createDashboard(projectId: string, name: string, config: DashboardConfig = { widgets: [] }) {
+  async createDashboard(projectId: string, name: string, config: DashboardConfig = normalizeConfig(null)) {
     return toDashboard(await this.req("POST", `/projects/${projectId}/dashboards`, { name, config: toWireConfig(config) }));
   }
   async saveDashboard(d: Pick<Dashboard, "id" | "name" | "config">) {

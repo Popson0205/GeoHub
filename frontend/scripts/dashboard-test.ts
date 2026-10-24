@@ -1,4 +1,4 @@
-import { bucketKey, categories, dashboardFields, filterFeatures, fmt, groupBy, kpi, noFilters, slicesCsv, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
+import { autoLayout, bucketKey, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
 import type { Feature, Form } from "../src/lib/types";
 
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
@@ -67,11 +67,56 @@ const rows = tableRows(data, [f("type"), f("working"), f(STATUS_ID)], 2);
 ok(rows.length === 2 && rows[0].cells.join("|") === "|Working|Rejected" && rows[1].cells.join("|") === "Borehole|Working|Approved", "table: latest first, readable values");
 
 ok(fmt(1234) === "1,234" && fmt(12500) === "12.5k" && fmt(2.5) === "2.5" && fmt(3) === "3" && fmt(0.5) === "0.5" && fmt(2500000) === "2.5M", "numbers are shortened for display");
-ok(widgetProblem({ id: "a", type: "bar", title: "", width: 1, metric: "count", bucket: "month", limit: 8, columns: [], field: "gone" }, defs) !== null, "a chart on a removed field says so instead of failing");
-ok(widgetProblem({ id: "a", type: "kpi", title: "", width: 1, metric: "sum", bucket: "month", limit: 8, columns: [] }, defs) !== null, "a sum needs a number field");
-ok(widgetProblem({ id: "a", type: "map", title: "", width: 3, metric: "count", bucket: "month", limit: 8, columns: [] }, defs) === null, "a map needs nothing");
+ok(widgetProblem({ id: "a", type: "bar", title: "", metric: "count", bucket: "month", limit: 8, columns: [], field: "gone" }, defs) !== null, "a chart on a removed field says so instead of failing");
+ok(widgetProblem({ id: "a", type: "kpi", title: "", metric: "sum", bucket: "month", limit: 8, columns: [] }, defs) !== null, "a sum needs a number field");
+ok(widgetProblem({ id: "a", type: "map", title: "", metric: "count", bucket: "month", limit: 8, columns: [] }, defs) === null, "a map needs nothing");
 let k = 0;
 const start = starterWidgets(form, () => `w${k++}`);
 ok(start.length >= 6 && start.every((w) => widgetProblem(w, defs) === null) && new Set(start.map((w) => w.id)).size === start.length, "the starter dashboard is complete, valid, with unique ids");
 ok(slicesCsv([{ key: "a", label: 'He said "hi", ok', value: 2, count: 2 }], "Type", "Records").split("\n")[1] === '"He said ""hi"", ok",2,2', "CSV quoting");
 ok(categories(data[0], f("working"), null)[0].key === "true", "category keys are stable");
+
+
+// ---------- automatic layout ----------
+const mkw = (type: Parameters<typeof newWidget>[0], patch: Record<string, unknown> = {}) => ({ ...newWidget(type, defs, () => `w${k++}`), ...patch });
+const spans = (ws: ReturnType<typeof mkw>[]) => autoLayout(ws).map((p) => p.span).join();
+ok(spans([mkw("kpi"), mkw("kpi"), mkw("kpi"), mkw("kpi")]) === "3,3,3,3", "four number cards share a line");
+ok(spans([mkw("kpi"), mkw("kpi")]) === "6,6" && spans([mkw("kpi")]) === "12", "fewer cards stretch to fill the line");
+ok(spans(Array.from({ length: 5 }, () => mkw("kpi"))) === "4,4,4,6,6", "five cards are split 3 + 2, not 4 + 1");
+ok(spans([mkw("bar"), mkw("pie"), mkw("bar")]) === "4,4,4" && spans([mkw("bar"), mkw("pie")]) === "6,6", "charts fill each row");
+ok(spans([mkw("line"), mkw("bar")]) === "6,6" && spans([mkw("line"), mkw("map")]) === "6,6", "a row that does not add up to 12 is stretched evenly");
+ok(spans([mkw("table"), mkw("bar")]) === "12,12", "a table takes a whole row");
+ok(spans([mkw("bar", { wide: true }), mkw("pie")]) === "12,12", "a chart marked wide takes a whole row");
+for (const sample of [[mkw("kpi"), mkw("bar"), mkw("pie"), mkw("line"), mkw("table"), mkw("map"), mkw("kpi"), mkw("pie"), mkw("pie"), mkw("line")], start]) {
+  const placed = autoLayout(sample);
+  let col = 0, tidy = true;
+  for (const p of placed) { col += p.span; if (col > 12) tidy = false; if (col === 12) col = 0; }
+  ok(tidy && col === 0 && placed.length === sample.length, "every row adds up to exactly 12 columns, with nothing lost");
+}
+const placedRows = autoLayout([mkw("kpi"), mkw("bar")]);
+ok(placedRows[0].rows === 2 && placedRows[1].rows === 5, "a number strip and a chart row keep their own heights");
+ok(autoLayout([mkw("line"), mkw("bar")]).every((p) => p.rows === 5) && autoLayout([mkw("pie"), mkw("map")]).every((p) => p.rows === 6), "charts in one row share one height");
+
+// ---------- pages ----------
+const old = normalizeConfig({ form_id: "f", widgets: [{ id: "a", type: "bar", title: "T", width: 3, metric: "count", bucket: "month", limit: 8, columns: [], field: "type" }, { id: "b", type: "kpi", width: 1 }] });
+ok(old.pages.length === 1 && old.pages[0].title === "Overview" && old.pages[0].form_id === "f" && old.pages[0].widgets.length === 2, "a dashboard saved before pages becomes one page");
+ok(old.pages[0].widgets[0].wide === true && old.pages[0].widgets[1].wide === undefined && !("width" in old.pages[0].widgets[0]), "the old full width becomes 'wide'; the other widths are chosen by the layout");
+ok(normalizeConfig({}).pages.length === 1 && normalizeConfig(null).pages[0].widgets.length === 0, "an empty config still has a page");
+const again = normalizeConfig(old);
+ok(JSON.stringify(again) === JSON.stringify(old), "normalising twice changes nothing");
+
+const f2 = { ...form, id: "f2", name: "Navy" } as unknown as Form, f3 = { ...form, id: "f3", name: "Air Force" } as unknown as Form;
+let m = 0;
+const pages = starterPages([form, f2, f3], true, () => `p${m++}`);
+ok(pages.length === 4 && pages[0].title === "Overview" && pages.slice(1).map((p) => p.title).join() === "Water point,Navy,Air Force", "one page per form, with an overview first");
+ok(new Set(pages.map((p) => p.id)).size === 4 && new Set(pages.flatMap((p) => p.widgets.map((w) => w.id))).size === pages.reduce((n, p) => n + p.widgets.length, 0), "page and chart ids are unique");
+ok(pageFormIds(pages[0]).join() === "f,f2,f3" && pageFormIds(pages[2]).join() === "f2", "the overview draws on every form; a form page on its own");
+ok(starterPages([form], true).length === 1 && starterPages([], true)[0].widgets.length === 0, "one form gets no overview; no forms still gives a page");
+const ov = overviewWidgets([form, f2]);
+ok(ov.filter((w) => w.type === "kpi").length === 2 && ov.every((w) => w.form_id), "the overview has a number card and a status pie for each form");
+
+// ---------- filters in the address ----------
+const fl = { status: "approved" as const, from: "2026-01-01", to: "2026-02-01", equals: [{ field: "type", value: "Well", label: "Type: Well" }, { field: "n", value: "", label: "N: (blank) | odd & text" }] };
+const qs = filtersToParams(fl, new URLSearchParams("page=abc"));
+ok(qs.get("page") === "abc" && JSON.stringify(filtersFromParams(new URLSearchParams(qs.toString()))) === JSON.stringify(fl), "filters survive the trip through the address, other parts untouched");
+ok(filtersToParams(noFilters(), qs).toString() === "page=abc" && JSON.stringify(filtersFromParams(new URLSearchParams("status=bogus&from=nope&eq=%ZZ"))) === JSON.stringify(noFilters()), "clearing removes them; rubbish in the address is ignored");

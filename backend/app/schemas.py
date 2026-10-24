@@ -497,13 +497,19 @@ class PublicMediaIn(BaseModel):
 
 
 # ---------- dashboards ----------
+MAX_DASHBOARD_PAGES = 12
+MAX_WIDGETS_PER_PAGE = 30
+
+
 class DashboardWidget(BaseModel):
-    """One chart, number, table or map on a dashboard. Mirrors `Widget` in frontend/src/lib/types.ts."""
+    """One chart, number, table or map on a dashboard page. Mirrors `Widget` in frontend/src/lib/types.ts.
+    Size and position are not stored: the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     type: Literal["kpi", "bar", "pie", "line", "table", "map"]
     title: str = Field("", max_length=120)
-    width: Literal[1, 2, 3] = Field(1, description="Columns wide, out of 3")
+    wide: bool = Field(False, description="Always take a full row")
+    form_id: UUID | None = Field(None, description="Draw on this form instead of the page's form")
     metric: Literal["count", "sum", "avg", "min", "max"] = "count"
     metric_field: str | None = Field(None, max_length=80, description="Number field the metric is taken from")
     field: str | None = Field(None, max_length=80, description="Field to group by (bar, pie) or the date to plot (line)")
@@ -511,11 +517,26 @@ class DashboardWidget(BaseModel):
     limit: int = Field(8, ge=1, le=50)
     columns: list[str] = Field(default_factory=list, max_length=12, description="Table columns (field ids)")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _old_width(cls, data):
+        # Charts saved before the automatic layout carried a width of 1 to 3. Only "full width" still means something.
+        if isinstance(data, dict) and "width" in data:
+            data = dict(data)
+            width = data.pop("width")
+            if width not in (1, 2, 3):
+                raise ValueError("width must be 1, 2 or 3")
+            data.setdefault("wide", width == 3)
+        return data
 
-class DashboardConfig(BaseModel):
+
+class DashboardPage(BaseModel):
+    """One page of a dashboard, for example "Army". Its records come from `form_id` unless a chart picks another form."""
     model_config = ConfigDict(extra="forbid")
-    form_id: UUID | None = Field(None, description="The form whose records the dashboard shows")
-    widgets: list[DashboardWidget] = Field(default_factory=list, max_length=40)
+    id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=60)
+    form_id: UUID | None = Field(None, description="The form whose records this page shows")
+    widgets: list[DashboardWidget] = Field(default_factory=list, max_length=MAX_WIDGETS_PER_PAGE)
 
     @model_validator(mode="after")
     def _unique_ids(self):
@@ -523,6 +544,33 @@ class DashboardConfig(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("widget ids must be unique")
         return self
+
+
+class DashboardConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    description: str | None = Field(None, max_length=300)
+    pages: list[DashboardPage] = Field(min_length=1, max_length=MAX_DASHBOARD_PAGES)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_single_page(cls, data):
+        # A dashboard saved before pages existed ({form_id, widgets}) becomes one page named Overview.
+        if isinstance(data, dict) and "pages" not in data:
+            data = dict(data)
+            page = {"id": "main", "title": "Overview", "form_id": data.pop("form_id", None), "widgets": data.pop("widgets", [])}
+            data["pages"] = [page]
+        return data
+
+    @model_validator(mode="after")
+    def _unique_pages(self):
+        ids = [p.id for p in self.pages]
+        if len(ids) != len(set(ids)):
+            raise ValueError("page ids must be unique")
+        return self
+
+    def form_ids(self) -> set[UUID]:
+        """Every form the dashboard draws on, on any page."""
+        return {f for p in self.pages for f in [p.form_id, *(w.form_id for w in p.widgets)] if f is not None}
 
 
 class DashboardIn(BaseModel):

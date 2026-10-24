@@ -264,7 +264,8 @@ export interface Widget {
   id: string;
   type: WidgetType;
   title: string;
-  width: 1 | 2 | 3;          // columns wide, out of 3
+  wide?: boolean;            // true = always a full row. Otherwise the layout engine sizes it from its type
+  form_id?: string;          // records from this form instead of the page's form (for joint overview pages)
   metric: Metric;
   metric_field?: string;     // the number field a sum / average / min / max is taken from
   field?: string;            // bar, pie: what to group by. line: the date to plot ("__updated" = when the record changed)
@@ -272,5 +273,7 @@ export interface Widget {
   limit: number;             // bar, pie: how many groups. table: how many rows
   columns: string[];         // table: field ids
 }
-export interface DashboardConfig { form_id?: string; widgets: Widget[] }
+/** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
+export interface DashPage { id: string; title: string; form_id?: string; widgets: Widget[] }
+export interface DashboardConfig { description?: string; pages: DashPage[] }
 export interface Dashboard { id: string; project_id: string; name: string; config: DashboardConfig; updated_at: string }

@@ -1,8 +1,9 @@
 // The numbers behind a dashboard. Pure functions: records in, chart data out, so they are easy to test and the
-// charts only draw. Nothing here is stored: a dashboard saves which charts it has, and this works the rest out.
+// charts only draw. Nothing here is stored: a dashboard saves which pages and charts it has, and this works the rest out
+// (including where every chart goes: see autoLayout).
 import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
-import type { Bucket, Feature, FeatureStatus, FieldType, Form, Metric, Widget } from "./types";
+import type { Bucket, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
 
@@ -204,7 +205,7 @@ export const WIDGET_LABEL: Record<Widget["type"], string> = { kpi: "Number", bar
 export const METRIC_LABEL: Record<Metric, string> = { count: "Number of records", sum: "Sum", avg: "Average", min: "Smallest", max: "Largest" };
 
 export function newWidget(type: Widget["type"], defs: FieldDef[], mkId: () => string = () => uuid().slice(0, 8)): Widget {
-  const w: Widget = { id: mkId(), type, title: "", width: type === "table" || type === "map" ? 3 : type === "kpi" || type === "pie" ? 1 : 2, metric: "count", bucket: "month", limit: type === "table" ? 10 : 8, columns: [] };
+  const w: Widget = { id: mkId(), type, title: "", metric: "count", bucket: "month", limit: type === "table" ? 10 : 8, columns: [] };
   if (type === "bar" || type === "pie") w.field = (groupFields(defs).find((f) => f.type === "choice" || f.type === "boolean" || f.type === "multi_choice") ?? groupFields(defs)[0])?.id;
   if (type === "line") w.field = UPDATED_ID;
   if (type === "table") w.columns = defs.filter((f) => f.type !== "calculation").slice(0, 5).map((f) => f.id);
@@ -261,4 +262,125 @@ export function starterWidgets(form: Form, mkId?: () => string): Widget[] {
 export function slicesCsv(rows: Slice[], labelHeader: string, valueHeader: string): string {
   const q = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   return [`${q(labelHeader)},${q(valueHeader)},Records`, ...rows.map((r) => `${q(r.label)},${r.value},${r.count}`)].join("\n");
+}
+
+
+// ---------- automatic layout ----------
+// Nobody sizes or places a chart. Each type has a preferred width (out of 12 columns) and height (in fixed row units);
+// the engine packs charts, in order, into rows that always add up to 12 columns, and gives every chart in a row the
+// same height. So there are never gaps or ragged edges, and the same dashboard looks the same for everyone.
+export const GRID_COLUMNS = 12;
+export const PREFERRED: Record<WidgetType, { span: number; rows: number }> = {
+  kpi: { span: 3, rows: 2 }, bar: { span: 4, rows: 5 }, pie: { span: 4, rows: 5 },
+  line: { span: 6, rows: 5 }, map: { span: 6, rows: 6 }, table: { span: 12, rows: 7 },
+};
+export interface Placed { w: Widget; span: number; rows: number }
+const pref = (w: Widget) => ({ span: w.wide ? GRID_COLUMNS : PREFERRED[w.type].span, rows: PREFERRED[w.type].rows });
+const isStrip = (w: Widget) => w.type === "kpi" && !w.wide;
+
+export function autoLayout(widgets: Widget[]): Placed[] {
+  const rows: Widget[][] = [];
+  let cur: Widget[] = [], sum = 0;
+  const flush = () => { if (cur.length) rows.push(cur); cur = []; sum = 0; };
+  for (let i = 0; i < widgets.length;) {
+    const w = widgets[i];
+    if (isStrip(w)) {
+      // A run of number cards is a strip of at most four per line, split evenly (5 cards = 3 + 2, never 4 + 1).
+      flush();
+      let j = i;
+      while (j < widgets.length && isStrip(widgets[j])) j++;
+      const run = widgets.slice(i, j), per = Math.ceil(run.length / Math.ceil(run.length / 4));
+      for (let k = 0; k < run.length; k += per) rows.push(run.slice(k, k + per));
+      i = j;
+      continue;
+    }
+    const p = pref(w).span;
+    if (cur.length && sum + p > GRID_COLUMNS) flush();
+    cur.push(w); sum += p; i++;
+  }
+  flush();
+  return rows.flatMap((r) => {
+    const prefs = r.map((w) => pref(w).span);
+    const fits = prefs.reduce((a, b) => a + b, 0) === GRID_COLUMNS;
+    const height = Math.max(...r.map((w) => pref(w).rows));
+    return r.map((w, i): Placed => ({ w, span: fits ? prefs[i] : GRID_COLUMNS / r.length, rows: height }));
+  });
+}
+
+// ---------- pages ----------
+export const MAX_PAGES = 12;
+export const MAX_WIDGETS_PER_PAGE = 30;
+const newId = () => uuid().slice(0, 8);
+
+export const newPage = (title: string, form_id?: string, mkId: () => string = newId): DashPage => ({ id: mkId(), title, form_id, widgets: [] });
+
+/** Every form a page draws on: its own, plus any a chart picks for itself. */
+export function pageFormIds(p: DashPage): string[] {
+  return [...new Set([p.form_id, ...p.widgets.map((w) => w.form_id)].filter((x): x is string => !!x))];
+}
+
+/** One number card and one review-status pie per form: a joint view across, say, Army, Air Force and Navy. */
+export function overviewWidgets(forms: Form[], mkId: () => string = newId): Widget[] {
+  const list = forms.slice(0, 8);
+  const mk = (type: WidgetType, f: Form, patch: Partial<Widget>): Widget => ({ ...newWidget(type, dashboardFields(f), mkId), form_id: f.id, ...patch });
+  return [
+    ...list.map((f) => mk("kpi", f, { title: f.name })),
+    ...list.map((f) => mk("pie", f, { field: STATUS_ID, title: `${f.name}: review status` })),
+  ];
+}
+
+/** A new dashboard's pages: one per chosen form, plus an overview when there are several. Never empty. */
+export function starterPages(forms: Form[], overview: boolean, mkId: () => string = newId): DashPage[] {
+  const pages = forms.slice(0, MAX_PAGES - 1).map((f): DashPage => ({ id: mkId(), title: f.name.slice(0, 60), form_id: f.id, widgets: starterWidgets(f, mkId) }));
+  if (overview && forms.length > 1) pages.unshift({ id: mkId(), title: "Overview", widgets: overviewWidgets(forms, mkId) });
+  return pages.length ? pages : [newPage("Overview", undefined, mkId)];
+}
+
+/**
+ * Whatever the server (or an older saved copy) sends becomes the current shape. Dashboards saved before pages existed
+ * ({ form_id, widgets, and a width of 1 to 3 on each chart }) become a single page named Overview.
+ */
+export function normalizeConfig(raw: unknown): DashboardConfig {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  const widget = (x: Record<string, unknown>): Widget => ({
+    id: String(x.id), type: x.type as WidgetType, title: String(x.title ?? ""),
+    ...(x.wide === true || x.width === 3 ? { wide: true } : {}),
+    form_id: (x.form_id as string | null | undefined) ?? undefined,
+    metric: (x.metric as Metric | undefined) ?? "count", metric_field: (x.metric_field as string | null | undefined) ?? undefined,
+    field: (x.field as string | null | undefined) ?? undefined, bucket: (x.bucket as Bucket | undefined) ?? "month",
+    limit: Number(x.limit ?? 8), columns: (x.columns as string[] | undefined) ?? [],
+  });
+  const pageOf = (x: Record<string, unknown>): DashPage => ({
+    id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,
+    widgets: ((x.widgets as Record<string, unknown>[] | undefined) ?? []).map(widget),
+  });
+  const pages = Array.isArray(c.pages)
+    ? (c.pages as Record<string, unknown>[]).map(pageOf)
+    : [pageOf({ id: "main", title: "Overview", form_id: c.form_id, widgets: c.widgets })];
+  return { description: (c.description as string | null | undefined) || undefined, pages: pages.length ? pages : [newPage("Overview")] };
+}
+
+// ---------- filters in the address ----------
+// Filters sit in the page address, so a view can be sent as a link, survives a refresh, and carries from page to page.
+const STATUSES = ["draft", "submitted", "approved", "rejected"];
+const FILTER_KEYS = ["status", "from", "to", "eq"];
+export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearchParams()): URLSearchParams {
+  const out = new URLSearchParams(into);
+  FILTER_KEYS.forEach((k) => out.delete(k));
+  if (f.status !== "all") out.set("status", f.status);
+  if (f.from) out.set("from", f.from);
+  if (f.to) out.set("to", f.to);
+  for (const e of f.equals) out.append("eq", [e.field, e.value, e.label].map(encodeURIComponent).join("|"));
+  return out;
+}
+export function filtersFromParams(p: URLSearchParams): Filters {
+  const s = p.get("status") ?? "";
+  const day = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  const equals = p.getAll("eq").flatMap((x) => {
+    try {
+      const [field, value, label] = x.split("|").map(decodeURIComponent);
+      return field && value !== undefined ? [{ field, value, label: label ?? value }] : [];
+    } catch { return []; }
+  });
+  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals };
 }

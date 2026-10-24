@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
-import { starterWidgets } from "../lib/dashboard";
+import { MAX_PAGES, newPage, starterPages } from "../lib/dashboard";
 import { useAsync } from "../lib/hooks";
 
 /** The project's dashboards: charts over the collected data. Administrators build them; viewers read them. */
@@ -15,7 +15,9 @@ export default function DashboardsPage() {
   const forms = useAsync((api) => api.listForms(projectId), [projectId]);
   const list = useAsync((api) => api.listDashboards(projectId), [projectId]);
   const [name, setName] = useState("");
-  const [formId, setFormId] = useState("");
+  const [description, setDescription] = useState("");
+  const [picked, setPicked] = useState<string[] | null>(null);          // forms that become pages; null = all of them
+  const [overview, setOverview] = useState(true);
   const [starter, setStarter] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -25,15 +27,17 @@ export default function DashboardsPage() {
 
   const canEdit = project.data?.role === "owner" || project.data?.role === "admin";
   const allForms = forms.data ?? [];
-  const formName = (id?: string) => allForms.find((f) => f.id === id)?.name;
-  const chosen = allForms.find((f) => f.id === (formId || allForms[0]?.id));
+  const chosen = allForms.filter((f) => (picked ?? allForms.map((x) => x.id)).includes(f.id)).slice(0, MAX_PAGES - 1);
+  const toggle = (id: string) => setPicked((cur) => { const base = cur ?? allForms.map((x) => x.id); return base.includes(id) ? base.filter((x) => x !== id) : [...base, id]; });
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    if (!chosen || !name.trim()) return;
+    if (!chosen.length || !name.trim()) return;
     setBusy(true);
     try {
-      const d = await (await loadApi()).createDashboard(projectId, name.trim(), { form_id: chosen.id, widgets: starter ? starterWidgets(chosen) : [] });
+      // One page per chosen form (say Army, Air Force, Navy), plus a joint overview when there are several.
+      const pages = starter ? starterPages(chosen, overview) : chosen.map((f) => ({ ...newPage(f.name.slice(0, 60), f.id) }));
+      const d = await (await loadApi()).createDashboard(projectId, name.trim(), { description: description.trim() || undefined, pages });
       nav(`/collect/${projectId}/dashboards/${d.id}`, { state: { edit: true } });
     } catch (e2) { toast(e2 instanceof Error ? e2.message : "Could not create the dashboard.", "error"); setBusy(false); }
   }
@@ -54,11 +58,17 @@ export default function DashboardsPage() {
         ? <div className="state"><span>Create a form and collect some data first.</span><Link to={`/collect/${projectId}/forms`}>Go to forms</Link></div>
         : <form className="card" onSubmit={(e) => void create(e)} style={{ maxWidth: 560, marginBottom: "var(--s-5)" }}>
           <h2>New dashboard</h2>
-          <div className="field"><label htmlFor="dn">Name</label><input id="dn" required value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="For example, Water points overview" /></div>
-          <div className="field"><label htmlFor="df">Show records from</label>
-            <select id="df" value={chosen?.id ?? ""} onChange={(e) => setFormId(e.target.value)}>{allForms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+          <p className="meta">Make one dashboard for each department or team. Each form you pick becomes a page of that dashboard.</p>
+          <div className="field"><label htmlFor="dn">Name</label><input id="dn" required value={name} maxLength={120} onChange={(e) => setName(e.target.value)} placeholder="For example, Ministry of Defence" /></div>
+          <div className="field"><label htmlFor="dd">Description (optional)</label><input id="dd" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} placeholder="What it reports, and for whom" /></div>
+          <div className="field"><span id="dpl" className="label">Pages: one for each form</span>
+            <div className="cols" role="group" aria-labelledby="dpl" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {allForms.map((f) => <label key={f.id} style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={chosen.some((c) => c.id === f.id)} onChange={() => toggle(f.id)} />{f.name}</label>)}
+            </div>
+            <small className="meta">You can rename, reorder, add and remove pages later.</small></div>
+          {chosen.length > 1 && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={overview} disabled={!starter} onChange={(e) => setOverview(e.target.checked)} />Add an overview page that compares them</label>}
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={starter} onChange={(e) => setStarter(e.target.checked)} />Start with suggested charts</label>
-          <div><Button type="submit" variant="primary" busy={busy} disabled={!name.trim()}>Create dashboard</Button></div>
+          <div><Button type="submit" variant="primary" busy={busy} disabled={!name.trim() || !chosen.length}>Create dashboard</Button></div>
         </form>)}
 
       {(list.data ?? []).length === 0
@@ -67,7 +77,10 @@ export default function DashboardsPage() {
           {(list.data ?? []).map((d) => (
             <div key={d.id} className="list-item">
               <div className="grow"><strong>{d.name}</strong>
-                <small>{formName(d.config.form_id) ?? "No form chosen"} · {d.config.widgets.length} {d.config.widgets.length === 1 ? "chart" : "charts"}</small></div>
+                {d.config.description && <small>{d.config.description}</small>}
+                <small>{d.config.pages.length} {d.config.pages.length === 1 ? "page" : "pages"} · {d.config.pages.reduce((n, p) => n + p.widgets.length, 0)} charts</small>
+                {d.config.pages.length > 1 && <div className="chips" style={{ marginTop: 4 }}>{d.config.pages.map((p) => (
+                  <Link key={p.id} className="chip-x" to={`/collect/${projectId}/dashboards/${d.id}?page=${p.id}`}>{p.title}</Link>))}</div>}</div>
               <Link className="btn btn-primary btn-sm" to={`/collect/${projectId}/dashboards/${d.id}`}>Open</Link>
               {canEdit && <Button small variant="danger" onClick={() => void remove(d.id, d.name)}>Delete</Button>}
             </div>

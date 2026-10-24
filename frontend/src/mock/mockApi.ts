@@ -1,4 +1,5 @@
 import { ApiError, tokens, type Api } from "../lib/api";
+import { normalizeConfig } from "../lib/dashboard";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type {
@@ -104,14 +105,15 @@ export class MockApi implements Api {
 
   // ---- dashboards ----
   private get dashboards(): Dashboard[] { return (this.s.dashboards ??= []); }
-  async listDashboards(projectId: string) { await wait(60); this.auth(); return this.dashboards.filter((d) => d.project_id === projectId); }
+  async listDashboards(projectId: string) { await wait(60); this.auth(); return this.dashboards.filter((d) => d.project_id === projectId).map((d) => ({ ...d, config: normalizeConfig(d.config) })); }
   async getDashboard(id: string) {
     await wait(60); this.auth();
     const d = this.dashboards.find((x) => x.id === id);
     if (!d) throw new ApiError(404, "Dashboard not found.");
+    d.config = normalizeConfig(d.config);          // a copy saved before pages existed still opens
     return d;
   }
-  async createDashboard(projectId: string, name: string, config: DashboardConfig = { widgets: [] }) {
+  async createDashboard(projectId: string, name: string, config: DashboardConfig = normalizeConfig(null)) {
     await wait(); this.auth();
     const d: Dashboard = { id: uuid(), project_id: projectId, name, config, updated_at: new Date().toISOString() };
     this.dashboards.push(d); this.save();
