@@ -266,7 +266,7 @@ export function slicesCsv(rows: Slice[], labelHeader: string, valueHeader: strin
 
 
 // ---------- automatic layout ----------
-// Nobody sizes or places a chart. Each type has a preferred width (out of 12 columns) and height (in fixed row units);
+// By default nobody sizes or places a chart (see "manual layout" below for dragging and resizing). Each type has a preferred width (out of 12 columns) and height (in fixed row units);
 // the engine packs charts, in order, into rows that always add up to 12 columns, and gives every chart in a row the
 // same height. So there are never gaps or ragged edges, and the same dashboard looks the same for everyone.
 export const GRID_COLUMNS = 12;
@@ -274,7 +274,7 @@ export const PREFERRED: Record<WidgetType, { span: number; rows: number }> = {
   kpi: { span: 3, rows: 2 }, bar: { span: 4, rows: 5 }, pie: { span: 4, rows: 5 },
   line: { span: 6, rows: 5 }, map: { span: 6, rows: 6 }, table: { span: 12, rows: 7 },
 };
-export interface Placed { w: Widget; span: number; rows: number }
+export interface Placed { w: Widget; span: number; rows: number; col?: number; row?: number }
 const pref = (w: Widget) => ({ span: w.wide ? GRID_COLUMNS : PREFERRED[w.type].span, rows: PREFERRED[w.type].rows });
 const isStrip = (w: Widget) => w.type === "kpi" && !w.wide;
 
@@ -305,6 +305,91 @@ export function autoLayout(widgets: Widget[]): Placed[] {
     const height = Math.max(...r.map((w) => pref(w).rows));
     return r.map((w, i): Placed => ({ w, span: fits ? prefs[i] : GRID_COLUMNS / r.length, rows: height }));
   });
+}
+
+// ---------- manual layout ----------
+// In edit mode a chart can be dragged and resized. That stores a rectangle on the chart (col, row, cols, rows on the same
+// 12-column grid). The first time anything is moved, the automatic layout is frozen into rectangles for every chart on the
+// page, so nothing jumps. "Reset layout" removes them again. Charts never overlap: whatever is in the way is pushed down,
+// and the others then settle upward so no gaps are left behind. The chart you are moving stays exactly where you drop it.
+export interface Rect { col: number; row: number; cols: number; rows: number }
+export const MIN_COLS = 2, MIN_ROWS = 2, MAX_ROWS = 40, MAX_ROW_INDEX = 200;
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(n) ? n : lo)));
+export const hasRect = (w: Widget): boolean => [w.col, w.row, w.cols, w.rows].every((n) => typeof n === "number" && Number.isFinite(n));
+export const isManualLayout = (widgets: Widget[]): boolean => widgets.some(hasRect);
+
+/** Keep a rectangle on the grid: at least 2 x 2, inside the 12 columns, never above the top. */
+export function clampRect(r: Rect): Rect {
+  const cols = clamp(r.cols, MIN_COLS, GRID_COLUMNS), rows = clamp(r.rows, MIN_ROWS, MAX_ROWS);
+  return { cols, rows, col: clamp(r.col, 0, GRID_COLUMNS - cols), row: clamp(r.row, 0, MAX_ROW_INDEX) };
+}
+const overlaps = (a: Rect, b: Rect) => a.col < b.col + b.cols && b.col < a.col + a.cols && a.row < b.row + b.rows && b.row < a.row + a.rows;
+
+/** Where the automatic layout puts each chart, as rectangles. */
+function autoRects(widgets: Widget[]): Map<string, Rect> {
+  const out = new Map<string, Rect>();
+  let col = 0, row = 0, tall = 0;
+  for (const p of autoLayout(widgets)) {
+    out.set(p.w.id, { col, row, cols: p.span, rows: p.rows });
+    col += p.span; tall = Math.max(tall, p.rows);
+    if (col >= GRID_COLUMNS) { col = 0; row += tall; tall = 0; }
+  }
+  return out;
+}
+/** The first free spot of a given size, scanning down the page from the top. */
+function firstFit(taken: Rect[], cols: number, rows: number): Rect {
+  for (let row = 0; ; row++) for (let col = 0; col + cols <= GRID_COLUMNS; col++) {
+    const r = { col, row, cols, rows };
+    if (!taken.some((t) => overlaps(r, t))) return r;
+  }
+}
+
+/** Every chart's rectangle: the saved ones, the automatic layout when none are saved, and a free spot for a chart that has none yet. */
+export function layoutRects(widgets: Widget[]): Map<string, Rect> {
+  if (!isManualLayout(widgets)) return autoRects(widgets);
+  const out = new Map<string, Rect>(), taken: Rect[] = [];
+  for (const w of widgets) if (hasRect(w)) { const r = clampRect({ col: w.col!, row: w.row!, cols: w.cols!, rows: w.rows! }); out.set(w.id, r); taken.push(r); }
+  for (const w of widgets) if (!hasRect(w)) { const r = firstFit(taken, PREFERRED[w.type].span, PREFERRED[w.type].rows); out.set(w.id, r); taken.push(r); }
+  return out;
+}
+
+/** Place `moved` exactly where asked (it stays there), push whatever it lands on downward, then let all the others settle upward. */
+export function arrangeRects(rects: Map<string, Rect>, movedId?: string, moved?: Rect): Map<string, Rect> {
+  const placed: { id: string; r: Rect }[] = [];
+  const pin = movedId && moved ? { id: movedId, r: clampRect(moved) } : null;
+  if (pin) placed.push(pin);
+  const rest = [...rects].filter(([id]) => id !== pin?.id).map(([id, r]) => ({ id, r: { ...r } }))
+    .sort((a, b) => a.r.row - b.r.row || a.r.col - b.r.col);
+  for (const it of rest) {
+    while (it.r.row > 0 && !placed.some((o) => overlaps({ ...it.r, row: it.r.row - 1 }, o.r))) it.r.row--;
+    while (placed.some((o) => overlaps(it.r, o.r))) it.r.row++;
+    placed.push(it);
+  }
+  return new Map(placed.map((o) => [o.id, o.r]));
+}
+
+/** The charts with their rectangles written onto them (this is what gets saved). */
+export function withRects(widgets: Widget[], rects: Map<string, Rect>): Widget[] {
+  return widgets.map((w) => { const r = rects.get(w.id); return r ? { ...w, ...r } : w; });
+}
+/** Move or resize one chart; the others make way. Works from the automatic layout the first time. */
+export function setWidgetRect(widgets: Widget[], id: string, patch: Partial<Rect>): Widget[] {
+  const rects = layoutRects(widgets), cur = rects.get(id);
+  return cur ? withRects(widgets, arrangeRects(rects, id, { ...cur, ...patch })) : widgets;
+}
+/** Settle the charts after one is removed, so a gap closes. A page on the automatic layout needs nothing. */
+export function settle(widgets: Widget[]): Widget[] {
+  return isManualLayout(widgets) ? withRects(widgets, arrangeRects(layoutRects(widgets))) : widgets;
+}
+/** Back to the automatic layout. */
+export const resetRects = (widgets: Widget[]): Widget[] => widgets.map(({ col: _c, row: _r, cols: _s, rows: _h, ...w }) => w);
+
+/** What the grid draws: with manual rectangles (or a drag in progress), the rectangles; otherwise the automatic layout. */
+export function placeAll(widgets: Widget[], override?: Map<string, Rect>): Placed[] {
+  if (!override && !isManualLayout(widgets)) return autoLayout(widgets);
+  const rects = override ?? layoutRects(widgets);
+  return widgets.flatMap((w): Placed[] => { const r = rects.get(w.id); return r ? [{ w, span: r.cols, rows: r.rows, col: r.col, row: r.row }] : []; })
+    .sort((a, b) => a.row! - b.row! || a.col! - b.col!);   // reading order, so a phone shows them in a sensible sequence
 }
 
 // ---------- pages ----------
@@ -340,6 +425,11 @@ export function starterPages(forms: Form[], overview: boolean, mkId: () => strin
  * Whatever the server (or an older saved copy) sends becomes the current shape. Dashboards saved before pages existed
  * ({ form_id, widgets, and a width of 1 to 3 on each chart }) become a single page named Overview.
  */
+/** A saved rectangle, only when all four numbers are there (and sane). */
+function rectOf(x: Record<string, unknown>): Partial<Rect> {
+  const n = [x.col, x.row, x.cols, x.rows];
+  return n.every((v) => typeof v === "number" && Number.isFinite(v)) ? clampRect({ col: x.col as number, row: x.row as number, cols: x.cols as number, rows: x.rows as number }) : {};
+}
 export function normalizeConfig(raw: unknown): DashboardConfig {
   const c = (raw ?? {}) as Record<string, unknown>;
   const widget = (x: Record<string, unknown>): Widget => ({
@@ -349,6 +439,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
     metric: (x.metric as Metric | undefined) ?? "count", metric_field: (x.metric_field as string | null | undefined) ?? undefined,
     field: (x.field as string | null | undefined) ?? undefined, bucket: (x.bucket as Bucket | undefined) ?? "month",
     limit: Number(x.limit ?? 8), columns: (x.columns as string[] | undefined) ?? [],
+    ...rectOf(x),
   });
   const pageOf = (x: Record<string, unknown>): DashPage => ({
     id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,

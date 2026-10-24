@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { BarList, Donut, LineChart } from "../components/charts";
 import MapView, { type MapFeature } from "../components/MapView";
@@ -6,10 +6,10 @@ import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from ".
 import { loadApi } from "../lib/api";
 import { download } from "../lib/csv";
 import {
-  STATUS_LABEL, METRIC_LABEL, WIDGET_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, autoLayout, dashboardFields, dateFields, defaultTitle, filterFeatures,
+  STATUS_LABEL, METRIC_LABEL, WIDGET_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, MIN_COLS, MIN_ROWS, MAX_ROWS, GRID_COLUMNS, arrangeRects, isManualLayout, layoutRects, placeAll, resetRects, setWidgetRect, settle, withRects, dashboardFields, dateFields, defaultTitle, filterFeatures,
   filtersFromParams, filtersToParams, findField, fmt, groupBy, groupFields, isFiltered, kpi, newPage, newWidget, noFilters, numberFields,
   pageFormIds, slicesCsv, starterWidgets, tableRows, timeSeries, widgetProblem,
-  type FieldDef, type Filters, type Slice,
+  type FieldDef, type Filters, type Rect, type Slice,
 } from "../lib/dashboard";
 import { useAsync } from "../lib/hooks";
 import type { Dashboard, DashboardConfig, DashPage, Feature, FeatureStatus, Form, Metric, Widget, WidgetType } from "../lib/types";
@@ -50,6 +50,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [snapshot, setSnapshot] = useState(JSON.stringify({ name: dashboard.name, cfg: dashboard.config }));
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [drag, setDrag] = useState<{ id: string; rects: Map<string, Rect> } | null>(null);   // the layout while a chart is being dragged
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const dirty = JSON.stringify({ name, cfg }) !== snapshot;
   useEffect(() => {
@@ -83,7 +85,9 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const used = [...sources.values()];
   const total = used.reduce((n, s) => n + s.base.length, 0), shown = used.reduce((n, s) => n + s.rows.length, 0);
   const statusCounts = useMemo(() => { const c: Partial<Record<FeatureStatus, number>> = {}; for (const s of sources.values()) for (const f of s.base) c[f.status] = (c[f.status] ?? 0) + 1; return c; }, [sources]);
-  const placed = useMemo(() => autoLayout(page.widgets), [page.widgets]);
+  const manual = isManualLayout(page.widgets);
+  const placed = useMemo(() => placeAll(page.widgets, drag?.rects), [page.widgets, drag]);
+  const rectOfSel = useMemo(() => (selected ? layoutRects(page.widgets).get(selected) : undefined), [page.widgets, selected]);
   const sel = page.widgets.find((w) => w.id === selected) ?? null;
   const sourceOf = (w: Widget) => sources.get(w.form_id ?? page.form_id ?? "");
 
@@ -99,7 +103,37 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   function move(id: string, by: -1 | 1) {
     patchPage((pg) => { const i = pg.widgets.findIndex((w) => w.id === id), j = i + by; if (i < 0 || j < 0 || j >= pg.widgets.length) return pg; const a = [...pg.widgets]; [a[i], a[j]] = [a[j], a[i]]; return { ...pg, widgets: a }; });
   }
-  function remove(id: string) { patchPage((pg) => ({ ...pg, widgets: pg.widgets.filter((w) => w.id !== id) })); setSelected(null); }
+  function remove(id: string) { patchPage((pg) => ({ ...pg, widgets: settle(pg.widgets.filter((w) => w.id !== id)) })); setSelected(null); }
+  const setRect = (id: string, r: Partial<Rect>) => patchPage((pg) => ({ ...pg, widgets: setWidgetRect(pg.widgets, id, r) }));
+  const canDrag = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1101px)").matches;   // below this the grid has fewer columns
+
+  /** Drag a chart by its title bar (move) or by an edge or corner (resize). The others make way live; the result is kept on release. */
+  function grab(w: Widget, mode: "move" | "e" | "s" | "se", e: ReactPointerEvent) {
+    if (!editing || e.button !== 0 || !gridRef.current) return;
+    e.preventDefault(); e.stopPropagation(); setSelected(w.id);
+    if (!canDrag()) { toast("Dragging needs a wider screen. Use the Left / Top / Wide / Tall boxes in the chart settings instead.", "info"); return; }
+    const grid = gridRef.current, cs = getComputedStyle(grid);
+    const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = parseFloat(cs.gridAutoRows) || 64;
+    const stepX = (grid.clientWidth - gapX * (GRID_COLUMNS - 1)) / GRID_COLUMNS + gapX, stepY = rowH + gapY;
+    const base = page.widgets, rects = layoutRects(base), start = rects.get(w.id);
+    if (!start) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    let latest: Map<string, Rect> | null = null;
+    const onMove = (ev: PointerEvent) => {
+      const dc = Math.round((ev.clientX - x0) / stepX), dr = Math.round((ev.clientY - y0) / stepY);
+      const want: Rect = mode === "move" ? { ...start, col: start.col + dc, row: start.row + dr }
+        : { ...start, cols: mode === "s" ? start.cols : start.cols + dc, rows: mode === "e" ? start.rows : start.rows + dr };
+      latest = arrangeRects(rects, w.id, want);
+      setDrag({ id: w.id, rects: latest });
+    };
+    const done = (keep: boolean) => {
+      window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel);
+      const final = latest; setDrag(null);
+      if (keep && final) patchPage((pg) => ({ ...pg, widgets: withRects(pg.widgets, final) }));
+    };
+    const onUp = () => done(true), onCancel = () => done(false);
+    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onCancel);
+  }
   function setWidgetForm(w: Widget, formId: string) {
     const f = forms.find((x) => x.id === (formId || page.form_id));
     const fresh = newWidget(w.type, dashboardFields(f), () => w.id);                  // the old field choices belong to the old form
@@ -222,7 +256,9 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
           </div>
           <div className="row">
             {(["kpi", "bar", "pie", "line", "table", "map"] as WidgetType[]).map((t) => <Button key={t} small disabled={!canAdd} onClick={() => add(t)}>+ {WIDGET_LABEL[t]}</Button>)}
+            {manual && <Button small onClick={() => patchPage((pg) => ({ ...pg, widgets: resetRects(pg.widgets) }))}>Reset layout</Button>}
           </div>
+          <small className="meta dash-hint">Drag a chart by its title bar to move it. Drag its right edge, bottom edge or corner to resize it. Charts nudge aside so they never overlap. You can also type exact values in the chart settings.</small>
         </div>
       )}
 
@@ -231,14 +267,14 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         ? <EmptyState title={pageForm || !editing ? "No charts yet" : "Choose a form to start"}>
           {editing ? (pageForm ? "Use the + buttons above to add a number, chart, table or map." : "Pick which form's records this page shows, or add charts that each pick their own form.") : "Nothing has been added to this page."}</EmptyState>
         : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`}>
-          <div className="dash-grid">
-            {placed.map(({ w, span, rows }) => (
-              <WidgetCard key={w.id} w={w} span={span} height={rows} source={sourceOf(w)} hasForm={!!(w.form_id ?? page.form_id)} showSource={!!w.form_id && w.form_id !== page.form_id}
+          <div className={`dash-grid${drag ? " is-dragging" : ""}`} ref={gridRef}>
+            {placed.map(({ w, span, rows, col, row }) => (
+              <WidgetCard key={w.id} w={w} span={span} height={rows} col={col} row={row} dragging={drag?.id === w.id} onGrab={(m, e) => grab(w, m, e)} source={sourceOf(w)} hasForm={!!(w.form_id ?? page.form_id)} showSource={!!w.form_id && w.form_id !== page.form_id}
                 filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && setSelected(w.id)} onPick={(s) => pick(w, s)} />
             ))}
           </div>
           {editing && sel && (
-            <WidgetSettings w={sel} defs={selSource?.defs ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
+            <WidgetSettings w={sel} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={selSource?.defs ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
               forms={forms} pageFormId={page.form_id} onForm={(id) => setWidgetForm(sel, id)}
               onChange={(p) => patch(sel.id, p)} onMove={(by) => move(sel.id, by)} onRemove={() => remove(sel.id)} onClose={() => setSelected(null)} />
           )}
@@ -248,8 +284,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
 }
 
 // ---------- one widget ----------
-function WidgetCard({ w, span, height, source, hasForm, showSource, filters, editing, selected, onSelect, onPick }:
-  { w: Widget; span: number; height: number; source?: Source; hasForm: boolean; showSource: boolean; filters: Filters; editing: boolean; selected: boolean; onSelect: () => void; onPick: (s: Slice) => void }) {
+function WidgetCard({ w, span, height, col, row, dragging, onGrab, source, hasForm, showSource, filters, editing, selected, onSelect, onPick }:
+  { w: Widget; span: number; height: number; col?: number; row?: number; dragging?: boolean; onGrab?: (mode: "move" | "e" | "s" | "se", e: ReactPointerEvent) => void; source?: Source; hasForm: boolean; showSource: boolean; filters: Filters; editing: boolean; selected: boolean; onSelect: () => void; onPick: (s: Slice) => void }) {
   const defs = useMemo(() => source?.defs ?? [], [source]);
   const records = useMemo(() => source?.rows ?? [], [source]);
   const problem = source ? widgetProblem(w, defs) : null;
@@ -293,21 +329,28 @@ function WidgetCard({ w, span, height, source, hasForm, showSource, filters, edi
   else body = <LineChart data={data} />;
 
   return (
-    <section className={`widget t-${w.type} s${span}${editing ? " is-editable" : ""}${selected ? " is-selected" : ""}`} style={{ gridRow: `span ${height}` }} aria-label={title}
+    <section className={`widget t-${w.type} s${span}${col != null ? " is-placed" : ""}${editing ? " is-editable" : ""}${selected ? " is-selected" : ""}${dragging ? " is-dragging" : ""}`}
+      style={(col != null && row != null ? { "--h": height, "--gc": `${col + 1} / span ${span}`, "--gr": `${row + 1} / span ${height}` } : { gridRow: `span ${height}` }) as CSSProperties} aria-label={title}
       onClick={editing ? onSelect : undefined}>
-      <div className="widget-head">
+      <div className={`widget-head${editing && onGrab ? " is-grab" : ""}`} onPointerDown={editing && onGrab ? (e) => onGrab("move", e) : undefined}>
+        {editing && onGrab && <span className="grip" aria-hidden="true">⋮⋮</span>}
         <h3>{title}</h3>
         {showSource && source && !title.startsWith(source.form.name) && <small className="meta">{source.form.name}</small>}
         {!editing && data && data.length > 0 && <Button small variant="ghost" onClick={csv} aria-label={`Download ${title} as CSV`}>CSV</Button>}
       </div>
       <div className={`widget-body is-${w.type}`}>{body}</div>
+      {editing && onGrab && <>
+        <span className="rh rh-e" aria-hidden="true" onPointerDown={(e) => onGrab("e", e)} />
+        <span className="rh rh-s" aria-hidden="true" onPointerDown={(e) => onGrab("s", e)} />
+        <span className="rh rh-se" aria-hidden="true" onPointerDown={(e) => onGrab("se", e)} />
+      </>}
     </section>
   );
 }
 
 // ---------- the settings panel ----------
-export function WidgetSettings({ w, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose }:
-  { w: Widget; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
+export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose }:
+  { w: Widget; rect?: Rect; manual?: boolean; onRect?: (p: Partial<Rect>) => void; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
     onChange: (p: Partial<Widget>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; onClose: () => void }) {
   const nums = numberFields(defs);
   const usesMetric = w.type === "kpi" || w.type === "bar" || w.type === "pie" || w.type === "line";
@@ -323,8 +366,22 @@ export function WidgetSettings({ w, defs, index, count, forms = [], pageFormId, 
             {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select></div>
       )}
-      <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={w.wide === true} onChange={(e) => onChange({ wide: e.target.checked || undefined })} />Full row</label>
-      <small className="meta">Size and position are set automatically. Use Move earlier / later to change the order.</small>
+      {onRect && rect ? (
+        <fieldset className="dash-rect">
+          <legend>Position and size</legend>
+          <div className="dash-rect-grid">
+            <div className="field"><label htmlFor="rc">Left (column)</label><input id="rc" type="number" min={1} max={GRID_COLUMNS} value={rect.col + 1} onChange={(e) => onRect({ col: Number(e.target.value) - 1 })} /></div>
+            <div className="field"><label htmlFor="rr">Top (row)</label><input id="rr" type="number" min={1} value={rect.row + 1} onChange={(e) => onRect({ row: Number(e.target.value) - 1 })} /></div>
+            <div className="field"><label htmlFor="rs">Wide (columns)</label><input id="rs" type="number" min={MIN_COLS} max={GRID_COLUMNS} value={rect.cols} onChange={(e) => onRect({ cols: Number(e.target.value) })} /></div>
+            <div className="field"><label htmlFor="rh">Tall (rows)</label><input id="rh" type="number" min={MIN_ROWS} max={MAX_ROWS} value={rect.rows} onChange={(e) => onRect({ rows: Number(e.target.value) })} /></div>
+          </div>
+          <div className="row"><Button small onClick={() => onRect({ col: 0, cols: GRID_COLUMNS })}>Full row</Button></div>
+          <small className="meta">The page is 12 columns wide. You can also drag this chart by its title bar, and resize it by its edges or corner.</small>
+        </fieldset>
+      ) : (<>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={w.wide === true} onChange={(e) => onChange({ wide: e.target.checked || undefined })} />Full row</label>
+        <small className="meta">Size and position are set automatically until you move or resize a chart.</small>
+      </>)}
 
       {(w.type === "bar" || w.type === "pie") && (
         <div className="field"><label htmlFor="wf">Group by</label>
@@ -375,8 +432,8 @@ export function WidgetSettings({ w, defs, index, count, forms = [], pageFormId, 
       {w.type === "map" && <p className="meta">Shows where the records are. Records waiting for review are amber, rejected ones red.</p>}
 
       <div className="row">
-        <Button small onClick={() => onMove(-1)} disabled={index <= 0}>Move earlier</Button>
-        <Button small onClick={() => onMove(1)} disabled={index >= count - 1}>Move later</Button>
+        {!manual && <Button small onClick={() => onMove(-1)} disabled={index <= 0}>Move earlier</Button>}
+        {!manual && <Button small onClick={() => onMove(1)} disabled={index >= count - 1}>Move later</Button>}
         <Button small variant="danger" onClick={onRemove}>Remove</Button>
       </div>
     </aside>

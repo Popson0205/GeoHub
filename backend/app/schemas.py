@@ -503,7 +503,7 @@ MAX_WIDGETS_PER_PAGE = 30
 
 class DashboardWidget(BaseModel):
     """One chart, number, table or map on a dashboard page. Mirrors `Widget` in frontend/src/lib/types.ts.
-    Size and position are not stored: the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
+    Size and position are optional: without col/row/cols/rows the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     type: Literal["kpi", "bar", "pie", "line", "table", "map"]
@@ -516,6 +516,20 @@ class DashboardWidget(BaseModel):
     bucket: Literal["day", "week", "month"] = "month"
     limit: int = Field(8, ge=1, le=50)
     columns: list[str] = Field(default_factory=list, max_length=12, description="Table columns (field ids)")
+    # Manual placement on the 12-column grid, set by dragging or resizing in the editor. All four or none; none = automatic layout.
+    col: int | None = Field(None, ge=0, le=11, description="Left edge, in columns from 0")
+    row: int | None = Field(None, ge=0, le=200, description="Top edge, in rows from 0")
+    cols: int | None = Field(None, ge=1, le=12, description="Width in columns")
+    rows: int | None = Field(None, ge=1, le=40, description="Height in rows")
+
+    @model_validator(mode="after")
+    def _rect_complete(self):
+        given = [v is not None for v in (self.col, self.row, self.cols, self.rows)]
+        if any(given) and not all(given):
+            raise ValueError("col, row, cols and rows must be given together")
+        if self.col is not None and self.col + self.cols > 12:
+            raise ValueError("the chart runs past the right edge of the 12 columns")
+        return self
 
     @model_validator(mode="before")
     @classmethod

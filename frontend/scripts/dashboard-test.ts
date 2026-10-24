@@ -1,4 +1,4 @@
-import { autoLayout, bucketKey, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
+import { arrangeRects, autoLayout, bucketKey, isManualLayout, layoutRects, placeAll, resetRects, setWidgetRect, settle, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
 import type { Feature, Form } from "../src/lib/types";
 
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
@@ -96,6 +96,58 @@ for (const sample of [[mkw("kpi"), mkw("bar"), mkw("pie"), mkw("line"), mkw("tab
 const placedRows = autoLayout([mkw("kpi"), mkw("bar")]);
 ok(placedRows[0].rows === 2 && placedRows[1].rows === 5, "a number strip and a chart row keep their own heights");
 ok(autoLayout([mkw("line"), mkw("bar")]).every((p) => p.rows === 5) && autoLayout([mkw("pie"), mkw("map")]).every((p) => p.rows === 6), "charts in one row share one height");
+
+// ---------- manual layout: drag, resize, keep ----------
+const rectsOf = (ws: ReturnType<typeof mkw>[]) => [...layoutRects(ws)].map(([id, r]) => ({ id, ...r }));
+const noOverlap = (ws: ReturnType<typeof mkw>[]) => { const r = rectsOf(ws); return r.every((a, i) => r.every((b, j) => i === j || !(a.col < b.col + b.cols && b.col < a.col + a.cols && a.row < b.row + b.rows && b.row < a.row + a.rows))); };
+const inside = (ws: ReturnType<typeof mkw>[]) => rectsOf(ws).every((r) => r.col >= 0 && r.col + r.cols <= 12 && r.row >= 0 && r.cols >= 2 && r.rows >= 2);
+{
+  const base = [mkw("kpi"), mkw("kpi"), mkw("bar"), mkw("pie"), mkw("bar"), mkw("line"), mkw("table")];
+  ok(!isManualLayout(base) && placeAll(base).every((p) => p.col === undefined), "a page nobody has touched stays on the automatic layout");
+  const before = placeAll(base).map((p) => `${p.w.id}:${p.span}x${p.rows}`).join();
+  const frozen = setWidgetRect(base, base[0].id, {});
+  ok(isManualLayout(frozen) && frozen.every((w) => w.col !== undefined), "the first change saves a rectangle for every chart");
+  ok(placeAll(frozen).map((p) => `${p.w.id}:${p.span}x${p.rows}`).sort().join() === before.split(",").sort().join(), "freezing the layout does not change any chart's size");
+  ok(noOverlap(frozen) && inside(frozen), "a frozen automatic layout has no overlaps and stays on the grid");
+
+  // move: drop the first chart on top of the third
+  const third = layoutRects(frozen).get(base[2].id)!;
+  const moved = setWidgetRect(frozen, base[0].id, { col: third.col, row: third.row });
+  const mr = layoutRects(moved);
+  ok(mr.get(base[0].id)!.col === third.col && mr.get(base[0].id)!.row === third.row, "the chart you move lands exactly where it was dropped");
+  ok(noOverlap(moved) && inside(moved), "charts it lands on are pushed aside, never overlapped");
+  ok(moved.length === frozen.length && new Set(moved.map((w) => w.id)).size === frozen.length, "nothing is lost or duplicated by a move");
+
+  // resize
+  const wide = setWidgetRect(frozen, base[2].id, { cols: 9, rows: 8 });
+  const wr = layoutRects(wide).get(base[2].id)!;
+  ok(wr.cols === 9 && wr.rows === 8 && noOverlap(wide) && inside(wide), "a chart can be made wider and taller, and the rest make way");
+  const tiny = layoutRects(setWidgetRect(frozen, base[2].id, { cols: 0, rows: -4 })).get(base[2].id)!;
+  ok(tiny.cols === 2 && tiny.rows === 2, "a chart cannot be shrunk below 2 x 2");
+  const huge = layoutRects(setWidgetRect(frozen, base[2].id, { col: 11, cols: 30, rows: 99 })).get(base[2].id)!;
+  ok(huge.col + huge.cols <= 12 && huge.rows <= 40, "a chart cannot be pushed off the right edge or made absurdly tall");
+
+  // a new chart on a manual page gets a free spot; removing one closes the gap
+  const extra = mkw("map");
+  const grown = [...frozen, extra];
+  ok(noOverlap(grown) && inside(grown) && layoutRects(grown).has(extra.id), "a chart added to a manual page gets a free place");
+  const gone = settle(frozen.filter((w) => w.id !== base[0].id));
+  ok(noOverlap(gone) && inside(gone), "removing a chart leaves a tidy layout");
+  ok(settle(base) === base, "removing from an automatic page changes nothing else");
+
+  // reset + persistence
+  const back = resetRects(moved);
+  ok(!isManualLayout(back) && back.every((w) => !("col" in w)), "Reset layout returns to the automatic layout");
+  const saved = normalizeConfig(JSON.parse(JSON.stringify({ pages: [{ id: "p", title: "P", widgets: moved }] })));
+  ok(JSON.stringify(saved.pages[0].widgets.map((w) => [w.col, w.row, w.cols, w.rows])) === JSON.stringify(moved.map((w) => [w.col, w.row, w.cols, w.rows])), "a saved layout comes back exactly as it was");
+  ok(normalizeConfig({ pages: [{ id: "p", title: "P", widgets: [{ ...base[0], col: 3 }] }] }).pages[0].widgets[0].col === undefined, "a half-saved rectangle is ignored, not trusted");
+  ok(normalizeConfig({ pages: [{ id: "p", title: "P", widgets: [{ ...base[0], col: 11, row: 0, cols: 12, rows: 3 }] }] }).pages[0].widgets[0].col === 0, "a rectangle running off the grid is pulled back on it");
+
+  // the drag preview and the order a phone reads them in
+  const preview = arrangeRects(layoutRects(frozen), base[0].id, { ...layoutRects(frozen).get(base[0].id)!, row: 4 });
+  const order = placeAll(frozen, preview).map((p) => p.row! * 100 + p.col!);
+  ok(order.every((v, i) => i === 0 || v >= order[i - 1]), "charts are listed top to bottom, left to right");
+}
 
 // ---------- pages ----------
 const old = normalizeConfig({ form_id: "f", widgets: [{ id: "a", type: "bar", title: "T", width: 3, metric: "count", bucket: "month", limit: 8, columns: [], field: "type" }, { id: "b", type: "kpi", width: 1 }] });

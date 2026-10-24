@@ -220,6 +220,7 @@ function toWireConfig(c: DashboardConfig) {
       widgets: p.widgets.map((x) => ({
         id: x.id, type: x.type, title: x.title, wide: x.wide ?? false, form_id: x.form_id ?? null, metric: x.metric,
         metric_field: x.metric_field ?? null, field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,
+        col: x.col ?? null, row: x.row ?? null, cols: x.cols ?? null, rows: x.rows ?? null,
       })),
     })),
   };

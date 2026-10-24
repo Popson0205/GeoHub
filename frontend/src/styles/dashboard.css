@@ -228,3 +228,32 @@
   .is-fit .widget-body.is-line .line-chart { min-height: 0; height: 100%; }
   .is-fit .dash-table td, .is-fit .dash-table th { padding: 3px 10px; }
 }
+
+/* ======================================================================================================
+   Free layout: drag a chart by its title bar, resize it by its edges or corner (edit mode).
+   A chart with a saved rectangle carries --gc / --gr (its grid column and row); they apply on laptop screens and wider and in print.
+   Smaller screens keep the stacked layout, in reading order.
+   ====================================================================================================== */
+.widget.is-placed { grid-row: span var(--h, 1); }   /* narrow screens: stacked, each as tall as it was set */
+@media (min-width: 1101px) { .widget.is-placed { grid-column: var(--gc); grid-row: var(--gr); } }
+@media print { .widget.is-placed { grid-column: var(--gc); grid-row: var(--gr); } }
+
+.dash-hint { flex: 1 1 100%; }
+.widget.is-editable { position: relative; }
+.widget-head.is-grab { cursor: grab; touch-action: none; user-select: none; }
+.widget-head.is-grab:active { cursor: grabbing; }
+.widget-head .grip { color: var(--n-400, #9aa7a0); letter-spacing: -2px; font-size: var(--fs-sm); line-height: 1; }
+.widget.is-dragging { z-index: 5; opacity: .92; outline: 2px dashed var(--green-500); outline-offset: 1px; box-shadow: 0 8px 24px rgba(16,24,20,.18); }
+.dash-grid.is-dragging { user-select: none; cursor: grabbing; }
+.dash-grid.is-dragging .widget:not(.is-dragging) { transition: none; }
+.rh { position: absolute; z-index: 3; touch-action: none; }
+.rh-e { top: 28px; right: 0; bottom: 12px; width: 8px; cursor: ew-resize; }
+.rh-s { left: 12px; right: 12px; bottom: 0; height: 8px; cursor: ns-resize; }
+.rh-se { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--green-500) 50%, var(--green-500) 58%, transparent 58%, transparent 72%, var(--green-500) 72%, var(--green-500) 80%, transparent 80%); border-bottom-right-radius: var(--r-md); }
+.rh-e:hover, .rh-s:hover, .widget.is-selected .rh-e, .widget.is-selected .rh-s { background: color-mix(in srgb, var(--green-500) 35%, transparent); }
+.dash-rect { margin: 0; padding: var(--s-2) var(--s-3) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); display: flex; flex-direction: column; gap: var(--s-2); }
+.dash-rect legend { padding: 0 var(--s-1, 4px); font-size: var(--fs-sm); font-weight: 600; }
+.dash-rect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.dash-rect .field label { font-size: var(--fs-xs); color: var(--muted); }
+.dash-rect .field input { width: 100%; }
+@media print { .rh, .grip { display: none !important; } }

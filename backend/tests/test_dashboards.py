@@ -24,6 +24,25 @@ def test_old_dashboards_become_one_page():
     assert len(DashboardConfig(**{}).pages) == 1
 
 
+def test_a_manual_placement_is_kept_and_none_means_automatic():
+    placed = DashboardConfig(pages=[{**PAGE, "widgets": [{**W, "col": 6, "row": 2, "cols": 6, "rows": 4}]}]).pages[0].widgets[0]
+    assert (placed.col, placed.row, placed.cols, placed.rows) == (6, 2, 6, 4)
+    auto = DashboardConfig(pages=[PAGE]).pages[0].widgets[0]
+    assert (auto.col, auto.row, auto.cols, auto.rows) == (None, None, None, None)
+
+
+@pytest.mark.parametrize("bad", [
+    {"col": 0, "row": 0},                                    # a placement needs all four numbers
+    {"col": 8, "row": 0, "cols": 6, "rows": 3},              # runs past the 12th column
+    {"col": 0, "row": 0, "cols": 0, "rows": 3},              # no width
+    {"col": 0, "row": 0, "cols": 4, "rows": 41},             # too tall
+    {"col": -1, "row": 0, "cols": 4, "rows": 3},             # off the left edge
+])
+def test_bad_placements_are_refused(bad):
+    with pytest.raises(ValidationError):
+        DashboardConfig(pages=[{**PAGE, "widgets": [{**W, **bad}]}])
+
+
 @pytest.mark.parametrize("bad", [
     {"pages": []},                                                           # a dashboard needs a page
     {"pages": [PAGE, PAGE]},                                                 # same page id twice

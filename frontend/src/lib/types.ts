@@ -272,6 +272,9 @@ export interface Widget {
   bucket: Bucket;            // line: group by day, week or month
   limit: number;             // bar, pie: how many groups. table: how many rows
   columns: string[];         // table: field ids
+  // Manual placement on the 12-column grid (0-based col/row, size in columns and rows). Set by dragging or resizing a chart in
+  // edit mode. A page where no chart has these is laid out automatically (see autoLayout in lib/dashboard.ts).
+  col?: number; row?: number; cols?: number; rows?: number;
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
 export interface DashPage { id: string; title: string; form_id?: string; widgets: Widget[] }

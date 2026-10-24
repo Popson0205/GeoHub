@@ -49,6 +49,12 @@ for (const t of ["kpi", "bar", "pie", "line", "table", "map"] as const) {
     ok(h.includes("Title") && h.includes("Full row") && !h.includes("Width") && h.includes("Remove"), `settings panel draws for a ${t}`);
   } catch (e) { ok(false, `settings panel draws for a ${t}: ${(e as Error).message}`); }
 }
+{
+  const h = renderToString(<WidgetSettings w={newWidget("bar", defs)} rect={{ col: 4, row: 2, cols: 6, rows: 5 }} manual onRect={() => {}} defs={defs} index={1} count={3} onChange={() => {}} onMove={() => {}} onRemove={() => {}} onClose={() => {}} />);
+  ok(h.includes("Position and size") && h.includes("Left (column)") && h.includes("Top (row)") && h.includes("Tall (rows)") && h.includes("Full row"), "settings offer exact position and size once layout is free");
+  ok(h.includes('value="5"') && h.includes('value="3"') && h.includes('value="6"'), "the boxes show the chart's current column (1-based), row, width and height");
+  ok(!h.includes("Move earlier") && !h.includes("Move later"), "the order buttons go away when charts are placed by hand");
+}
 const tbl = renderToString(<WidgetSettings w={newWidget("table", defs)} defs={defs} index={0} count={1} onChange={() => {}} onMove={() => {}} onRemove={() => {}} onClose={() => {}} />);
 ok(tbl.includes("Elevation (m)") && tbl.includes("Review status"), "table columns offer the form's fields, GPS elevation and status");
 
