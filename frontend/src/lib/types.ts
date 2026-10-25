@@ -166,6 +166,12 @@ export interface Dataset {
   /** People credited for the latest version of a dataset published from a map. */
   contributors?: { name: string; features: number }[];
 }
+/** How a CSV import is read. Without these the API guesses the coordinate columns by name and imports everything as "submitted". */
+export interface ImportOptions {
+  status?: "draft" | "submitted" | "approved";
+  lon?: string; lat?: string; wkt?: string;      // the CSV columns that hold the location
+  mapping?: Record<string, string>;              // CSV column -> form field id, for columns not already named after a field
+}
 export interface Job {
   id: string;
   kind: string;

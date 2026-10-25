@@ -209,3 +209,24 @@ article.card:hover { box-shadow: var(--sh-md); border-color: var(--line-strong);
 .menu-item:hover { background: var(--n-100); color: var(--ink-900); }
 .menu-item.is-danger { color: var(--danger-600); }
 .menu-item.is-danger:hover { background: var(--danger-50); }
+
+/* ---- CSV import (Collected data) ---- */
+.csv-import { display: flex; flex-direction: column; gap: var(--s-3); margin-bottom: var(--s-4); }
+.csv-import h2, .csv-import h3 { margin: 0; }
+.csv-import h3 { font-size: var(--fs-md, 1rem); }
+.csv-drop { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; padding: var(--s-5) var(--s-4); border: 2px dashed var(--line); border-radius: var(--r-md); background: var(--n-50, transparent); }
+.csv-drop.is-over { border-color: var(--green-500); background: var(--green-50); }
+.csv-help { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 4px; }
+.csv-step { display: flex; flex-direction: column; gap: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.csv-pair, .csv-options { display: flex; gap: var(--s-3); flex-wrap: wrap; }
+.csv-options h3 { flex: 1 1 100%; }
+.csv-pair .field, .csv-options .field { flex: 1 1 240px; }
+.csv-scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.csv-map { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.csv-map th, .csv-map td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.csv-map thead th { position: sticky; top: 0; background: var(--card); z-index: 1; font-weight: 600; }
+.csv-map tbody th { font-weight: 500; word-break: break-word; }
+.csv-map td.meta { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csv-problems { margin: 0; padding-left: 1.2em; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow: auto; }
+.csv-warn { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--warning-50); border: 1px solid var(--warning-100); color: var(--warn-ink); font-size: var(--fs-sm); }
+.csv-bad { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--danger-soft); border: 1px solid var(--danger-100); color: var(--danger-700); font-size: var(--fs-sm); }

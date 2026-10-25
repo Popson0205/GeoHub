@@ -1,9 +1,10 @@
 import { ApiError, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
+import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type {
-  Dashboard, DashboardConfig,
+  Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -294,23 +295,52 @@ export class MockApi implements Api {
 
   async listImagery(projectId: string) { await wait(60); this.auth(); return this.s.imagery.filter((i) => i.project_id === projectId); }
   async getImagery(id: string) { await wait(40); const a = this.s.imagery.find((i) => i.id === id); if (!a) throw new ApiError(404, "Imagery not found."); return a; }
-  async importFeatures(projectId: string, file: File, formId: string): Promise<Job> {
+  async importFeatures(projectId: string, file: File, formId: string, opts: ImportOptions = {}): Promise<Job> {
     await wait(); this.auth();
     const name = file.name.toLowerCase();
-    if (!name.endsWith(".geojson") && !name.endsWith(".json")) throw new ApiError(422, "Mock mode can only import GeoJSON. KML, GPX, GeoPackage, Shapefile and CSV need the real backend.");
+    const isCsv = name.endsWith(".csv");
+    if (!isCsv && !name.endsWith(".geojson") && !name.endsWith(".json")) throw new ApiError(422, "Mock mode can only import CSV and GeoJSON. KML, GPX, GeoPackage and Shapefile need the real backend.");
     const form = this.s.forms.find((f) => f.id === formId);
     if (!form) throw new ApiError(404, "Form not found.");
-    let data: { type?: string; features?: { geometry?: Geometry; properties?: Props }[] };
-    try { data = JSON.parse(await file.text()); } catch { throw new ApiError(422, "The file is not valid JSON."); }
-    let imported = 0; const errors: { row: number; message: string }[] = [];
-    (data.features ?? []).forEach((f, i) => {
-      if (!f.geometry || f.geometry.type !== form.geometry_type) { errors.push({ row: i + 1, message: `geometry must be a ${form.geometry_type}` }); return; }
-      const props: Props = {}; for (const fld of topLevelFields(form.fields)) if (f.properties && fld.id in f.properties) props[fld.id] = f.properties[fld.id];
-      this.s.features.push({ id: uuid(), project_id: projectId, form_id: form.id, form_version: form.version, geometry: f.geometry, properties: props, status: "submitted", version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq });
+    if (form.version === 0) throw new ApiError(409, "Publish the form before importing into it.");
+    const status = opts.status ?? "submitted";
+    const errors: { row: number; message: string }[] = [];
+    let imported = 0;
+    const add = (geometry: Geometry, properties: Props) => {
+      this.s.features.push({ id: uuid(), project_id: projectId, form_id: form.id, form_version: form.version, geometry, properties, status, version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq });
       imported++;
-    });
+    };
+    if (isCsv) {
+      if (!opts.wkt && !(opts.lon && opts.lat)) throw new ApiError(422, "CSV imports need lon_column and lat_column, or wkt_column.");
+      const parsed = parseCsv(await file.text(), ",");
+      const fields = new Map(importableFields(form).map((f) => [f.id, f]));
+      const col = (h?: string) => (h ? parsed.headers.indexOf(h) : -1);
+      parsed.rows.forEach((row, n) => {
+        const rowNo = n + 2, msgs: string[] = [], props: Props = {};
+        parsed.headers.forEach((h, i) => {
+          const f = fields.get(opts.mapping?.[h] ?? h);
+          if (!f) return;
+          const r = coerceCell(f, row[i], "dmy");
+          if (r.error) msgs.push(r.error); else if (r.value !== undefined) props[f.id] = r.value as Props[string];
+        });
+        let geometry: Geometry | undefined;
+        if (opts.wkt) { const s = parseShape(row[col(opts.wkt)] ?? ""); if ("error" in s) msgs.push(`geometry: ${s.error}`); else geometry = s.shape as Geometry; }
+        else { const x = parseNumber(row[col(opts.lon)] ?? ""), y = parseNumber(row[col(opts.lat)] ?? ""); if (x === null || y === null) msgs.push("geometry: missing or unreadable geometry"); else geometry = { type: "Point", coordinates: [x, y] }; }
+        if (geometry && geometry.type !== form.geometry_type) { msgs.push(`geometry: this form collects ${form.geometry_type} geometry, not ${geometry.type}`); geometry = undefined; }
+        if (!msgs.length) for (const m of Object.values(validateProperties(form, props))) if (!(status === "draft" && /is required\.$/.test(m))) msgs.push(m);
+        if (msgs.length || !geometry) errors.push({ row: rowNo, message: msgs.join("; ") }); else add(geometry, props);
+      });
+    } else {
+      let data: { type?: string; features?: { geometry?: Geometry; properties?: Props }[] };
+      try { data = JSON.parse(await file.text()); } catch { throw new ApiError(422, "The file is not valid JSON."); }
+      (data.features ?? []).forEach((f, i) => {
+        if (!f.geometry || f.geometry.type !== form.geometry_type) { errors.push({ row: i + 1, message: `geometry must be a ${form.geometry_type}` }); return; }
+        const props: Props = {}; for (const fld of topLevelFields(form.fields)) if (f.properties && fld.id in f.properties) props[fld.id] = f.properties[fld.id];
+        add(f.geometry, props);
+      });
+    }
     this.save();
-    const job: Job = { id: uuid(), kind: "import", status: imported ? "done" : "failed", progress: 100, result: { imported, rejected: errors.length, errors }, error: imported ? undefined : "No rows could be imported. See the row errors." };
+    const job: Job = { id: uuid(), kind: "import", status: imported ? "done" : "failed", progress: 100, result: { imported, rejected: errors.length, errors, dropped_columns: [] }, error: imported ? undefined : "No rows could be imported. See the row errors." };
     this.jobs.set(job.id, { job, polls: 99, error: job.error });
     return job;
   }

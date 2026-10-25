@@ -2,6 +2,7 @@
 
 Job kinds: imagery_convert, snapshot, export, import. Plus process_photo (no job row)."""
 import csv
+import io
 import json
 import logging
 import re
@@ -435,7 +436,7 @@ def import_features(conn, job) -> dict:
             raise JobFailed("Expected a GeoJSON FeatureCollection.", "bad_file")
         records = [(f.get("geometry"), f.get("properties") or {}) for f in feats]
     else:
-        reader = csv.DictReader(text.splitlines())
+        reader = csv.DictReader(io.StringIO(text, newline=""))      # not splitlines(): that would glue the lines of a multi-line cell together
         records = []
         for row in reader:
             geom = None

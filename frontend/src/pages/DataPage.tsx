@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import CsvImportPanel from "../components/CsvImportPanel";
 import FormRenderer from "../components/FormRenderer";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
@@ -26,6 +27,7 @@ export default function DataPage() {
   const forms = useAsync((api) => api.listForms(projectId), [projectId]);
   const feats = useAsync((api) => api.listFeatures(projectId), [projectId]);
   const [formId, setFormId] = useState("");
+  const [importing, setImporting] = useState(false);
   const [filter, setFilter] = useState<"all" | FeatureStatus>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Feature | null>(null);
@@ -119,7 +121,7 @@ export default function DataPage() {
         <>
           <div className="row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
             <label className="meta" htmlFor="d-form">Form</label>
-            <select id="d-form" value={formId} onChange={(e) => { setFormId(e.target.value); setPicked(new Set()); setEditing(null); }}>
+            <select id="d-form" value={formId} onChange={(e) => { setFormId(e.target.value); setPicked(new Set()); setEditing(null); setImporting(false); }}>
               {list.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
             <label className="meta" htmlFor="d-status">Show</label>
@@ -128,10 +130,14 @@ export default function DataPage() {
               {(["submitted", "approved", "rejected", "draft"] as FeatureStatus[]).map((s) => <option key={s} value={s}>{STATUS[s].label} ({counts[s] ?? 0})</option>)}
             </select>
             <span className="grow" />
+            {canManage && form && <Button small onClick={() => setImporting((v) => !v)} aria-expanded={importing} disabled={form.version === 0} title={form.version === 0 ? "Publish the form before importing into it" : undefined}>Import CSV</Button>}
             <Button small onClick={exportCsv} disabled={!target.length}>Download CSV{picked.size ? ` (${picked.size})` : ""}</Button>
             <Button small onClick={exportGeoJson} disabled={!target.length}>Download GeoJSON{picked.size ? ` (${picked.size})` : ""}</Button>
             {canManage && <Button small variant="primary" onClick={() => setPublishing((p) => !p)}>Publish to data hub</Button>}
           </div>
+
+          {importing && canManage && form && form.version > 0 && (
+            <CsvImportPanel key={form.id} projectId={projectId} form={form} onClose={() => setImporting(false)} onImported={() => { setFilter("all"); void feats.reload(); }} />)}
 
           {publishing && project.data && <PublishPanel project={project.data} onClose={() => setPublishing(false)} />}
           {publishing && <p className="meta" style={{ marginTop: -8 }}>Approved and waiting records are published; rejected ones are left out. This form has {counts.approved ?? 0} approved and {counts.submitted ?? 0} waiting. Approve the good ones first if you only want checked data public.</p>}

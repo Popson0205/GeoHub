@@ -4,7 +4,7 @@ import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  Dashboard, DashboardConfig,
+  Dashboard, DashboardConfig, ImportOptions,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
@@ -69,7 +69,7 @@ export interface Api {
   uploadImagery(projectId: string, file: File, bounds?: [number, number, number, number]): Promise<ImageryAsset>;
   getImagery(id: string): Promise<ImageryAsset>;
   /** Import map data (GeoJSON, KML, GPX, GeoPackage, zipped Shapefile, CSV) as features of a form. Returns the job to poll. */
-  importFeatures(projectId: string, file: File, formId: string): Promise<Job>;
+  importFeatures(projectId: string, file: File, formId: string, opts?: ImportOptions): Promise<Job>;
   /** XYZ tile URL template for a ready imagery asset, or null when tiles are unavailable. */
   imageryTileUrl(id: string): string | null;
 
@@ -408,13 +408,16 @@ class HttpApi implements Api {
     return items;
   }
   async getImagery(id: string) { return toImagery(await this.req("GET", `/imagery/${id}`)); }
-  async importFeatures(projectId: string, file: File, formId: string) {
+  async importFeatures(projectId: string, file: File, formId: string, opts: ImportOptions = {}) {
     const fd = new FormData();
     fd.append("file", file, file.name);
     fd.append("form_id", formId);
-    fd.append("status", "submitted");
-    // CSV needs to know where the coordinates are; guess the usual column names, the backend rejects the rest.
-    if (file.name.toLowerCase().endsWith(".csv")) {
+    fd.append("status", opts.status ?? "submitted");
+    if (opts.mapping) fd.append("mapping", JSON.stringify(opts.mapping));
+    // CSV needs to know where the coordinates are. When the caller says, use that; otherwise guess the usual column names, and the backend rejects the rest.
+    if (opts.wkt || (opts.lon && opts.lat)) {
+      if (opts.wkt) fd.append("wkt_column", opts.wkt); else { fd.append("lon_column", opts.lon!); fd.append("lat_column", opts.lat!); }
+    } else if (file.name.toLowerCase().endsWith(".csv")) {
       const head = (await file.slice(0, 4096).text()).split(/\r?\n/)[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
       const find = (...names: string[]) => head.find((h) => names.includes(h.toLowerCase()));
       const wkt = find("wkt", "geom", "geometry");
