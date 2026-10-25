@@ -215,12 +215,16 @@ function toDashboard(w: Wire): Dashboard {
 function toWireConfig(c: DashboardConfig) {
   return {
     description: c.description ?? "",
+    theme: c.theme ?? null,
+    time_filter: c.time_filter ?? null,
     pages: c.pages.map((p) => ({
       id: p.id, title: p.title, form_id: p.form_id ?? null,
       widgets: p.widgets.map((x) => ({
         id: x.id, type: x.type, title: x.title, wide: x.wide ?? false, form_id: x.form_id ?? null, metric: x.metric,
         metric_field: x.metric_field ?? null, field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,
         col: x.col ?? null, row: x.row ?? null, cols: x.cols ?? null, rows: x.rows ?? null,
+        region: x.region ?? null, target: x.target ?? null, target_field: x.target_field ?? null, title_field: x.title_field ?? null,
+        subtitle_fields: x.subtitle_fields ?? [], content: x.content ?? null, url: x.url ?? null,
       })),
     })),
   };

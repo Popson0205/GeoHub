@@ -1,8 +1,10 @@
-from datetime import datetime
+import re
+from datetime import date, datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 Role = Literal["owner", "admin", "collector", "viewer"]
 GeometryType = Literal["point", "line", "area"]
@@ -506,7 +508,7 @@ class DashboardWidget(BaseModel):
     Size and position are optional: without col/row/cols/rows the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
-    type: Literal["kpi", "bar", "pie", "line", "table", "map"]
+    type: Literal["kpi", "bar", "pie", "line", "table", "map", "gauge", "list", "details", "rich_text", "embedded"]
     title: str = Field("", max_length=120)
     wide: bool = Field(False, description="Always take a full row")
     form_id: UUID | None = Field(None, description="Draw on this form instead of the page's form")
@@ -515,12 +517,30 @@ class DashboardWidget(BaseModel):
     field: str | None = Field(None, max_length=80, description="Field to group by (bar, pie) or the date to plot (line)")
     bucket: Literal["day", "week", "month"] = "month"
     limit: int = Field(8, ge=1, le=50)
-    columns: list[str] = Field(default_factory=list, max_length=12, description="Table columns (field ids)")
+    columns: list[str] = Field(default_factory=list, max_length=12, description="Table columns (field ids), or the fields a details element shows")
+    region: Literal["sidebar"] | None = Field(None, description="sidebar = shown in the side column instead of on the grid")
+    target: float | None = Field(None, gt=0, description="Gauge: the full-scale value")
+    target_field: str | None = Field(None, max_length=80, description="Gauge: use the total of this number field as the full-scale value")
+    title_field: str | None = Field(None, max_length=80, description="List: the field used as each row's heading")
+    subtitle_fields: list[str] = Field(default_factory=list, max_length=6, description="List: fields shown under the heading")
+    content: str | None = Field(None, max_length=4000, description="Rich text: **bold**, *italic* and line breaks. Never treated as HTML")
+    url: str | None = Field(None, max_length=500, description="Embedded content: an https:// address shown in a sandboxed frame")
     # Manual placement on the 12-column grid, set by dragging or resizing in the editor. All four or none; none = automatic layout.
     col: int | None = Field(None, ge=0, le=11, description="Left edge, in columns from 0")
     row: int | None = Field(None, ge=0, le=200, description="Top edge, in rows from 0")
     cols: int | None = Field(None, ge=1, le=12, description="Width in columns")
     rows: int | None = Field(None, ge=1, le=40, description="Height in rows")
+
+    @field_validator("url")
+    @classmethod
+    def _https_only(cls, v):
+        # Embedded content is shown in a frame, so only plain https addresses are accepted: no javascript:, data: or http:.
+        if v in (None, ""):
+            return None
+        parts = urlsplit(v)
+        if parts.scheme != "https" or not parts.hostname or "." not in parts.hostname or parts.username or parts.password:
+            raise ValueError("the address must start with https://")
+        return v
 
     @model_validator(mode="after")
     def _rect_complete(self):
@@ -560,9 +580,49 @@ class DashboardPage(BaseModel):
         return self
 
 
+THEME_COLOR_KEYS = ("background", "foreground", "accent", "cardBackground", "cardForeground", "headerBackground", "headerForeground")
+TIME_PRESETS = ("all_time", "last_7_days", "last_30_days", "last_90_days", "last_year", "custom")
+
+
+class DashboardTheme(BaseModel):
+    """A dashboard's look: a named preset (the frontend owns the list) plus colours the author changed."""
+    model_config = ConfigDict(extra="forbid")
+    preset: str = Field("light", min_length=1, max_length=24, pattern=r"^[a-z0-9_-]+$")
+    overrides: dict[str, str] = Field(default_factory=dict, max_length=len(THEME_COLOR_KEYS))
+
+    @field_validator("overrides")
+    @classmethod
+    def _colours(cls, v):
+        for key, colour in v.items():
+            if key not in THEME_COLOR_KEYS:
+                raise ValueError(f"unknown colour '{key}'")
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", colour):
+                raise ValueError(f"'{key}' must be a colour like #17634c")
+        return v
+
+
+class DashboardTimeFilter(BaseModel):
+    """Limits every element to records changed within a date range, on top of the viewer's own filters."""
+    model_config = ConfigDict(extra="forbid")
+    preset: Literal["all_time", "last_7_days", "last_30_days", "last_90_days", "last_year", "custom"] = "all_time"
+    start: date | None = None
+    end: date | None = None
+
+    @model_validator(mode="after")
+    def _custom_range(self):
+        if self.preset == "custom":
+            if self.start is None or self.end is None:
+                raise ValueError("a custom range needs a start and an end date")
+            if self.start > self.end:
+                raise ValueError("the start date is after the end date")
+        return self
+
+
 class DashboardConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     description: str | None = Field(None, max_length=300)
+    theme: DashboardTheme | None = None
+    time_filter: DashboardTimeFilter | None = None
     pages: list[DashboardPage] = Field(min_length=1, max_length=MAX_DASHBOARD_PAGES)
 
     @model_validator(mode="before")

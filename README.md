@@ -6,6 +6,7 @@ A spatial data platform made of three separate tools that share one login:
 |---|---|---|
 | **Web mapping** | A standalone mapping tool, like OpenStreetMap's editors. Draw points, lines and areas with free-form tags over imagery you add by tile URL (`https://host/{z}/{x}/{y}.png`) or by uploading a GeoTIFF/JPEG/PNG. Import GeoJSON, KML or GPX, export GeoJSON. Needs no forms and no projects. | `/maps`, `/maps/:id` |
 | **Data collection** | Projects with a form builder, offline mobile collector (GPS, photos), review of collected data and publishing. | `/collect`, `/collect/:project`, `/collect/:project/forms`, `/collect/:project/review` |
+| **Dashboards** | Its own app over the data a project has collected. A gallery of dashboards and a Reports page, and each dashboard opens in a full-screen workspace: a left toolbar (Add element, View, Data sources, Theme, Time and region, Save) and a canvas. Eleven kinds of element, pages, a side column, themes, a date range and click-to-filter. Reports are printable snapshots. | `/dashboards`, `/dashboards/reports`, `/dashboards/:id` |
 | **Data hub** | Public catalogue where anyone can preview and download published datasets. | `/hub`, `/hub/:slug` |
 
 | Folder | What | Stack |

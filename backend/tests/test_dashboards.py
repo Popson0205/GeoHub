@@ -43,6 +43,67 @@ def test_bad_placements_are_refused(bad):
         DashboardConfig(pages=[{**PAGE, "widgets": [{**W, **bad}]}])
 
 
+# ---- the Dashboard app: more elements, a look, a date range, a side column ----
+def test_the_new_elements_and_the_side_column_are_kept():
+    c = DashboardConfig(pages=[{**PAGE, "widgets": [
+        {"id": "g", "type": "gauge", "metric": "sum", "metric_field": "depth", "target": 500, "region": "sidebar"},
+        {"id": "l", "type": "list", "title_field": "village", "subtitle_fields": ["type", "depth"], "limit": 10},
+        {"id": "d", "type": "details", "columns": ["village"]},
+        {"id": "t", "type": "rich_text", "content": "**Read me**"},
+        {"id": "e", "type": "embedded", "url": "https://example.com/map"},
+    ]}])
+    g, lst, _, note, emb = c.pages[0].widgets
+    assert g.target == 500 and g.region == "sidebar" and lst.subtitle_fields == ["type", "depth"]
+    assert note.content == "**Read me**" and emb.url == "https://example.com/map"
+    assert DashboardConfig(pages=[PAGE]).pages[0].widgets[0].region is None      # nothing is in the side column unless put there
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "http://example.com", "data:text/html,hi", "https://user:pw@example.com", "https://localhost/x", "//example.com"])
+def test_only_plain_https_pages_can_be_embedded(url):
+    with pytest.raises(ValidationError):
+        DashboardConfig(pages=[{**PAGE, "widgets": [{"id": "e", "type": "embedded", "url": url}]}])
+
+
+@pytest.mark.parametrize("bad", [{"target": 0}, {"target": -5}, {"region": "footer"}, {"content": "x" * 4001}, {"subtitle_fields": ["a"] * 7}])
+def test_bad_element_settings_are_refused(bad):
+    with pytest.raises(ValidationError):
+        DashboardConfig(pages=[{**PAGE, "widgets": [{"id": "g", "type": "gauge", **bad}]}])
+
+
+def test_a_dashboards_look_and_date_range():
+    c = DashboardConfig(pages=[PAGE], theme={"preset": "dark", "overrides": {"accent": "#17634c"}},
+                        time_filter={"preset": "custom", "start": "2026-01-01", "end": "2026-02-01"})
+    assert c.theme.preset == "dark" and str(c.time_filter.end) == "2026-02-01"
+    assert DashboardConfig(pages=[PAGE]).theme is None and DashboardConfig(pages=[PAGE]).time_filter is None
+    assert DashboardConfig(pages=[PAGE], time_filter={"preset": "last_30_days"}).time_filter.start is None
+
+
+@pytest.mark.parametrize("bad", [
+    {"theme": {"preset": "dark", "overrides": {"accent": "red"}}},                  # not #rrggbb
+    {"theme": {"preset": "dark", "overrides": {"accent": "#12345"}}},
+    {"theme": {"preset": "dark", "overrides": {"nope": "#112233"}}},                # not a colour the dashboard has
+    {"theme": {"preset": "Dark Mode!"}},
+    {"time_filter": {"preset": "custom"}},                                          # a custom range needs both dates
+    {"time_filter": {"preset": "custom", "start": "2026-03-01", "end": "2026-02-01"}},
+    {"time_filter": {"preset": "last_century"}},
+])
+def test_bad_looks_and_ranges_are_refused(bad):
+    with pytest.raises(ValidationError):
+        DashboardConfig(pages=[PAGE], **bad)
+
+
+def test_look_elements_and_range_survive_saving(project):
+    o = project.owner
+    cfg = {"theme": {"preset": "ocean", "overrides": {"accent": "#1f6fb2"}}, "time_filter": {"preset": "last_90_days"},
+           "pages": [{**PAGE, "widgets": [{"id": "n", "type": "rich_text", "content": "Hello", "region": "sidebar"}]}]}
+    d = o.post(f"/projects/{project.id}/dashboards", json={"name": "Look", "config": cfg}).json()
+    got = o.get(f"/dashboards/{d['id']}").json()["config"]
+    assert got["theme"]["preset"] == "ocean" and got["time_filter"]["preset"] == "last_90_days"
+    assert got["pages"][0]["widgets"][0]["region"] == "sidebar"
+    bad = o.patch(f"/dashboards/{d['id']}", json={"config": {**cfg, "pages": [{**PAGE, "widgets": [{"id": "e", "type": "embedded", "url": "javascript:alert(1)"}]}]}})
+    assert bad.status_code == 422                                                   # the server refuses it too, not just the form
+
+
 @pytest.mark.parametrize("bad", [
     {"pages": []},                                                           # a dashboard needs a page
     {"pages": [PAGE, PAGE]},                                                 # same page id twice

@@ -41,6 +41,7 @@ export default function Shell() {
         <nav id="main-nav" className={`topnav${navOpen ? " is-open" : ""}`} aria-label="Main">
           {user && <NavLink to="/maps"><Icon name="navMap" size={18} />Web mapping</NavLink>}
           {user && <NavLink to="/collect"><Icon name="navCollect" size={18} />Data collection</NavLink>}
+          {user && <NavLink to="/dashboards"><Icon name="navDash" size={18} />Dashboards</NavLink>}
           <NavLink to="/hub"><Icon name="navHub" size={18} />Data hub</NavLink>
         </nav>
         <span className="spacer" />

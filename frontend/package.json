@@ -12,11 +12,11 @@
     "cap:android": "npx cap open android",
     "test:sync": "vite-node scripts/sync-test.ts",
     "test:digitize": "vite-node scripts/digitize-test.ts",
-    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/builder.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/csv-import.test.tsx",
+    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/builder.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/csv-import.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-app.test.tsx",
     "test:forms": "vite-node scripts/forms-test.ts",
     "test:dnd": "vite-node scripts/dnd-test.ts",
     "test:csv": "vite-node scripts/csv-import-test.ts",
-    "test:dashboards": "vite-node scripts/dashboard-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-render-test.tsx"
+    "test:dashboards": "vite-node scripts/dashboard-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-render-test.tsx && vite-node scripts/dashboard-app-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-app-render-test.tsx"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",

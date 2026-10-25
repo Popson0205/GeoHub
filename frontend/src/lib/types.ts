@@ -263,7 +263,7 @@ export interface PublicForm { token: string; form: Form; project_name: string; a
 
 // ---- dashboards ----
 // A saved layout of charts over one form's records. The numbers are never stored; they are computed when it opens.
-export type WidgetType = "kpi" | "bar" | "pie" | "line" | "table" | "map";
+export type WidgetType = "kpi" | "bar" | "pie" | "line" | "table" | "map" | "gauge" | "list" | "details" | "rich_text" | "embedded";
 export type Metric = "count" | "sum" | "avg" | "min" | "max";
 export type Bucket = "day" | "week" | "month";
 export interface Widget {
@@ -281,8 +281,22 @@ export interface Widget {
   // Manual placement on the 12-column grid (0-based col/row, size in columns and rows). Set by dragging or resizing a chart in
   // edit mode. A page where no chart has these is laid out automatically (see autoLayout in lib/dashboard.ts).
   col?: number; row?: number; cols?: number; rows?: number;
+  /** "sidebar" = shown in the side column beside the main grid instead of on it. Missing = on the grid. */
+  region?: "sidebar";
+  target?: number;           // gauge: the full-scale value ...
+  target_field?: string;     // ... or the total of this number field
+  title_field?: string;      // list: the field used as each row's heading
+  subtitle_fields?: string[];// list: fields shown under the heading
+  content?: string;          // rich_text: **bold**, *italic* and line breaks
+  url?: string;              // embedded: an https:// address shown in a frame
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
 export interface DashPage { id: string; title: string; form_id?: string; widgets: Widget[] }
-export interface DashboardConfig { description?: string; pages: DashPage[] }
+/** Colours of a dashboard's look. A preset (see lib/dashboardThemes.ts) plus any colours the author changed. */
+export type ThemeColorKey = "background" | "foreground" | "accent" | "cardBackground" | "cardForeground" | "headerBackground" | "headerForeground";
+export interface DashTheme { preset: string; overrides?: Partial<Record<ThemeColorKey, string>> }
+/** A date range every chart on the dashboard is limited to (on the date a record changed), on top of the viewer's own filters. */
+export type TimePreset = "all_time" | "last_7_days" | "last_30_days" | "last_90_days" | "last_year" | "custom";
+export interface TimeFilter { preset: TimePreset; start?: string; end?: string }
+export interface DashboardConfig { description?: string; pages: DashPage[]; theme?: DashTheme; time_filter?: TimeFilter }
 export interface Dashboard { id: string; project_id: string; name: string; config: DashboardConfig; updated_at: string }

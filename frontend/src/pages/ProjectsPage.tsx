@@ -54,7 +54,7 @@ export default function ProjectsPage() {
                 <Link className="btn btn-primary" to={`/collect/${p.id}`}>Collect</Link>
                 {(p.role === "owner" || p.role === "admin") && <Link className="btn" to={`/collect/${p.id}/forms`}>Forms</Link>}
                 <Link className="btn" to={`/collect/${p.id}/data`}>Collected data</Link>
-                {p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/dashboards`}>Dashboards</Link>}
+                {p.role !== "collector" && <Link className="btn" to={`/dashboards?project=${p.id}`}>Dashboards</Link>}
                 <Link className="btn" to={`/collect/${p.id}/review`}>Map review</Link>
                 {(p.role === "owner" || p.role === "admin") && <Button onClick={() => setPublishing(p)}>Publish</Button>}
               </div>

@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import Shell from "./components/Shell";
 import { RequireAuth } from "./lib/auth";
 import LoginPage from "./pages/LoginPage";
@@ -17,7 +17,8 @@ import JoinMapPage from "./pages/JoinMapPage";
 import SharePage from "./pages/SharePage";
 import PublicFormPage from "./pages/PublicFormPage";
 import DataPage from "./pages/DataPage";
-import DashboardsPage from "./pages/DashboardsPage";
+import DashboardApp from "./pages/DashboardApp";
+import DashboardReports from "./pages/DashboardReports";
 import DashboardPage from "./pages/DashboardPage";
 import CollectHomePage from "./pages/CollectHomePage";
 import { isCollectorApp } from "./lib/pwa";
@@ -36,6 +37,13 @@ function LegacyProject({ to }: { to: "collect" | "forms" | "review" | "form" }) 
   const { projectId = "", formId = "" } = useParams();
   const path = to === "collect" ? "/collect" : to === "forms" ? `/collect/${projectId}/forms` : to === "form" ? `/collect/${projectId}/forms/${formId}` : `/collect/${projectId}/review`;
   return <Navigate to={path} replace />;
+}
+
+/** Old /collect/:project/dashboards links keep working: dashboards are their own app now, with the project in the address. */
+function LegacyDashboards() {
+  const { projectId = "", dashboardId } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={dashboardId ? `/dashboards/${dashboardId}${search}` : `/dashboards?project=${projectId}`} replace />;
 }
 
 /** The installed app: sign in, pick a project, collect. Everything else is on the website for administrators. */
@@ -59,6 +67,8 @@ export default function App() {
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
+      {/* A dashboard opens in its own full-screen workspace, like the form builder */}
+      <Route path="/dashboards/:dashboardId" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route element={<Shell />}>
         <Route index element={<LandingPage />} />
         {/* Web mapping: standalone maps, no forms or projects */}
@@ -74,8 +84,11 @@ export default function App() {
         <Route path="/collect/:projectId/forms" element={<RequireAuth><FormsPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms/:formId/share" element={<RequireAuth><SharePage /></RequireAuth>} />
         <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
-        <Route path="/collect/:projectId/dashboards" element={<RequireAuth><DashboardsPage /></RequireAuth>} />
-        <Route path="/collect/:projectId/dashboards/:dashboardId" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+        {/* Dashboards: their own app. A gallery, a reports page, and the builder above */}
+        <Route path="/dashboards" element={<RequireAuth><DashboardApp /></RequireAuth>} />
+        <Route path="/dashboards/reports" element={<RequireAuth><DashboardReports /></RequireAuth>} />
+        <Route path="/collect/:projectId/dashboards" element={<LegacyDashboards />} />
+        <Route path="/collect/:projectId/dashboards/:dashboardId" element={<LegacyDashboards />} />
         <Route path="/collect/:projectId/forms/:formId" element={<RequireAuth><BuilderPage /></RequireAuth>} />
         <Route path="/projects" element={<LegacyProject to="collect" />} />
         <Route path="/projects/:projectId/editor" element={<LegacyProject to="review" />} />

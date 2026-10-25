@@ -3,7 +3,8 @@
 // (including where every chart goes: see autoLayout).
 import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
-import type { Bucket, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, Widget, WidgetType } from "./types";
+import { cleanTheme } from "./dashboardThemes";
+import type { Bucket, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
 
@@ -201,14 +202,24 @@ export function tableRows(features: Feature[], cols: FieldDef[], limit: number) 
 }
 
 // ---------- widgets ----------
-export const WIDGET_LABEL: Record<Widget["type"], string> = { kpi: "Number", bar: "Bar chart", pie: "Pie chart", line: "Line chart", table: "Table", map: "Map" };
+export const WIDGET_LABEL: Record<Widget["type"], string> = {
+  kpi: "Number", bar: "Bar chart", pie: "Pie chart", line: "Line chart", table: "Table", map: "Map",
+  gauge: "Gauge", list: "List", details: "Details", rich_text: "Rich text", embedded: "Embedded content",
+};
+/** Elements that show something the author typed, not the collected records, so they need no form. */
+export const isStatic = (t: WidgetType): boolean => t === "rich_text" || t === "embedded";
+/** Elements that count, add up or average (so they have a "Show" setting). */
+export const usesMetric = (t: WidgetType): boolean => t === "kpi" || t === "bar" || t === "pie" || t === "line" || t === "gauge";
 export const METRIC_LABEL: Record<Metric, string> = { count: "Number of records", sum: "Sum", avg: "Average", min: "Smallest", max: "Largest" };
 
 export function newWidget(type: Widget["type"], defs: FieldDef[], mkId: () => string = () => uuid().slice(0, 8)): Widget {
-  const w: Widget = { id: mkId(), type, title: "", metric: "count", bucket: "month", limit: type === "table" ? 10 : 8, columns: [] };
+  const w: Widget = { id: mkId(), type, title: "", metric: "count", bucket: "month", limit: type === "table" || type === "list" ? 10 : 8, columns: [] };
   if (type === "bar" || type === "pie") w.field = (groupFields(defs).find((f) => f.type === "choice" || f.type === "boolean" || f.type === "multi_choice") ?? groupFields(defs)[0])?.id;
   if (type === "line") w.field = UPDATED_ID;
   if (type === "table") w.columns = defs.filter((f) => f.type !== "calculation").slice(0, 5).map((f) => f.id);
+  if (type === "list") { w.title_field = (defs.find((f) => f.type === "text" || f.type === "choice") ?? defs[0])?.id; w.subtitle_fields = []; }
+  if (type === "rich_text") w.content = "";
+  if (type === "embedded") w.url = "";
   return w;
 }
 export function defaultTitle(w: Widget, defs: FieldDef[]): string {
@@ -221,11 +232,16 @@ export function defaultTitle(w: Widget, defs: FieldDef[]): string {
     case "line": return `${what} over time`;
     case "table": return "Latest records";
     case "map": return "Where records were collected";
+    case "gauge": return w.metric === "count" ? "Records so far" : what;
+    case "list": return "Records";
+    case "details": return "Latest record";
+    case "rich_text": return "Notes";
+    case "embedded": return "Embedded content";
   }
 }
 /** Why a chart can't be drawn yet, or null when it can. A field removed from the form is reported, never a crash. */
 export function widgetProblem(w: Widget, defs: FieldDef[]): string | null {
-  if (w.type !== "map" && w.type !== "table" && w.metric !== "count") {
+  if (usesMetric(w.type) && w.metric !== "count") {
     if (!w.metric_field) return `Pick the number field to ${w.metric === "avg" ? "average" : w.metric === "sum" ? "add up" : "measure"}.`;
     if (!numberFields(defs).some((f) => f.id === w.metric_field)) return "The number field this uses is no longer in the form.";
   }
@@ -238,6 +254,15 @@ export function widgetProblem(w: Widget, defs: FieldDef[]): string | null {
     if (!dateFields(defs).some((f) => f.id === w.field)) return "The date field this uses is no longer in the form.";
   }
   if (w.type === "table" && !w.columns.some((c) => findField(defs, c))) return "Pick at least one column.";
+  if (w.type === "gauge") {
+    if (!(w.target != null && w.target > 0) && !w.target_field) return "Set the target the gauge measures against.";
+    if (!(w.target != null && w.target > 0) && !numberFields(defs).some((f) => f.id === w.target_field)) return "The number field the target uses is no longer in the form.";
+  }
+  if (w.type === "list") {
+    if (!w.title_field) return "Pick the field to use as each row's heading.";
+    if (!findField(defs, w.title_field)) return "The heading field this uses is no longer in the form.";
+  }
+  if (w.type === "embedded" && !safeEmbedUrl(w.url)) return "Enter a web address that starts with https://.";
   return null;
 }
 
@@ -273,12 +298,14 @@ export const GRID_COLUMNS = 12;
 export const PREFERRED: Record<WidgetType, { span: number; rows: number }> = {
   kpi: { span: 3, rows: 2 }, bar: { span: 4, rows: 5 }, pie: { span: 4, rows: 5 },
   line: { span: 6, rows: 5 }, map: { span: 6, rows: 6 }, table: { span: 12, rows: 7 },
+  gauge: { span: 3, rows: 4 }, list: { span: 4, rows: 5 }, details: { span: 4, rows: 5 }, rich_text: { span: 4, rows: 3 }, embedded: { span: 6, rows: 6 },
 };
 export interface Placed { w: Widget; span: number; rows: number; col?: number; row?: number }
 const pref = (w: Widget) => ({ span: w.wide ? GRID_COLUMNS : PREFERRED[w.type].span, rows: PREFERRED[w.type].rows });
 const isStrip = (w: Widget) => w.type === "kpi" && !w.wide;
 
-export function autoLayout(widgets: Widget[]): Placed[] {
+export function autoLayout(all: Widget[]): Placed[] {
+  const widgets = all.filter(inBody);
   const rows: Widget[][] = [];
   let cur: Widget[] = [], sum = 0;
   const flush = () => { if (cur.length) rows.push(cur); cur = []; sum = 0; };
@@ -316,7 +343,10 @@ export interface Rect { col: number; row: number; cols: number; rows: number }
 export const MIN_COLS = 2, MIN_ROWS = 2, MAX_ROWS = 40, MAX_ROW_INDEX = 200;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(n) ? n : lo)));
 export const hasRect = (w: Widget): boolean => [w.col, w.row, w.cols, w.rows].every((n) => typeof n === "number" && Number.isFinite(n));
-export const isManualLayout = (widgets: Widget[]): boolean => widgets.some(hasRect);
+/** Elements in the side column are not on the grid, so the grid layout never sees them. */
+export const inBody = (w: Widget): boolean => w.region !== "sidebar";
+export const inSidebar = (w: Widget): boolean => w.region === "sidebar";
+export const isManualLayout = (widgets: Widget[]): boolean => widgets.some((w) => inBody(w) && hasRect(w));
 
 /** Keep a rectangle on the grid: at least 2 x 2, inside the 12 columns, never above the top. */
 export function clampRect(r: Rect): Rect {
@@ -348,8 +378,8 @@ function firstFit(taken: Rect[], cols: number, rows: number): Rect {
 export function layoutRects(widgets: Widget[]): Map<string, Rect> {
   if (!isManualLayout(widgets)) return autoRects(widgets);
   const out = new Map<string, Rect>(), taken: Rect[] = [];
-  for (const w of widgets) if (hasRect(w)) { const r = clampRect({ col: w.col!, row: w.row!, cols: w.cols!, rows: w.rows! }); out.set(w.id, r); taken.push(r); }
-  for (const w of widgets) if (!hasRect(w)) { const r = firstFit(taken, PREFERRED[w.type].span, PREFERRED[w.type].rows); out.set(w.id, r); taken.push(r); }
+  for (const w of widgets) if (inBody(w) && hasRect(w)) { const r = clampRect({ col: w.col!, row: w.row!, cols: w.cols!, rows: w.rows! }); out.set(w.id, r); taken.push(r); }
+  for (const w of widgets) if (inBody(w) && !hasRect(w)) { const r = firstFit(taken, PREFERRED[w.type].span, PREFERRED[w.type].rows); out.set(w.id, r); taken.push(r); }
   return out;
 }
 
@@ -380,6 +410,15 @@ export function setWidgetRect(widgets: Widget[], id: string, patch: Partial<Rect
 /** Settle the charts after one is removed, so a gap closes. A page on the automatic layout needs nothing. */
 export function settle(widgets: Widget[]): Widget[] {
   return isManualLayout(widgets) ? withRects(widgets, arrangeRects(layoutRects(widgets))) : widgets;
+}
+/** Move an element between the grid and the side column. Its place on the grid is dropped, and the others close the gap. */
+export function setRegion(widgets: Widget[], id: string, region: "body" | "sidebar"): Widget[] {
+  const next = widgets.map((w) => {
+    if (w.id !== id) return w;
+    const { col: _c, row: _r, cols: _s, rows: _h, region: _g, ...rest } = w;
+    return region === "sidebar" ? { ...rest, region: "sidebar" as const } : rest;
+  });
+  return settle(next);
 }
 /** Back to the automatic layout. */
 export const resetRects = (widgets: Widget[]): Widget[] => widgets.map(({ col: _c, row: _r, cols: _s, rows: _h, ...w }) => w);
@@ -440,6 +479,13 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
     field: (x.field as string | null | undefined) ?? undefined, bucket: (x.bucket as Bucket | undefined) ?? "month",
     limit: Number(x.limit ?? 8), columns: (x.columns as string[] | undefined) ?? [],
     ...rectOf(x),
+    ...(x.region === "sidebar" ? { region: "sidebar" as const } : {}),
+    ...(typeof x.target === "number" && Number.isFinite(x.target) ? { target: x.target } : {}),
+    ...(typeof x.target_field === "string" && x.target_field ? { target_field: x.target_field } : {}),
+    ...(typeof x.title_field === "string" && x.title_field ? { title_field: x.title_field } : {}),
+    ...(Array.isArray(x.subtitle_fields) ? { subtitle_fields: (x.subtitle_fields as unknown[]).filter((s): s is string => typeof s === "string") } : {}),
+    ...(typeof x.content === "string" ? { content: x.content } : {}),
+    ...(typeof x.url === "string" ? { url: x.url } : {}),
   });
   const pageOf = (x: Record<string, unknown>): DashPage => ({
     id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,
@@ -448,7 +494,8 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
   const pages = Array.isArray(c.pages)
     ? (c.pages as Record<string, unknown>[]).map(pageOf)
     : [pageOf({ id: "main", title: "Overview", form_id: c.form_id, widgets: c.widgets })];
-  return { description: (c.description as string | null | undefined) || undefined, pages: pages.length ? pages : [newPage("Overview")] };
+  const theme = cleanTheme(c.theme), time_filter = cleanTimeFilter(c.time_filter);
+  return { description: (c.description as string | null | undefined) || undefined, pages: pages.length ? pages : [newPage("Overview")], ...(theme ? { theme } : {}), ...(time_filter ? { time_filter } : {}) };
 }
 
 // ---------- filters in the address ----------
@@ -475,3 +522,132 @@ export function filtersFromParams(p: URLSearchParams): Filters {
   });
   return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals };
 }
+
+// ---------- the records a page draws on, and what each element shows ----------
+/** The records one element draws: a form, its fields, every record of it, and the ones that pass the filters. */
+export interface Source { form: Form; defs: FieldDef[]; base: Feature[]; rows: Feature[] }
+
+export function buildSources(formIds: string[], forms: Form[], features: Feature[], filters: Filters): Map<string, Source> {
+  const m = new Map<string, Source>();
+  for (const id of formIds) {
+    const form = forms.find((f) => f.id === id);
+    if (!form) continue;
+    const defs = dashboardFields(form);
+    const base = features.filter((f) => f.form_id === id && !f.deleted);
+    m.set(id, { form, defs, base, rows: filterFeatures(base, filters, defs) });
+  }
+  return m;
+}
+
+/** An https address that is safe to put in a frame, or null. No other schemes, no embedded passwords. */
+export function safeEmbedUrl(raw?: string): string | null {
+  const s = (raw ?? "").trim();
+  if (!s || s.length > 500) return null;
+  try {
+    const u = new URL(s);
+    return u.protocol === "https:" && u.hostname.includes(".") && !u.username && !u.password ? u.toString() : null;
+  } catch { return null; }
+}
+
+export interface RichSpan { text: string; bold?: boolean; italic?: boolean }
+/** **bold**, *italic* and line breaks, as plain pieces to draw. Nothing is ever treated as HTML. */
+export function parseRich(content: string): RichSpan[][] {
+  return content.split(/\r?\n/).map((line) => {
+    const out: RichSpan[] = [], re = /\*\*(.+?)\*\*|\*(.+?)\*/g;
+    let last = 0, m: RegExpExecArray | null;
+    while ((m = re.exec(line))) {
+      if (m.index > last) out.push({ text: line.slice(last, m.index) });
+      out.push(m[1] != null ? { text: m[1], bold: true } : { text: m[2]!, italic: true });
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) out.push({ text: line.slice(last) });
+    return out;
+  });
+}
+
+export type WidgetData =
+  | { kind: "problem"; message: string }
+  | { kind: "empty"; message: string }
+  | { kind: "number"; value: number | null; unit?: string }
+  | { kind: "gauge"; value: number | null; max: number | null; percent: number | null; unit?: string }
+  | { kind: "slices"; chart: "bar" | "pie" | "line"; slices: Slice[]; unit: string }
+  | { kind: "table"; columns: FieldDef[]; rows: { id: string; cells: string[] }[] }
+  | { kind: "list"; rows: { id: string; title: string; subtitle: string }[] }
+  | { kind: "details"; items: { label: string; value: string }[] }
+  | { kind: "text"; content: string }
+  | { kind: "embed"; url: string }
+  | { kind: "map"; count: number };
+
+const newestFirst = (features: Feature[]) => [...features].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+
+/** Everything one element shows, worked out from the records. The page draws it; a report prints it. Never throws on a removed field. */
+export function widgetData(w: Widget, source: Source | undefined, hasForm: boolean): WidgetData {
+  if (w.type === "rich_text") return { kind: "text", content: w.content ?? "" };
+  if (w.type === "embedded") { const url = safeEmbedUrl(w.url); return url ? { kind: "embed", url } : { kind: "problem", message: widgetProblem(w, []) ?? "Enter a web address that starts with https://." }; }
+  if (!source) return { kind: "problem", message: hasForm ? "The form this uses is no longer available." : "Choose the form this uses." };
+  const { defs, rows } = source;
+  const problem = widgetProblem(w, defs);
+  if (problem) return { kind: "problem", message: problem };
+  const mf = findField(defs, w.metric_field), f = findField(defs, w.field);
+  const none: WidgetData = { kind: "empty", message: "No records match the filters." };
+  const unit = mf?.unit && w.metric !== "count" ? mf.unit : undefined;
+  switch (w.type) {
+    case "kpi": return { kind: "number", value: kpi(rows, w.metric, mf), unit };
+    case "gauge": {
+      const value = kpi(rows, w.metric, mf), tf = findField(defs, w.target_field);
+      const max = w.target != null && w.target > 0 ? w.target : tf ? kpi(rows, "sum", tf) : null;
+      return { kind: "gauge", value, max, percent: value != null && max != null && max > 0 ? (value / max) * 100 : null, unit };
+    }
+    case "bar": case "pie": { const s = groupBy(rows, f!, w.metric, mf, w.limit); return s.length ? { kind: "slices", chart: w.type, slices: s, unit: unit ?? "" } : none; }
+    case "line": { const s = timeSeries(rows, f!, w.bucket, w.metric, mf); return s.length ? { kind: "slices", chart: "line", slices: s, unit: unit ?? "" } : none; }
+    case "table": {
+      const columns = w.columns.map((c) => findField(defs, c)).filter((c): c is FieldDef => !!c);
+      const t = tableRows(rows, columns, w.limit);
+      return t.length ? { kind: "table", columns, rows: t } : none;
+    }
+    case "list": {
+      const head = findField(defs, w.title_field), subs = (w.subtitle_fields ?? []).map((id) => findField(defs, id)).filter((d): d is FieldDef => !!d);
+      const out = newestFirst(rows).slice(0, w.limit).map((r) => ({ id: r.id, title: (head && display(r, head)) || "(blank)", subtitle: subs.map((d) => display(r, d)).filter(Boolean).join(" · ") }));
+      return out.length ? { kind: "list", rows: out } : none;
+    }
+    case "details": {
+      const r = newestFirst(rows)[0];
+      if (!r) return none;
+      const shown = w.columns.length ? w.columns.map((c) => findField(defs, c)).filter((d): d is FieldDef => !!d) : defs;
+      return { kind: "details", items: shown.map((d) => ({ label: d.label, value: display(r, d) || "–" })) };
+    }
+    case "map": return rows.length ? { kind: "map", count: rows.length } : none;
+  }
+}
+
+// ---------- the dashboard's own date range ----------
+export const TIME_PRESETS: { value: TimePreset; label: string }[] = [
+  { value: "all_time", label: "All time" }, { value: "last_7_days", label: "Last 7 days" }, { value: "last_30_days", label: "Last 30 days" },
+  { value: "last_90_days", label: "Last 90 days" }, { value: "last_year", label: "Last year" }, { value: "custom", label: "Custom range" },
+];
+const PRESET_DAYS: Partial<Record<TimePreset, number>> = { last_7_days: 7, last_30_days: 30, last_90_days: 90, last_year: 365 };
+const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+export function cleanTimeFilter(raw: unknown): TimeFilter | undefined {
+  const t = raw as { preset?: unknown; start?: unknown; end?: unknown } | null | undefined;
+  if (!t || typeof t.preset !== "string" || !TIME_PRESETS.some((p) => p.value === t.preset) || t.preset === "all_time") return undefined;
+  if (t.preset === "custom") return isDay(t.start) && isDay(t.end) ? { preset: "custom", start: t.start, end: t.end } : undefined;
+  return { preset: t.preset as TimePreset };
+}
+/** The first and last day (YYYY-MM-DD, inclusive) a time filter allows. Empty = no limit. */
+export function timeRange(tf: TimeFilter | undefined, now: Date = new Date()): { from?: string; to?: string } {
+  const t = cleanTimeFilter(tf);
+  if (!t) return {};
+  if (t.preset === "custom") return { from: t.start, to: t.end };
+  return { from: dayKey(now.getTime() - (PRESET_DAYS[t.preset] ?? 0) * 86400000) };
+}
+/** The viewer's own date filter, narrowed by the dashboard's range: a record has to pass both. */
+export function withTimeRange(f: Filters, r: { from?: string; to?: string }): Filters {
+  const from = [f.from, r.from].filter((x): x is string => !!x).sort().pop();
+  const to = [f.to, r.to].filter((x): x is string => !!x).sort()[0];
+  return from === f.from && to === f.to ? f : { ...f, from, to };
+}
+export const timeLabel = (tf: TimeFilter | undefined): string => {
+  const t = cleanTimeFilter(tf);
+  return !t ? "" : t.preset === "custom" ? `${t.start} to ${t.end}` : TIME_PRESETS.find((p) => p.value === t.preset)?.label ?? "";
+};
