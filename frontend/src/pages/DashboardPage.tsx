@@ -60,6 +60,17 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const stageRef = useRef<HTMLDivElement>(null), innerRef = useRef<HTMLDivElement>(null), fitRef = useRef(1);
   const [fit, setFit] = useState(1);
   const editing = canEdit && !publicView;
+  const dirty = JSON.stringify({ name, cfg }) !== snapshot;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // The current page and the filters live in the address (?page=…&status=…), so a view can be sent as a link,
+  // survives a refresh, and the filters stay put as you move from page to page.
+  const page: DashPage = cfg.pages.find((p) => p.id === params.get("page")) ?? cfg.pages[0];
   useLayoutEffect(() => {
     const stage = stageRef.current, inner = innerRef.current;
     if (!stage || !inner || typeof ResizeObserver === "undefined") return;
@@ -74,18 +85,6 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     window.addEventListener("resize", measure);
     return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, [page.id, page.widgets.length === 0]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  const dirty = JSON.stringify({ name, cfg }) !== snapshot;
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
-  // The current page and the filters live in the address (?page=…&status=…), so a view can be sent as a link,
-  // survives a refresh, and the filters stay put as you move from page to page.
-  const page: DashPage = cfg.pages.find((p) => p.id === params.get("page")) ?? cfg.pages[0];
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const setFilters = (n: Filters | ((f: Filters) => Filters)) => setParams(filtersToParams(typeof n === "function" ? n(filters) : n, params), { replace: true });
   const pageSearch = (id: string) => { const q = new URLSearchParams(params); q.set("page", id); return `?${q.toString()}`; };
