@@ -1,4 +1,4 @@
-import { arrangeRects, autoLayout, bucketKey, isManualLayout, layoutRects, placeAll, resetRects, setWidgetRect, settle, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
+import { isFiltered, activeBuckets, bucketRange, facetOptions, toggleRange, filterOptions, filterableFields, selectedValues, toggleEquals, withoutField, widgetData, arrangeRects, autoLayout, bucketKey, isManualLayout, layoutRects, placeAll, resetRects, setWidgetRect, settle, categories, dashboardFields, filterFeatures, filtersFromParams, filtersToParams, fmt, groupBy, kpi, newWidget, noFilters, normalizeConfig, overviewWidgets, pageFormIds, slicesCsv, starterPages, starterWidgets, tableRows, timeSeries, widgetProblem, findField, STATUS_ID, UPDATED_ID } from "../src/lib/dashboard";
 import { TEMPLATES, templatePages, templateSketch, templateWidgets, type TemplateId } from "../src/lib/dashboardTemplates";
 import type { Feature, Form } from "../src/lib/types";
 
@@ -212,3 +212,61 @@ const fl = { status: "approved" as const, from: "2026-01-01", to: "2026-02-01", 
 const qs = filtersToParams(fl, new URLSearchParams("page=abc"));
 ok(qs.get("page") === "abc" && JSON.stringify(filtersFromParams(new URLSearchParams(qs.toString()))) === JSON.stringify(fl), "filters survive the trip through the address, other parts untouched");
 ok(filtersToParams(noFilters(), qs).toString() === "page=abc" && JSON.stringify(filtersFromParams(new URLSearchParams("status=bogus&from=nope&eq=%ZZ"))) === JSON.stringify(noFilters()), "clearing removes them; rubbish in the address is ignored");
+
+// ---- header filters, multi-select, and empty states ----
+const eq = (field: string, value: string) => ({ field, value, label: value });
+r = filterFeatures(data, { ...noFilters(), equals: [eq("type", "Well"), eq("type", "Borehole")] }, defs);
+ok(r.length === 3, "two values of one field are alternatives (Well or Borehole)");
+r = filterFeatures(data, { ...noFilters(), equals: [eq("type", "Well"), eq("working", "false")] }, defs);
+ok(r.length === 1, "different fields must all match");
+const opts = filterOptions(data, f("type"));
+ok(opts[0].label === "Well" && opts[0].count === 2 && opts[opts.length - 1].key === "", "filter options: most common first, (blank) last");
+ok(filterableFields(defs).map((d) => d.id).join() === "type,working,tags" && !filterableFields(defs).some((d) => d.id === "depth"), "only choice, yes/no, multiple-choice and text fields are filterable");
+let tf = toggleEquals(noFilters(), eq("type", "Well"));
+tf = toggleEquals(tf, eq("type", "Tap"));
+ok(selectedValues(tf, "type").join() === "Well,Tap" && selectedValues(withoutField(tf, "type"), "type").length === 0, "toggle adds values; withoutField drops one field's filters");
+ok(toggleEquals(tf, eq("type", "Well")).equals.length === 1, "toggling a picked value removes it");
+const np = normalizeConfig({ pages: [{ id: "a", title: "A", filters: ["type", "type", "", 5, "working"], widgets: [] }, { id: "b", title: "B", widgets: [] }] });
+ok(np.pages[0].filters?.join() === "type,working" && np.pages[1].filters === undefined, "page filters are cleaned and optional");
+const srcOf = (rows: Feature[], base = rows) => ({ form, defs, base, rows });
+const W = (type: Parameters<typeof newWidget>[0], patch = {}) => ({ ...newWidget(type, defs), ...patch });
+let e = widgetData(W("bar", { field: "type" }), srcOf([], []), true);
+ok(e.kind === "empty" && e.reason === "no-records", "no records yet is said plainly");
+e = widgetData(W("bar", { field: "type" }), srcOf([], data), true);
+ok(e.kind === "empty" && e.reason === "filtered", "filters that leave nothing say so");
+const blanks = [rec({ working: true }, "approved", "2026-01-01T00:00:00Z"), rec({ working: false }, "approved", "2026-01-02T00:00:00Z")];
+e = widgetData(W("bar", { field: "type" }), srcOf(blanks), true);
+ok(e.kind === "empty" && e.reason === "no-data" && e.message.includes("“Type”"), "a field blank in every record says No data for this field, not an empty chart");
+e = widgetData(W("kpi", { metric: "avg", metric_field: "depth" }), srcOf(blanks), true);
+ok(e.kind === "empty" && e.reason === "no-data", "an average of a blank number says no data");
+ok(widgetData(W("kpi"), srcOf(blanks), true).kind === "number", "a plain count still shows a number");
+e = widgetData(W("line", { field: "visited" }), srcOf(blanks), true);
+ok(e.kind === "empty" && e.reason === "no-data", "a date nobody filled in says no data");
+
+// ---- a line-chart point filters to its own day, week or month ----
+ok(JSON.stringify(bucketRange("2026-03-05", "day")) === JSON.stringify({ from: "2026-03-05", to: "2026-03-05", label: "5 Mar 2026" }), "a day point is that one day");
+ok(bucketRange("2026-03-02", "week").to === "2026-03-08" && bucketRange("2026-03-02", "week").label === "Week of 2 Mar 2026", "a week point runs Monday to Sunday");
+ok(bucketRange("2026-02", "month").to === "2026-02-28" && bucketRange("2026-12", "month").to === "2026-12-31" && bucketRange("2024-02", "month").to === "2024-02-29", "a month point ends on the month's real last day");
+const rg = (from: string, to: string) => ({ field: UPDATED_ID, from, to, label: "x" });
+r = filterFeatures(data, { ...noFilters(), ranges: [rg("2026-01-01", "2026-01-31")] }, defs);
+ok(r.length === 2, "a range keeps records on its days (ends included)");
+r = filterFeatures(data, { ...noFilters(), ranges: [rg("2026-01-05", "2026-01-05")] }, defs);
+ok(r.length === 1, "a one-day range matches only that day");
+r = filterFeatures(data, { ...noFilters(), ranges: [rg("2026-01-01", "2026-01-31"), rg("2026-03-01", "2026-03-31")] }, defs);
+ok(r.length === 4, "two ranges of one date are alternatives");
+r = filterFeatures(data, { ...noFilters(), ranges: [{ field: "visited", from: "2026-03-01", to: "2026-03-31", label: "v" }] }, defs);
+ok(r.length === 1, "a range on another date field uses that field; records with no date are outside it");
+let tr = toggleRange(noFilters(), rg("2026-01-01", "2026-01-31"));
+ok((tr.ranges ?? []).length === 1 && (toggleRange(tr, rg("2026-01-01", "2026-01-31")).ranges ?? []).length === 0, "clicking a point twice undoes it");
+ok(isFiltered(tr) && !isFiltered(noFilters()) && (withoutField(tr, UPDATED_ID).ranges ?? []).length === 0, "a range counts as a filter; withoutField drops it");
+ok(activeBuckets(tr, UPDATED_ID, "day", ["2026-01-05"]).length === 0 && activeBuckets(tr, UPDATED_ID, "month", ["2026-01", "2026-02"]).join() === "2026-01", "only the points whose exact range is picked show as picked");
+const back = filtersFromParams(filtersToParams({ ...noFilters(), ranges: [{ field: UPDATED_ID, from: "2026-01-01", to: "2026-01-31", label: "Date changed: Jan 2026 | odd & text" }] }));
+ok(back.ranges?.length === 1 && back.ranges[0].label === "Date changed: Jan 2026 | odd & text" && back.ranges[0].to === "2026-01-31", "ranges survive the page address");
+ok(!("ranges" in filtersFromParams(new URLSearchParams("rg=x%7Cnope%7C2026-01-01%7Cl&rg=%ZZ"))), "rubbish in the address is ignored");
+
+// ---- dropdown counts follow the other filters ----
+const others = filterFeatures(data, { ...noFilters(), status: "approved" }, defs);
+const fo = facetOptions(data, others, f("type"));
+ok(fo.map((o) => o.label).join() === opts.map((o) => o.label).join(), "faceted options keep the same order as the plain ones");
+ok(fo.find((o) => o.label === "Well")?.count === 1 && fo.find((o) => o.label === "Borehole")?.count === 1 && fo.find((o) => o.key === "")?.count === 0, "counts follow the other filters; a value with none shows 0");
+ok(facetOptions(data, data, f("type")).every((o, i) => o.count === opts[i].count), "with no other filter the counts are the plain totals");

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "../ui";
 import TemplatePicker from "../TemplatePicker";
 import { DASHBOARD_THEMES, DASH_FONTS, DEFAULT_THEME_PRESET, FONT_KEYS, STYLE_LIMITS, THEME_COLOR_FIELDS, cleanStyle, resolveThemeColors } from "../../lib/dashboardThemes";
-import { TIME_PRESETS, WIDGET_LABEL, timeLabel } from "../../lib/dashboard";
+import { MAX_PAGE_FILTERS, TIME_PRESETS, WIDGET_LABEL, timeLabel, type FieldDef } from "../../lib/dashboard";
 import type { TemplateId } from "../../lib/dashboardTemplates";
 import type { DashPage, DashStyle, DashTheme, Feature, Form, ThemeColorKey, TimeFilter, TimePreset, Widget, WidgetType } from "../../lib/types";
 import { ELEMENT_TYPES, ElementIcon } from "./Elements";
@@ -99,6 +99,8 @@ export interface ViewPanelProps {
   name: string; description: string; onName: (v: string) => void; onDescription: (v: string) => void;
   pages: DashPage[]; page: DashPage; forms: Form[]; selectedId: string | null;
   onSelect: (id: string) => void; onRemove: (id: string) => void; onRegion: (id: string, r: "body" | "sidebar") => void;
+  /** The fields of this page's form that can be a dropdown filter, and a way to change which ones the page offers. */
+  filterFields: FieldDef[]; onPageFilters: (ids: string[]) => void;
   onPageTitle: (v: string) => void; onPageForm: (formId: string) => void; onApplyTemplate: (id: TemplateId) => void;
   onMovePage: (by: -1 | 1) => void; onRemovePage: () => void; onAddPage: () => void;
   /** Given for a saved dashboard that an administrator is looking at: adds the Sharing tab. */
@@ -133,6 +135,19 @@ export function ViewPanel(p: ViewPanelProps) {
         <div className="stacked-form">
           <div className="field"><label htmlFor="vhn">Dashboard title</label><input id="vhn" value={p.name} maxLength={120} onChange={(e) => p.onName(e.target.value)} /></div>
           <div className="field"><label htmlFor="vhd">Description</label><input id="vhd" value={p.description} maxLength={300} placeholder="What it reports, and for whom" onChange={(e) => p.onDescription(e.target.value)} /></div>
+          <fieldset className="field filter-picker">
+            <legend>Filters on this page</legend>
+            <small className="meta">Tick the fields viewers can filter by. They appear as dropdowns in the header, next to review status and the dates.</small>
+            {!p.page.form_id ? <small className="meta">Choose the form for this page first (Pages tab).</small>
+              : p.filterFields.length === 0 ? <small className="meta">This form has no choice, yes/no or text fields to filter by.</small>
+              : p.filterFields.map((f) => {
+                const on = (p.page.filters ?? []).includes(f.id), full = !on && (p.page.filters ?? []).length >= MAX_PAGE_FILTERS;
+                return (
+                  <label key={f.id} className="check-row"><input type="checkbox" checked={on} disabled={full}
+                    onChange={() => p.onPageFilters(on ? (p.page.filters ?? []).filter((x) => x !== f.id) : [...(p.page.filters ?? []), f.id])} /> {f.label}</label>);
+              })}
+            {(p.page.filters ?? []).length >= MAX_PAGE_FILTERS && <small className="meta">A page can have up to {MAX_PAGE_FILTERS} filters.</small>}
+          </fieldset>
           <small className="meta">Changes are kept when you press Save.</small>
         </div>) : <p className="meta">Read-only for your role.</p>)}
 

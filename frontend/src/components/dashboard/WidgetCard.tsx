@@ -3,9 +3,9 @@ import { BarList, Donut, LineChart } from "../charts";
 import MapView, { type MapFeature } from "../MapView";
 import { Button } from "../ui";
 import { download } from "../../lib/csv";
-import { METRIC_LABEL, defaultTitle, findField, fmt, isStatic, slicesCsv, widgetData, type Filters, type Slice, type Source } from "../../lib/dashboard";
+import { METRIC_LABEL, activeBuckets, defaultTitle, findField, fmt, isStatic, slicesCsv, widgetData, type Filters, type Slice, type Source } from "../../lib/dashboard";
 import type { Widget } from "../../lib/types";
-import { DetailsList, EmbedFrame, Gauge, ItemList, RichText } from "./Elements";
+import { DetailsList, EmbedFrame, EmptyNote, Gauge, ItemList, RichText } from "./Elements";
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "chart";
 
@@ -14,17 +14,20 @@ export interface CardProps {
   onGrab?: (mode: "move" | "e" | "s" | "se", e: ReactPointerEvent) => void;
   source?: Source; hasForm: boolean; showSource: boolean; filters: Filters; editing: boolean; selected: boolean;
   onSelect: () => void; onPick: (s: Slice) => void;
+  onClear?: () => void;
   /** In the side column: stacked, not on the grid, so it cannot be dragged or resized. */
   side?: boolean;
 }
 
 /** One element of a dashboard page: its title bar, what it shows, and (while editing) the handles to move and resize it. */
-export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source, hasForm, showSource, filters, editing, selected, onSelect, onPick, side }: CardProps) {
+export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source, hasForm, showSource, filters, editing, selected, onSelect, onPick, onClear, side }: CardProps) {
   const defs = useMemo(() => source?.defs ?? [], [source]);
   const title = defaultTitle(w, defs);
   const d = useMemo(() => widgetData(w, source, hasForm), [w, source, hasForm]);
   const f = findField(defs, w.field), mf = findField(defs, w.metric_field);
-  const active = filters.equals.find((e) => e.field === w.field)?.value;
+  // Bars and slices that are filtered on show as picked; so do the points of a line whose day, week or month is.
+  const active = w.type === "line" ? (d.kind === "slices" ? activeBuckets(filters, w.field, w.bucket, d.slices.map((s) => s.key)) : [])
+    : filters.equals.filter((e) => e.field === w.field).map((e) => e.value);
   const grab = editing && !side ? onGrab : undefined;
 
   const mapFeatures = useMemo<MapFeature[]>(
@@ -38,11 +41,11 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
 
   let body;
   switch (d.kind) {
-    case "problem": body = <div className="widget-note is-problem">{d.message}</div>; break;
-    case "empty": body = <div className="widget-note">{d.message}</div>; break;
+    case "problem": body = <div className="widget-note is-problem" role="status"><p>{d.message}</p>{editing && <button type="button" className="note-action" onClick={onSelect}>Open settings to fix</button>}</div>; break;
+    case "empty": body = <EmptyNote d={d} canFix={editing} onFix={onSelect} onClear={onClear} />; break;
     case "number": body = <div className="kpi-value">{d.value == null ? "–" : fmt(d.value)}{d.unit && d.value != null && <span className="kpi-unit">{d.unit}</span>}</div>; break;
     case "gauge": body = <Gauge d={d} />; break;
-    case "slices": body = d.chart === "bar" ? <BarList data={d.slices} active={active} onPick={onPick} unit={d.unit} /> : d.chart === "pie" ? <Donut data={d.slices} active={active} onPick={onPick} /> : <LineChart data={d.slices} />; break;
+    case "slices": body = d.chart === "bar" ? <BarList data={d.slices} active={active} onPick={onPick} unit={d.unit} /> : d.chart === "pie" ? <Donut data={d.slices} active={active} onPick={onPick} /> : <LineChart data={d.slices} active={active} bucket={w.bucket} onPick={w.field ? onPick : undefined} />; break;
     case "table": body = (
       <div className="dash-table"><table className="data-table"><thead><tr>{d.columns.map((c) => <th key={c.id} scope="col">{c.label}</th>)}</tr></thead>
         <tbody>{d.rows.map((r) => <tr key={r.id}>{r.cells.map((c, i) => <td key={i}>{c}</td>)}</tr>)}</tbody></table></div>); break;

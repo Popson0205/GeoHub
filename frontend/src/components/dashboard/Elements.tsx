@@ -44,6 +44,18 @@ export function EmbedFrame({ url, title }: { url: string; title: string }) {
   );
 }
 
+/** What an element says when it has nothing to draw, and the one thing that fixes it. Never a blank box. */
+export function EmptyNote({ d, canFix, onFix, onClear }: { d: Data<"empty">; canFix?: boolean; onFix?: () => void; onClear?: () => void }) {
+  return (
+    <div className="widget-note is-empty" role="status">
+      <p>{d.message}</p>
+      {d.reason === "no-data" && canFix && onFix && <button type="button" className="note-action" onClick={onFix}>Choose another field</button>}
+      {d.reason === "no-data" && !canFix && <small>The person who built this dashboard can pick a different field.</small>}
+      {d.reason === "filtered" && onClear && <button type="button" className="note-action" onClick={onClear}>Clear filters</button>}
+    </div>
+  );
+}
+
 export function ItemList({ rows }: { rows: Data<"list">["rows"] }) {
   return (
     <ul className="item-list">

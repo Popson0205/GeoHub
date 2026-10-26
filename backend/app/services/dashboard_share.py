@@ -42,6 +42,9 @@ def used_fields(config: DashboardConfig) -> dict[UUID, set[str] | None]:
     for p in config.pages:
         if p.form_id is not None:
             out.setdefault(p.form_id, set())
+            # A header filter lists the values of its field, so that field has to be sent for the dropdown to work.
+            if p.filters and out[p.form_id] is not None:
+                out[p.form_id] = out[p.form_id] | set(p.filters)
         for w in p.widgets:
             fid = w.form_id or p.form_id
             if fid is None or w.type in STATIC_ELEMENTS:

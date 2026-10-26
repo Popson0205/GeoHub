@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BuilderSidebar, AddElementPanel, DataSourcesPanel, EmptyCanvas, ThemePanel, TimePanel, ViewPanel, type PanelKey, type ViewTab } from "../components/dashboard/Panels";
+import { FilterDropdown } from "../components/dashboard/FilterDropdown";
 import { WidgetCard } from "../components/dashboard/WidgetCard";
 import { WidgetSettings } from "../components/dashboard/WidgetSettings";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import {
-  STATUS_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, dashboardFields, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isStatic,
-  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
-  type Filters, type Rect, type Slice,
+  STATUS_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, dashboardFields, filterFeatures, facetOptions, filterableFields, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isStatic,
+  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, selectedValues, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, toggleEquals, toggleRange, bucketRange, withRects, withTimeRange, withoutField,
+  type Filters, type Rect, type Slice, type Source,
 } from "../lib/dashboard";
 import { DEFAULT_THEME_PRESET, hasStyle, resolveThemeColors, styleToProps, themeToCssVars } from "../lib/dashboardThemes";
 import { TEMPLATES, templateWidgets, type TemplateId } from "../lib/dashboardTemplates";
@@ -104,8 +105,30 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const sideWidgets = useMemo(() => page.widgets.filter(inSidebar), [page.widgets]);
   const rectOfSel = useMemo(() => (selected ? layoutRects(page.widgets).get(selected) : undefined), [page.widgets, selected]);
   const sel = page.widgets.find((w) => w.id === selected) ?? null;
-  const sourceOf = (w: Widget) => sources.get(w.form_id ?? page.form_id ?? "");
+  // A bar, pie or line that is itself filtering keeps all its groups on screen (the picked ones highlighted), so you can pick another
+  // without clearing first. Every other element is filtered by it as usual.
+  const crossSources = useMemo(() => {
+    const m = new Map<string, Source>();
+    for (const w of page.widgets) {
+      if (!(w.type === "bar" || w.type === "pie" || w.type === "line") || !w.field) continue;
+      if (!effective.equals.some((e) => e.field === w.field) && !(effective.ranges ?? []).some((r) => r.field === w.field)) continue;
+      const s = sources.get(w.form_id ?? page.form_id ?? "");
+      if (s) m.set(w.id, { ...s, rows: filterFeatures(s.base, withoutField(effective, w.field), s.defs) });
+    }
+    return m;
+  }, [page.widgets, page.form_id, sources, effective]);
+  const sourceOf = (w: Widget) => crossSources.get(w.id) ?? sources.get(w.form_id ?? page.form_id ?? "");
   const pageForm = forms.find((f) => f.id === page.form_id);
+  // The dropdown filters the author chose for this page. A field that has since left the form is skipped, not shown broken.
+  const pageSource = sources.get(page.form_id ?? "");
+  const filterDefs = useMemo(() => filterableFields(pageSource?.defs ?? dashboardFields(pageForm)), [pageSource, pageForm]);
+  const headerFilters = useMemo(() => (page.filters ?? []).flatMap((id) => {
+    const def = pageSource ? findField(pageSource.defs, id) : undefined;
+    if (!def || !pageSource) return [];
+    // Counts follow the other filters but not this field's own, so a second value can always be added.
+    const rows = filterFeatures(pageSource.base, withoutField(effective, id), pageSource.defs);
+    return [{ def, options: facetOptions(pageSource.base, rows, def) }];
+  }), [page.filters, pageSource, effective]);
 
   // ---- editing ----
   const patchPage = (fn: (p: DashPage) => DashPage) => setCfg((c) => ({ ...c, pages: c.pages.map((p) => (p.id === page.id ? fn(p) : p)) }));
@@ -161,7 +184,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     const next = forms.find((f) => f.id === id);
     if (!next || next.id === page.form_id) return;
     if (page.widgets.length && !(await confirm({ title: "Switch form?", message: "The charts use fields from the current form. They are replaced with a starter set for the new one.", confirmLabel: "Switch form" }))) return;
-    patchPage((pg) => ({ ...pg, form_id: next.id, widgets: starterWidgets(next) }));
+    patchPage((pg) => ({ ...pg, form_id: next.id, widgets: starterWidgets(next), filters: undefined }));
     setFilters(noFilters()); setSelected(null);
   }
   async function applyTemplate(id: TemplateId) {
@@ -185,16 +208,21 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     const i = cfg.pages.findIndex((p) => p.id === page.id), left = cfg.pages.filter((p) => p.id !== page.id);
     setCfg((c) => ({ ...c, pages: left })); goPage(left[Math.min(i, left.length - 1)].id);
   }
+  /** Click a bar, slice or point: filter every other element to it (click again to undo; click another to add it). */
   function pick(w: Widget, s: Slice) {
     const field = w.field;
     if (!field) return;
-    setFilters((f) => {
-      const has = f.equals.some((e) => e.field === field && e.value === s.key);
-      const rest = f.equals.filter((e) => e.field !== field);
-      const label = findField(sourceOf(w)?.defs ?? [], field)?.label ?? field;
-      return { ...f, equals: has ? rest : [...rest, { field, value: s.key, label: `${label}: ${s.label}` }] };
-    });
+    const label = findField(sourceOf(w)?.defs ?? [], field)?.label ?? field;
+    // A line is over time: a point filters to exactly the day, week or month it stands for.
+    if (w.type === "line") {
+      const r = bucketRange(s.key, w.bucket);
+      setFilters((f) => toggleRange(f, { field, from: r.from, to: r.to, label: `${label}: ${r.label}` }));
+      return;
+    }
+    setFilters((f) => toggleEquals(f, { field, value: s.key, label: `${label}: ${s.label}` }));
   }
+  const toggleHeaderFilter = (field: string, fieldLabel: string, o: { key: string; label: string }) => setFilters((f) => toggleEquals(f, { field, value: o.key, label: `${fieldLabel}: ${o.label}` }));
+  const clearField = (field: string) => setFilters((f) => withoutField(f, field));
   async function save() {
     setSaving(true);
     try {
@@ -228,7 +256,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const card = (w: Widget, extra: { span: number; rows: number; col?: number; row?: number }, side = false) => (
     <WidgetCard key={w.id} w={w} span={extra.span} height={extra.rows} col={extra.col} row={extra.row} side={side} dragging={drag?.id === w.id} onGrab={(m, e) => grab(w, m, e)}
       source={sourceOf(w)} hasForm={!!(w.form_id ?? page.form_id)} showSource={!!w.form_id && w.form_id !== page.form_id}
-      filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && setSelected(w.id)} onPick={(s) => pick(w, s)} />
+      filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && setSelected(w.id)} onPick={(s) => pick(w, s)}
+      onClear={isFiltered(filters) ? () => setFilters(noFilters()) : undefined} />
   );
 
   return (
@@ -240,6 +269,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
       {panel === "view" && (
         <ViewPanel key={viewTab} initialTab={viewTab} canEdit={canEdit} onClose={() => setPanel(null)} name={name} description={cfg.description ?? ""} onName={setName} onDescription={(v) => setCfg((c) => ({ ...c, description: v || undefined }))}
           pages={cfg.pages} page={page} forms={forms} selectedId={selected} onSelect={setSelected} onRemove={remove} onRegion={moveRegion}
+          filterFields={filterDefs} onPageFilters={(ids) => patchPage((p) => ({ ...p, filters: ids.length ? ids : undefined }))}
           onPageTitle={(v) => patchPage((p) => ({ ...p, title: v }))} onPageForm={(id) => void choosePageForm(id)} onApplyTemplate={(id) => void applyTemplate(id)}
           onMovePage={movePage} onRemovePage={() => void removePage()} onAddPage={addPage} dashboardId={dashboard.id} dirty={dirty} />)}
       {panel === "data" && <DataSourcesPanel forms={forms} features={features} pages={cfg.pages} pageFormId={page.form_id} canEdit={canEdit} onUse={(id) => void choosePageForm(id)} onClose={() => setPanel(null)} />}
@@ -259,9 +289,18 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
               </select></div>
             <div><label htmlFor="ffrom">Changed from</label><input id="ffrom" type="date" value={filters.from ?? ""} onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })} /></div>
             <div><label htmlFor="fto">to</label><input id="fto" type="date" value={filters.to ?? ""} onChange={(e) => setFilters({ ...filters, to: e.target.value || undefined })} /></div>
-            {filters.equals.length > 0 && <div className="chips">{filters.equals.map((e) => (
-              <span key={e.field + e.value} className="chip-x">{e.label}<button type="button" aria-label={`Remove filter ${e.label}`} onClick={() => setFilters({ ...filters, equals: filters.equals.filter((x) => x !== e) })}>×</button></span>
-            ))}</div>}
+            {headerFilters.map(({ def, options }) => (
+              <FilterDropdown key={def.id} id={`ff-${def.id}`} label={def.label} options={options} selected={selectedValues(filters, def.id)}
+                onToggle={(o) => toggleHeaderFilter(def.id, def.label, o)} onClear={() => clearField(def.id)} />
+            ))}
+            {(filters.equals.length > 0 || (filters.ranges ?? []).length > 0) && <div className="chips">
+              {filters.equals.map((e) => (
+                <span key={e.field + e.value} className="chip-x">{e.label}<button type="button" aria-label={`Remove filter ${e.label}`} onClick={() => setFilters({ ...filters, equals: filters.equals.filter((x) => x !== e) })}>×</button></span>
+              ))}
+              {(filters.ranges ?? []).map((r) => (
+                <span key={r.field + r.from + r.to} className="chip-x">{r.label}<button type="button" aria-label={`Remove filter ${r.label}`} onClick={() => setFilters({ ...filters, ranges: (filters.ranges ?? []).filter((x) => x !== r) })}>×</button></span>
+              ))}
+            </div>}
             {isFiltered(filters) && <Button small variant="ghost" onClick={() => setFilters(noFilters())}>Clear filters</Button>}
             {tl && <span className="chip-x is-static" title="Set in Time and region">{tl}</span>}
             <span className="count">{shown === total ? `${total} records` : `${shown} of ${total} records`}</span>

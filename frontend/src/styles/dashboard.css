@@ -279,3 +279,32 @@
 .tpl-thumb .tt-map { fill: var(--chart-6); }
 .tpl-thumb .tt-table { fill: var(--chart-8); }
 .tpl-thumb .tpl-empty { font-size: 9px; fill: var(--n-500); }
+
+/* ---- filters the author put in the header ---- */
+.fdrop { position: relative; }
+.fdrop-label { display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.fdrop details { position: relative; }
+.fdrop summary { list-style: none; cursor: pointer; min-width: 120px; max-width: 200px; padding: 4px 28px 4px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); color: inherit; font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.fdrop summary::-webkit-details-marker { display: none; }
+.fdrop summary::after { content: "▾"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.fdrop details.has-value summary { border-color: var(--green-300); background: var(--green-50); color: var(--green-800); }
+.fdrop-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 220px; max-width: 320px; max-height: 320px; overflow: auto; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); box-shadow: var(--sh-md, 0 6px 20px rgba(0,0,0,.15)); color: var(--fg, inherit); }
+.fdrop-panel ul { list-style: none; margin: 0; padding: 0; }
+.fdrop-panel label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.fdrop-panel label:hover { background: var(--green-50); }
+.fdrop-opt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdrop-panel small { color: var(--muted); }
+.fdrop-clear { margin-top: 4px; border: 0; background: transparent; color: var(--green-800); cursor: pointer; font-size: var(--fs-sm); text-decoration: underline; }
+.filter-picker { border: 0; padding: 0; }
+.filter-picker legend { font-weight: 600; margin-bottom: 4px; }
+.check-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+/* ---- empty states and clickable points ---- */
+.widget-note p { margin: 0 0 var(--s-2); }
+.widget-note small { display: block; }
+.widget-note.is-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; box-sizing: border-box; }
+.note-action { border: 1px solid currentColor; border-radius: var(--r-full); background: transparent; color: var(--green-800); padding: 3px 12px; font-size: var(--fs-sm); cursor: pointer; }
+.widget-note.is-problem .note-action { color: inherit; }
+.line-chart .point.is-pick { cursor: pointer; }
+.line-chart .point.is-active { stroke: var(--card); stroke-width: 2; }
+.line-chart .point-hit { fill: transparent; cursor: pointer; }
+.fdrop-panel label.is-zero { opacity: .5; cursor: not-allowed; }

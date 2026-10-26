@@ -58,27 +58,92 @@ export interface Filters {
   status: "all" | FeatureStatus;
   from?: string;   // YYYY-MM-DD, on the date the record changed
   to?: string;
-  equals: { field: string; value: string; label: string }[];   // set by clicking a bar or slice
+  equals: { field: string; value: string; label: string }[];   // set by clicking a bar or slice, or by a header dropdown
+  /** Set by clicking a point on a line chart: records whose date for `field` falls on or between two days. */
+  ranges?: RangeFilter[];
 }
+export interface RangeFilter { field: string; from: string; to: string; label: string }
 export const noFilters = (): Filters => ({ status: "all", equals: [] });
-export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0;
+export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0 || (f.ranges ?? []).length > 0;
 
 export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[]): Feature[] {
   const bins = new Map<string, Binner | null>();
+  const wanted = new Map<string, Set<string>>();
+  for (const e of f.equals) { const s = wanted.get(e.field) ?? new Set<string>(); s.add(e.value); wanted.set(e.field, s); }
+  const spans = new Map<string, RangeFilter[]>();
+  for (const x of f.ranges ?? []) spans.set(x.field, [...(spans.get(x.field) ?? []), x]);
   return features.filter((r) => {
     if (f.status !== "all" && r.status !== f.status) return false;
     const day = r.updated_at.slice(0, 10);
     if (f.from && day < f.from) return false;
     if (f.to && day > f.to) return false;
-    for (const e of f.equals) {
-      const d = findField(defs, e.field);
+    // Values of the same field are alternatives (Well or Borehole); different fields all have to match.
+    for (const [field, values] of wanted) {
+      const d = findField(defs, field);
       if (!d) continue;
       if (d.type === "number" && !bins.has(d.id)) bins.set(d.id, makeBinner(features.map((x) => num(raw(x, d))).filter((n): n is number => n != null)));
-      if (!categories(r, d, bins.get(d.id) ?? null).some((c) => c.key === e.value)) return false;
+      if (!categories(r, d, bins.get(d.id) ?? null).some((c) => values.has(c.key))) return false;
+    }
+    // Several ranges of one date are alternatives (March or May); a record with no date is outside every range.
+    for (const [field, list] of spans) {
+      const d = findField(defs, field);
+      if (!d) continue;
+      const v = raw(r, d), day = typeof v === "string" ? v.slice(0, 10) : "";
+      if (!day || !list.some((x) => day >= x.from && day <= x.to)) return false;
     }
     return true;
   });
 }
+
+/** The filters without any on one field, so a chart that filters by that field still shows the other groups to pick from. */
+export const withoutField = (f: Filters, field?: string): Filters =>
+  field ? { ...f, equals: f.equals.filter((e) => e.field !== field), ...(f.ranges ? { ranges: f.ranges.filter((r) => r.field !== field) } : {}) } : f;
+/** Add a date range to the filters, or take it away when it is already there. */
+export function toggleRange(f: Filters, r: RangeFilter): Filters {
+  const cur = f.ranges ?? [];
+  const has = cur.some((x) => x.field === r.field && x.from === r.from && x.to === r.to);
+  return { ...f, ranges: has ? cur.filter((x) => !(x.field === r.field && x.from === r.from && x.to === r.to)) : [...cur, r] };
+}
+/** The days one point of a line chart stands for: that day, that week (Monday to Sunday) or that month. */
+export function bucketRange(key: string, bucket: Bucket): { from: string; to: string; label: string } {
+  const long = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+  if (bucket === "day") return { from: key, to: key, label: long(key) };
+  if (bucket === "week") return { from: key, to: dayKey(parseDay(key) + 6 * 86400000), label: `Week of ${long(key)}` };
+  return { from: `${key}-01`, to: dayKey(parseDay(`${nextKey(key, "month")}-01`) - 86400000), label: monthLabel(key) };
+}
+/** The line-chart points (by key) whose day range is currently filtered on. */
+export const activeBuckets = (f: Filters, field: string | undefined, bucket: Bucket, keys: string[]): string[] =>
+  keys.filter((k) => { const r = bucketRange(k, bucket); return (f.ranges ?? []).some((x) => x.field === field && x.from === r.from && x.to === r.to); });
+/** Add a value to the filters, or take it away when it is already there. */
+export function toggleEquals(f: Filters, e: Filters["equals"][number]): Filters {
+  const has = f.equals.some((x) => x.field === e.field && x.value === e.value);
+  return { ...f, equals: has ? f.equals.filter((x) => !(x.field === e.field && x.value === e.value)) : [...f.equals, e] };
+}
+export const selectedValues = (f: Filters, field?: string): string[] => (field ? f.equals.filter((e) => e.field === field).map((e) => e.value) : []);
+
+// ---------- filters the author puts in the header ----------
+export const MAX_PAGE_FILTERS = 6;
+const FILTER_TYPES = new Set(["choice", "multi_choice", "boolean", "text"]);
+/** Fields that make sense as a dropdown. Review status and the date range already have their own boxes. */
+export const filterableFields = (d: FieldDef[]): FieldDef[] => d.filter((f) => FILTER_TYPES.has(f.type));
+export interface FilterOption { key: string; label: string; count: number }
+/** The values a dropdown offers: what the records really hold, most common first, (blank) last. */
+export function filterOptions(features: Feature[], d: FieldDef, limit = 200): FilterOption[] {
+  const m = new Map<string, FilterOption>();
+  for (const r of features) for (const c of categories(r, d, null)) { const o = m.get(c.key); if (o) o.count++; else m.set(c.key, { ...c, count: 1 }); }
+  return [...m.values()].sort((a, b) => (a.key === "" ? 1 : b.key === "" ? -1 : b.count - a.count || a.label.localeCompare(b.label))).slice(0, limit);
+}
+/**
+ * What a dropdown offers while other filters are on (faceted counts): every value the field has stays listed, in a steady order,
+ * but each count is how many of the currently shown records have it. A value with a count of 0 would give an empty page.
+ * `rows` must already be filtered by everything except this field, or picking a second value could never widen the result.
+ */
+export function facetOptions(base: Feature[], rows: Feature[], d: FieldDef, limit = 200): FilterOption[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) for (const c of categories(r, d, null)) counts.set(c.key, (counts.get(c.key) ?? 0) + 1);
+  return filterOptions(base, d, limit).map((o) => ({ ...o, count: counts.get(o.key) ?? 0 }));
+}
+const cleanFilterIds = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((s): s is string => typeof s === "string" && s !== ""))].slice(0, MAX_PAGE_FILTERS) : []);
 
 // ---------- grouping ----------
 type Binner = (n: number) => { key: string; label: string };
@@ -490,6 +555,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
   const pageOf = (x: Record<string, unknown>): DashPage => ({
     id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,
     widgets: ((x.widgets as Record<string, unknown>[] | undefined) ?? []).map(widget),
+    ...(cleanFilterIds(x.filters).length ? { filters: cleanFilterIds(x.filters) } : {}),
   });
   const pages = Array.isArray(c.pages)
     ? (c.pages as Record<string, unknown>[]).map(pageOf)
@@ -501,7 +567,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
 // ---------- filters in the address ----------
 // Filters sit in the page address, so a view can be sent as a link, survives a refresh, and carries from page to page.
 const STATUSES = ["draft", "submitted", "approved", "rejected"];
-const FILTER_KEYS = ["status", "from", "to", "eq"];
+const FILTER_KEYS = ["status", "from", "to", "eq", "rg"];
 export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearchParams()): URLSearchParams {
   const out = new URLSearchParams(into);
   FILTER_KEYS.forEach((k) => out.delete(k));
@@ -509,6 +575,7 @@ export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearc
   if (f.from) out.set("from", f.from);
   if (f.to) out.set("to", f.to);
   for (const e of f.equals) out.append("eq", [e.field, e.value, e.label].map(encodeURIComponent).join("|"));
+  for (const r of f.ranges ?? []) out.append("rg", [r.field, r.from, r.to, r.label].map(encodeURIComponent).join("|"));
   return out;
 }
 export function filtersFromParams(p: URLSearchParams): Filters {
@@ -520,7 +587,13 @@ export function filtersFromParams(p: URLSearchParams): Filters {
       return field && value !== undefined ? [{ field, value, label: label ?? value }] : [];
     } catch { return []; }
   });
-  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals };
+  const ranges = p.getAll("rg").flatMap((x): RangeFilter[] => {
+    try {
+      const [field, from, to, label] = x.split("|").map(decodeURIComponent);
+      return field && day(from ?? null) && day(to ?? null) ? [{ field, from, to, label: label ?? `${from} to ${to}` }] : [];
+    } catch { return []; }
+  });
+  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals, ...(ranges.length ? { ranges } : {}) };
 }
 
 // ---------- the records a page draws on, and what each element shows ----------
@@ -567,7 +640,8 @@ export function parseRich(content: string): RichSpan[][] {
 
 export type WidgetData =
   | { kind: "problem"; message: string }
-  | { kind: "empty"; message: string }
+  /** reason: no-records = the form has none yet; filtered = the filters leave none; no-data = records exist but the chosen field is blank in all of them. */
+  | { kind: "empty"; message: string; reason?: "no-records" | "filtered" | "no-data" }
   | { kind: "number"; value: number | null; unit?: string }
   | { kind: "gauge"; value: number | null; max: number | null; percent: number | null; unit?: string }
   | { kind: "slices"; chart: "bar" | "pie" | "line"; slices: Slice[]; unit: string }
@@ -589,17 +663,26 @@ export function widgetData(w: Widget, source: Source | undefined, hasForm: boole
   const problem = widgetProblem(w, defs);
   if (problem) return { kind: "problem", message: problem };
   const mf = findField(defs, w.metric_field), f = findField(defs, w.field);
-  const none: WidgetData = { kind: "empty", message: "No records match the filters." };
+  const none: WidgetData = source.base.length === 0
+    ? { kind: "empty", reason: "no-records", message: "No records have been collected for this form yet." }
+    : { kind: "empty", reason: "filtered", message: "No records match the filters." };
+  // Records are there, but the field this element reads is empty in every one of them: say so, instead of drawing a blank chart.
+  const noData = (d?: FieldDef): WidgetData => ({ kind: "empty", reason: "no-data", message: `No data for this field: none of the ${rows.length} ${rows.length === 1 ? "record has" : "records have"} a value for “${d?.label ?? "it"}”.` });
   const unit = mf?.unit && w.metric !== "count" ? mf.unit : undefined;
   switch (w.type) {
-    case "kpi": return { kind: "number", value: kpi(rows, w.metric, mf), unit };
+    case "kpi": { const value = kpi(rows, w.metric, mf); return value == null && w.metric !== "count" ? (rows.length ? noData(mf) : none) : { kind: "number", value, unit }; }
     case "gauge": {
       const value = kpi(rows, w.metric, mf), tf = findField(defs, w.target_field);
+      if (value == null && w.metric !== "count") return rows.length ? noData(mf) : none;
       const max = w.target != null && w.target > 0 ? w.target : tf ? kpi(rows, "sum", tf) : null;
       return { kind: "gauge", value, max, percent: value != null && max != null && max > 0 ? (value / max) * 100 : null, unit };
     }
-    case "bar": case "pie": { const s = groupBy(rows, f!, w.metric, mf, w.limit); return s.length ? { kind: "slices", chart: w.type, slices: s, unit: unit ?? "" } : none; }
-    case "line": { const s = timeSeries(rows, f!, w.bucket, w.metric, mf); return s.length ? { kind: "slices", chart: "line", slices: s, unit: unit ?? "" } : none; }
+    case "bar": case "pie": {
+      const s = groupBy(rows, f!, w.metric, mf, w.limit);
+      if (!s.length) return rows.length && w.metric !== "count" ? noData(mf) : none;
+      return s.every((x) => x.key === "") ? noData(f) : { kind: "slices", chart: w.type, slices: s, unit: unit ?? "" };
+    }
+    case "line": { const s = timeSeries(rows, f!, w.bucket, w.metric, mf); return s.length ? { kind: "slices", chart: "line", slices: s, unit: unit ?? "" } : rows.length ? noData(f) : none; }
     case "table": {
       const columns = w.columns.map((c) => findField(defs, c)).filter((c): c is FieldDef => !!c);
       const t = tableRows(rows, columns, w.limit);

@@ -291,7 +291,11 @@ export interface Widget {
   url?: string;              // embedded: an https:// address shown in a frame
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
-export interface DashPage { id: string; title: string; form_id?: string; widgets: Widget[] }
+export interface DashPage {
+  id: string; title: string; form_id?: string; widgets: Widget[];
+  /** Field ids the author offers as dropdown filters in the header of this page (at most 6, from the page's form). */
+  filters?: string[];
+}
 /** Colours of a dashboard's look. A preset (see lib/dashboardThemes.ts) plus any colours the author changed. */
 export type ThemeColorKey = "background" | "foreground" | "accent" | "cardBackground" | "cardForeground" | "headerBackground" | "headerForeground";
 export type DashFont = "system" | "humanist" | "rounded" | "serif" | "slab" | "mono";

@@ -93,3 +93,19 @@ def test_the_saved_layout_is_returned_so_the_page_looks_the_same():
     c = cfg({"id": "w", "type": "bar", "field": "type", "title": "By type"})
     out = shape(c, [])
     assert out["config"]["pages"][0]["widgets"][0]["title"] == "By type" and out["name"] == "D" and out["truncated"] is False
+
+
+def test_a_header_filter_sends_its_field_even_when_no_chart_draws_it():
+    c = cfg({"id": "w", "type": "bar", "field": "type"}, filters=["village"])
+    out = shape(c, [rec(ALL)])
+    assert out["features"][0]["properties"] == {"type": "Well", "village": "Aba"}
+    assert "0803" not in str(out)                                                  # only the chosen filter field is added
+
+
+def test_page_filters_are_limited_and_unique():
+    import pytest
+    with pytest.raises(ValueError):
+        cfg(filters=["a", "a"])
+    with pytest.raises(ValueError):
+        cfg(filters=[f"f{i}" for i in range(7)])
+    assert cfg(filters=["type"]).pages[0].filters == ["type"] and cfg().pages[0].filters == []

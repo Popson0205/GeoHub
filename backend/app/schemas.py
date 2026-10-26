@@ -1,6 +1,6 @@
 import re
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -501,6 +501,7 @@ class PublicMediaIn(BaseModel):
 # ---------- dashboards ----------
 MAX_DASHBOARD_PAGES = 12
 MAX_WIDGETS_PER_PAGE = 30
+MAX_PAGE_FILTERS = 6
 
 
 class DashboardWidget(BaseModel):
@@ -571,9 +572,12 @@ class DashboardPage(BaseModel):
     title: str = Field(min_length=1, max_length=60)
     form_id: UUID | None = Field(None, description="The form whose records this page shows")
     widgets: list[DashboardWidget] = Field(default_factory=list, max_length=MAX_WIDGETS_PER_PAGE)
+    filters: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=MAX_PAGE_FILTERS, description="Field ids offered as dropdown filters in the page header")
 
     @model_validator(mode="after")
     def _unique_ids(self):
+        if len(self.filters) != len(set(self.filters)):
+            raise ValueError("filters must be unique")
         ids = [w.id for w in self.widgets]
         if len(ids) != len(set(ids)):
             raise ValueError("widget ids must be unique")
