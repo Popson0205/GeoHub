@@ -1,7 +1,7 @@
 // Dashboard looks. A theme is a handful of colours; the builder turns them into CSS variables on the dashboard canvas
 // only, so nothing outside the dashboard changes. Presets are fixed; a person can change any single colour on top of one.
 import type { CSSProperties } from "react";
-import type { DashTheme, ThemeColorKey } from "./types";
+import type { DashFont, DashStyle, DashTheme, ThemeColorKey } from "./types";
 
 export const THEME_KEYS: ThemeColorKey[] = ["background", "foreground", "accent", "cardBackground", "cardForeground", "headerBackground", "headerForeground"];
 export type ThemeColors = Record<ThemeColorKey, string>;
@@ -32,14 +32,75 @@ export function resolveThemeColors(theme?: DashTheme | null): ThemeColors {
   return out;
 }
 
+export const DASH_FONTS: Record<DashFont, { label: string; stack: string }> = {
+  system: { label: "System sans", stack: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
+  humanist: { label: "Humanist", stack: '"Gill Sans", "Trebuchet MS", Calibri, "Segoe UI", sans-serif' },
+  rounded: { label: "Rounded", stack: 'ui-rounded, "Nunito", "Varela Round", "Segoe UI", sans-serif' },
+  serif: { label: "Serif", stack: 'Georgia, "Times New Roman", Times, serif' },
+  slab: { label: "Slab serif", stack: 'Rockwell, "Roboto Slab", "Courier New", Georgia, serif' },
+  mono: { label: "Monospace", stack: 'ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace' },
+};
+export const FONT_KEYS = Object.keys(DASH_FONTS) as DashFont[];
+export const STYLE_LIMITS = { textSize: [80, 150], titleSize: [16, 48], headingSize: [10, 24], numberSize: [70, 200], radius: [0, 28], gap: [4, 28] } as const;
+const WEIGHTS = [400, 500, 600, 700, 800] as const;
+
+const num = (v: unknown, [lo, hi]: readonly [number, number]) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : undefined);
+/** Only known, in-range style choices; anything else is dropped so a saved style never carries junk. */
+export function cleanStyle(raw: unknown): DashStyle | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>, o: DashStyle = {};
+  if (typeof r.font === "string" && r.font in DASH_FONTS) o.font = r.font as DashFont;
+  const t = num(r.textSize, STYLE_LIMITS.textSize); if (t !== undefined && t !== 100) o.textSize = t;
+  const ti = num(r.titleSize, STYLE_LIMITS.titleSize); if (ti !== undefined) o.titleSize = ti;
+  const h = num(r.headingSize, STYLE_LIMITS.headingSize); if (h !== undefined) o.headingSize = h;
+  if ((WEIGHTS as readonly unknown[]).includes(r.headingWeight)) o.headingWeight = r.headingWeight as DashStyle["headingWeight"];
+  if (r.headingCaps === true) o.headingCaps = true;
+  if (r.titleAlign === "center") o.titleAlign = "center";
+  const n = num(r.numberSize, STYLE_LIMITS.numberSize); if (n !== undefined && n !== 100) o.numberSize = n;
+  if (isHexColor(r.numberColor)) o.numberColor = r.numberColor;
+  const rad = num(r.radius, STYLE_LIMITS.radius); if (rad !== undefined) o.radius = rad;
+  if (r.border === "none" || r.border === "thin" || r.border === "thick") o.border = r.border;
+  if (isHexColor(r.borderColor)) o.borderColor = r.borderColor;
+  if (r.shadow === "none" || r.shadow === "soft" || r.shadow === "strong") o.shadow = r.shadow;
+  const g = num(r.gap, STYLE_LIMITS.gap); if (g !== undefined) o.gap = g;
+  return Object.keys(o).length ? o : undefined;
+}
+export const hasStyle = (t?: DashTheme | null) => !!cleanStyle(t?.style);
+
 /** Only the known keys with real colours, so a saved theme never carries anything else. */
 export function cleanTheme(raw: unknown): DashTheme | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const t = raw as { preset?: unknown; overrides?: Record<string, unknown> };
+  const t = raw as { preset?: unknown; overrides?: Record<string, unknown>; style?: unknown };
   const preset = typeof t.preset === "string" && DASHBOARD_THEMES[t.preset] ? t.preset : DEFAULT_THEME_PRESET;
   const overrides: DashTheme["overrides"] = {};
   for (const k of THEME_KEYS) { const v = t.overrides?.[k]; if (isHexColor(v)) overrides[k] = v; }
-  return Object.keys(overrides).length ? { preset, overrides } : { preset };
+  const style = cleanStyle(t.style);
+  return { preset, ...(Object.keys(overrides).length ? { overrides } : {}), ...(style ? { style } : {}) };
+}
+
+/** The style as CSS variables plus data-s-* switches. The stylesheet only restyles what has a switch, so an unset choice keeps the normal look. */
+export function styleToProps(style?: DashStyle | null): { vars: CSSProperties; attrs: Record<string, string> } {
+  const s = cleanStyle(style) ?? {}, vars: Record<string, string> = {}, attrs: Record<string, string> = {};
+  const on = (k: string, v = "1") => { attrs[`data-s-${k}`] = v; };
+  if (s.font) { vars["--dash-font"] = DASH_FONTS[s.font].stack; on("font"); }
+  if (s.textSize) {
+    const f = s.textSize / 100; on("text");
+    vars["--fs-xs"] = `${(12 * f).toFixed(1)}px`; vars["--fs-sm"] = `${(13 * f).toFixed(1)}px`; vars["--fs-md"] = `${(15 * f).toFixed(1)}px`; vars["--fs-lg"] = `${(17 * f).toFixed(1)}px`; vars["--fs-xl"] = `${(22 * f).toFixed(1)}px`;
+    vars["--dash-text"] = `${(14 * f).toFixed(1)}px`;
+  }
+  if (s.titleSize) { vars["--dash-title-size"] = `${s.titleSize}px`; on("title"); }
+  if (s.headingSize) { vars["--dash-heading-size"] = `${s.headingSize}px`; on("heading"); }
+  if (s.headingWeight) { vars["--dash-heading-weight"] = String(s.headingWeight); on("weight"); }
+  if (s.headingCaps) on("caps");
+  if (s.titleAlign === "center") on("center");
+  if (s.numberSize) { vars["--dash-number-scale"] = String(s.numberSize / 100); on("number"); }
+  if (s.numberColor) { vars["--dash-number-color"] = s.numberColor; on("ncolor"); }
+  if (s.radius !== undefined) { vars["--dash-radius"] = `${s.radius}px`; on("radius"); }
+  if (s.border) { on("border", s.border); }
+  if (s.borderColor) { vars["--dash-border"] = s.borderColor; on("bcolor"); }
+  if (s.shadow) { on("shadow", s.shadow); }
+  if (s.gap !== undefined) { vars["--dash-gap"] = `${s.gap}px`; on("gap"); }
+  return { vars: vars as CSSProperties, attrs };
 }
 
 const mix = (a: string, pct: number, b: string) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;

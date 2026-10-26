@@ -584,11 +584,31 @@ THEME_COLOR_KEYS = ("background", "foreground", "accent", "cardBackground", "car
 TIME_PRESETS = ("all_time", "last_7_days", "last_30_days", "last_90_days", "last_year", "custom")
 
 
+class DashboardStyle(BaseModel):
+    """Fonts and shapes for a dashboard. Everything is optional; what is not set keeps the normal look."""
+    model_config = ConfigDict(extra="forbid")
+    font: Literal["system", "humanist", "rounded", "serif", "slab", "mono"] | None = None
+    textSize: int | None = Field(None, ge=80, le=150)
+    titleSize: int | None = Field(None, ge=16, le=48)
+    headingSize: int | None = Field(None, ge=10, le=24)
+    headingWeight: Literal[400, 500, 600, 700, 800] | None = None
+    headingCaps: bool | None = None
+    titleAlign: Literal["left", "center"] | None = None
+    numberSize: int | None = Field(None, ge=70, le=200)
+    numberColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    radius: int | None = Field(None, ge=0, le=28)
+    border: Literal["none", "thin", "thick"] | None = None
+    borderColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    shadow: Literal["none", "soft", "strong"] | None = None
+    gap: int | None = Field(None, ge=4, le=28)
+
+
 class DashboardTheme(BaseModel):
     """A dashboard's look: a named preset (the frontend owns the list) plus colours the author changed."""
     model_config = ConfigDict(extra="forbid")
     preset: str = Field("light", min_length=1, max_length=24, pattern=r"^[a-z0-9_-]+$")
     overrides: dict[str, str] = Field(default_factory=dict, max_length=len(THEME_COLOR_KEYS))
+    style: DashboardStyle | None = None
 
     @field_validator("overrides")
     @classmethod

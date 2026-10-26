@@ -10,7 +10,7 @@ import {
   layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
   type Filters, type Rect, type Slice,
 } from "../lib/dashboard";
-import { DEFAULT_THEME_PRESET, resolveThemeColors, themeToCssVars } from "../lib/dashboardThemes";
+import { DEFAULT_THEME_PRESET, hasStyle, resolveThemeColors, styleToProps, themeToCssVars } from "../lib/dashboardThemes";
 import { TEMPLATES, templateWidgets, type TemplateId } from "../lib/dashboardTemplates";
 import { useAsync } from "../lib/hooks";
 import type { Dashboard, DashboardConfig, DashPage, DashTheme, FeatureStatus, Form, Feature, TimeFilter, Widget, WidgetType } from "../lib/types";
@@ -217,12 +217,13 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   }
   const togglePanel = (k: PanelKey) => { setPanel((cur) => (cur === k ? null : k)); };
   const openPanel = (k: PanelKey, tab?: ViewTab) => { if (tab) setViewTab(tab); setPanel(k); };
-  const setTheme = (theme: DashTheme) => setCfg((c) => ({ ...c, theme: theme.preset === DEFAULT_THEME_PRESET && !Object.keys(theme.overrides ?? {}).length ? undefined : theme }));
+  const setTheme = (theme: DashTheme) => setCfg((c) => ({ ...c, theme: theme.preset === DEFAULT_THEME_PRESET && !Object.keys(theme.overrides ?? {}).length && !hasStyle(theme) ? undefined : theme }));
   const setTime = (time_filter: TimeFilter | undefined) => setCfg((c) => ({ ...c, time_filter }));
 
   const hasSource = !!(page.form_id || forms.length);
   const time = loadedAt?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const themeVars = useMemo(() => themeToCssVars(resolveThemeColors(cfg.theme)), [cfg.theme]);
+  const styleProps = useMemo(() => styleToProps(cfg.theme?.style), [cfg.theme?.style]);
   const tl = timeLabel(cfg.time_filter);
   const card = (w: Widget, extra: { span: number; rows: number; col?: number; row?: number }, side = false) => (
     <WidgetCard key={w.id} w={w} span={extra.span} height={extra.rows} col={extra.col} row={extra.row} side={side} dragging={drag?.id === w.id} onGrab={(m, e) => grab(w, m, e)}
@@ -246,7 +247,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
       {panel === "time" && <TimePanel value={cfg.time_filter} canEdit={canEdit} onChange={setTime} onClose={() => setPanel(null)} />}
       </>}
 
-      <div className="dashboard-canvas-outer dash-app" style={themeVars}>
+      <div className="dashboard-canvas-outer dash-app" style={{ ...themeVars, ...styleProps.vars }} {...styleProps.attrs}>
         <header className="dashboard-canvas-header">
           {!publicView && <Link className="dashboard-header-back" to={`/dashboards?project=${projectId}`} onClick={(e) => void leave(e)} title="Back to dashboards" aria-label="Back to dashboards">←</Link>}
           <div className="dash-title"><h1>{name}</h1>{cfg.description && <p className="meta">{cfg.description}</p>}{publicView && <p className="meta">Shared from {publicView.projectName || "Geohub"}</p>}</div>

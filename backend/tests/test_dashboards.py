@@ -304,3 +304,11 @@ def test_deleting_the_dashboard_ends_the_link(project):
     d, token = _shared_dashboard(project)
     assert project.owner.delete(f"/dashboards/{d['id']}").status_code == 204
     assert project.owner.c.get(f"/public/dashboards/{token}").status_code == 404
+
+
+def test_dashboard_style_is_validated():
+    ok = DashboardConfig(pages=[PAGE], theme={"preset": "dark", "style": {"font": "serif", "textSize": 120, "border": "thin", "gap": 8}})
+    assert ok.theme.style.font == "serif" and ok.theme.style.gap == 8
+    for bad in ({"font": "comic"}, {"textSize": 300}, {"radius": -1}, {"numberColor": "red"}, {"nope": 1}):
+        with pytest.raises(Exception):
+            DashboardConfig(pages=[PAGE], theme={"preset": "dark", "style": bad})

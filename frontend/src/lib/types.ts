@@ -294,7 +294,15 @@ export interface Widget {
 export interface DashPage { id: string; title: string; form_id?: string; widgets: Widget[] }
 /** Colours of a dashboard's look. A preset (see lib/dashboardThemes.ts) plus any colours the author changed. */
 export type ThemeColorKey = "background" | "foreground" | "accent" | "cardBackground" | "cardForeground" | "headerBackground" | "headerForeground";
-export interface DashTheme { preset: string; overrides?: Partial<Record<ThemeColorKey, string>> }
+export type DashFont = "system" | "humanist" | "rounded" | "serif" | "slab" | "mono";
+/** Type and shape choices for a dashboard. Every field is optional: what is not set keeps the app's normal look. */
+export interface DashStyle {
+  font?: DashFont; textSize?: number;                       // textSize: % of normal, 80–150
+  titleSize?: number; headingSize?: number; headingWeight?: 400 | 500 | 600 | 700 | 800; headingCaps?: boolean;   // px, px
+  titleAlign?: "left" | "center"; numberSize?: number; numberColor?: string;   // numberSize: % of normal, 70–200
+  radius?: number; border?: "none" | "thin" | "thick"; borderColor?: string; shadow?: "none" | "soft" | "strong"; gap?: number;   // px
+}
+export interface DashTheme { preset: string; overrides?: Partial<Record<ThemeColorKey, string>>; style?: DashStyle }
 /** A date range every chart on the dashboard is limited to (on the date a record changed), on top of the viewer's own filters. */
 export type TimePreset = "all_time" | "last_7_days" | "last_30_days" | "last_90_days" | "last_year" | "custom";
 export interface TimeFilter { preset: TimePreset; start?: string; end?: string }

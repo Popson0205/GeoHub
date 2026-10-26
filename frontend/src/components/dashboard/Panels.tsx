@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "../ui";
 import TemplatePicker from "../TemplatePicker";
-import { DASHBOARD_THEMES, DEFAULT_THEME_PRESET, THEME_COLOR_FIELDS, resolveThemeColors } from "../../lib/dashboardThemes";
+import { DASHBOARD_THEMES, DASH_FONTS, DEFAULT_THEME_PRESET, FONT_KEYS, STYLE_LIMITS, THEME_COLOR_FIELDS, cleanStyle, resolveThemeColors } from "../../lib/dashboardThemes";
 import { TIME_PRESETS, WIDGET_LABEL, timeLabel } from "../../lib/dashboard";
 import type { TemplateId } from "../../lib/dashboardTemplates";
-import type { DashPage, DashTheme, Feature, Form, ThemeColorKey, TimeFilter, TimePreset, Widget, WidgetType } from "../../lib/types";
+import type { DashPage, DashStyle, DashTheme, Feature, Form, ThemeColorKey, TimeFilter, TimePreset, Widget, WidgetType } from "../../lib/types";
 import { ELEMENT_TYPES, ElementIcon } from "./Elements";
 import SharingTab from "./SharingPanel";
 
@@ -195,28 +195,77 @@ export function DataSourcesPanel({ forms, features, pages, pageFormId, canEdit, 
 
 // ---------- Theme ----------
 export function ThemePanel({ theme, canEdit, onChange, onClose }: { theme?: DashTheme; canEdit: boolean; onChange: (t: DashTheme) => void; onClose: () => void }) {
-  const [step, setStep] = useState<"presets" | "custom">("presets");
+  const [step, setStep] = useState<"presets" | "custom" | "style">("presets");
   const preset = theme?.preset && DASHBOARD_THEMES[theme.preset] ? theme.preset : DEFAULT_THEME_PRESET;
   const colors = resolveThemeColors(theme);
-  const setColor = (key: ThemeColorKey, value: string) => onChange({ preset, overrides: { ...theme?.overrides, [key]: value } });
+  const style: DashStyle = cleanStyle(theme?.style) ?? {};
+  const keepStyle = (t: DashTheme): DashTheme => (cleanStyle(theme?.style) ? { ...t, style: cleanStyle(theme?.style) } : t);
+  const setColor = (key: ThemeColorKey, value: string) => onChange(keepStyle({ preset, overrides: { ...theme?.overrides, [key]: value } }));
+  /** Change one style choice (undefined puts it back to the normal look). */
+  const setStyle = <K extends keyof DashStyle>(key: K, value: DashStyle[K] | undefined) => {
+    const next = { ...style }; if (value === undefined) delete next[key]; else next[key] = value;
+    const clean = cleanStyle(next);
+    onChange({ preset, ...(theme?.overrides && Object.keys(theme.overrides).length ? { overrides: theme.overrides } : {}), ...(clean ? { style: clean } : {}) });
+  };
+  const title = step === "custom" ? "Colours" : step === "style" ? "Fonts and styling" : "Theme";
+  const slider = (label: string, key: "textSize" | "titleSize" | "headingSize" | "numberSize" | "radius" | "gap", unit: string, normal: number) => {
+    const [lo, hi] = STYLE_LIMITS[key], v = style[key] ?? normal;
+    return (<label className="style-row"><span className="style-row-head">{label}<output>{style[key] === undefined ? "Normal" : `${v}${unit}`}</output></span>
+      <input type="range" min={lo} max={hi} value={v} onChange={(e) => setStyle(key, Number(e.target.value))} /></label>);
+  };
+  const choice = <K extends "headingWeight" | "border" | "shadow" | "titleAlign">(label: string, key: K, options: { value: NonNullable<DashStyle[K]> | ""; label: string }[]) => (
+    <div className="style-row"><span className="style-row-head">{label}</span>
+      <div className="style-seg" role="group" aria-label={label}>{options.map((o) => {
+        const active = (style[key] ?? "") === o.value;
+        return <button key={String(o.value)} type="button" className={active ? "is-active" : ""} aria-pressed={active} onClick={() => setStyle(key, (o.value === "" ? undefined : o.value) as DashStyle[K] | undefined)}>{o.label}</button>;
+      })}</div></div>);
+  const colour = (label: string, key: "numberColor" | "borderColor", fallback: string) => (
+    <label className="theme-color-row">{label}<span className="style-colour"><input type="color" value={style[key] ?? fallback} onChange={(e) => setStyle(key, e.target.value)} />{style[key] && <button type="button" className="link-btn" onClick={() => setStyle(key, undefined)}>Reset</button>}</span></label>);
   return (
-    <PanelShell title={step === "custom" ? "Custom theme" : "Theme"} onClose={onClose} onBack={step === "custom" ? () => setStep("presets") : undefined}>
+    <PanelShell title={title} onClose={onClose} onBack={step !== "presets" ? () => setStep("presets") : undefined}>
       {!canEdit ? <p className="meta">Read-only for your role.</p> : step === "presets" ? (<>
-        <p className="builder-hint">Pick a look for this dashboard, then change any colour you like.</p>
+        <p className="builder-hint">Pick a look for this dashboard, then change any colour, font or shape you like.</p>
         <div className="theme-preset-list">
           {Object.entries(DASHBOARD_THEMES).map(([key, t]) => (
-            <button key={key} type="button" className={`theme-preset-row${preset === key && !Object.keys(theme?.overrides ?? {}).length ? " is-active" : ""}`} aria-pressed={preset === key} onClick={() => onChange({ preset: key })}>
+            <button key={key} type="button" className={`theme-preset-row${preset === key && !Object.keys(theme?.overrides ?? {}).length ? " is-active" : ""}`} aria-pressed={preset === key} onClick={() => onChange(keepStyle({ preset: key }))}>
               <span className="theme-preset-swatch" style={{ background: t.colors.background }}><span style={{ background: t.colors.accent }} /><span style={{ background: t.colors.cardBackground }} /><span style={{ background: t.colors.headerBackground }} /></span>
               {t.label}
             </button>))}
         </div>
         <Button variant="primary" onClick={() => setStep("custom")} style={{ marginTop: 12 }}>Customize colours</Button>
-      </>) : (<>
+        <Button onClick={() => setStep("style")}>Fonts and styling</Button>
+      </>) : step === "custom" ? (<>
         {THEME_COLOR_FIELDS.map((g) => (
           <div key={g.group} className="theme-color-group"><p className="palette-group-label">{g.group}</p>
             {g.fields.map((f) => <label key={f.key} className="theme-color-row">{f.label}<input type="color" value={colors[f.key]} onChange={(e) => setColor(f.key, e.target.value)} /></label>)}
           </div>))}
-        <Button small variant="ghost" onClick={() => onChange({ preset })}>Reset to “{DASHBOARD_THEMES[preset].label}”</Button>
+        <Button small variant="ghost" onClick={() => onChange(keepStyle({ preset }))}>Reset to “{DASHBOARD_THEMES[preset].label}”</Button>
+      </>) : (<>
+        <div className="theme-color-group"><p className="palette-group-label">Text</p>
+          <label className="style-row"><span className="style-row-head">Font</span>
+            <select value={style.font ?? ""} onChange={(e) => setStyle("font", (e.target.value || undefined) as DashStyle["font"])} style={style.font ? { fontFamily: DASH_FONTS[style.font].stack } : undefined}>
+              <option value="">Normal</option>
+              {FONT_KEYS.map((k) => <option key={k} value={k} style={{ fontFamily: DASH_FONTS[k].stack }}>{DASH_FONTS[k].label}</option>)}
+            </select></label>
+          {slider("Text size", "textSize", "%", 100)}
+          {slider("Dashboard title size", "titleSize", "px", 22)}
+          {slider("Element title size", "headingSize", "px", 14)}
+          {choice("Element title weight", "headingWeight", [{ value: "", label: "Normal" }, { value: 500, label: "Medium" }, { value: 600, label: "Semi" }, { value: 700, label: "Bold" }, { value: 800, label: "Black" }])}
+          <label className="check-row"><input type="checkbox" checked={!!style.headingCaps} onChange={(e) => setStyle("headingCaps", e.target.checked ? true : undefined)} />Element titles in capitals</label>
+          {choice("Dashboard title", "titleAlign", [{ value: "", label: "Left" }, { value: "center", label: "Centre" }])}
+        </div>
+        <div className="theme-color-group"><p className="palette-group-label">Numbers</p>
+          {slider("Big number size", "numberSize", "%", 100)}
+          {colour("Big number colour", "numberColor", colors.accent)}
+        </div>
+        <div className="theme-color-group"><p className="palette-group-label">Elements</p>
+          {slider("Corner roundness", "radius", "px", 10)}
+          {choice("Border", "border", [{ value: "", label: "Normal" }, { value: "none", label: "None" }, { value: "thin", label: "Thin" }, { value: "thick", label: "Thick" }])}
+          {colour("Border colour", "borderColor", colors.cardForeground)}
+          {choice("Shadow", "shadow", [{ value: "", label: "Normal" }, { value: "none", label: "None" }, { value: "soft", label: "Soft" }, { value: "strong", label: "Strong" }])}
+          {slider("Space between elements", "gap", "px", 12)}
+        </div>
+        <Button small variant="ghost" onClick={() => onChange({ preset, ...(theme?.overrides && Object.keys(theme.overrides).length ? { overrides: theme.overrides } : {}) })}>Reset fonts and styling</Button>
       </>)}
     </PanelShell>
   );

@@ -201,3 +201,33 @@
 @keyframes dash-aside-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dashboard-canvas-outer .dash-aside { animation: none; } }
 @media print { .dashboard-canvas-outer .dash-aside { display: none !important; } }
+
+/* ---- fonts and styling: each rule only applies when the author set that choice (its data-s-* switch is on the canvas) ---- */
+.dash-app[data-s-font], .dash-app[data-s-font] :is(button, input, select, textarea, h1, h2, h3, h4) { font-family: var(--dash-font); }
+.dash-app[data-s-text] { font-size: var(--dash-text); }
+.dash-app[data-s-title] .dashboard-canvas-header h1 { font-size: var(--dash-title-size); line-height: 1.15; }
+.dash-app[data-s-center] .dashboard-canvas-header .dash-title { justify-content: center; text-align: center; }
+.dash-app[data-s-heading] .widget-head h3 { font-size: var(--dash-heading-size); }
+.dash-app[data-s-weight] .widget-head h3 { font-weight: var(--dash-heading-weight); }
+.dash-app[data-s-caps] .widget-head h3 { text-transform: uppercase; letter-spacing: .06em; }
+.dash-app[data-s-number] :is(.kpi-value, .gauge-value) { zoom: var(--dash-number-scale); }
+.dash-app[data-s-ncolor] :is(.kpi-value, .gauge-value) { color: var(--dash-number-color) !important; }
+.dash-app[data-s-radius] .widget, .dash-app[data-s-radius] .dash-bar > .dash-filters { border-radius: var(--dash-radius); }
+.dash-app[data-s-border="none"] .widget { border-width: 0; }
+.dash-app[data-s-border="thin"] .widget { border: 1px solid var(--dash-border, var(--line)); }
+.dash-app[data-s-border="thick"] .widget { border: 3px solid var(--dash-border, var(--line)); }
+.dash-app[data-s-bcolor] .widget { border-color: var(--dash-border); }
+.dash-app[data-s-shadow="none"] .widget { box-shadow: none; }
+.dash-app[data-s-shadow="soft"] .widget { box-shadow: 0 2px 8px rgba(15, 20, 40, .10); }
+.dash-app[data-s-shadow="strong"] .widget { box-shadow: 0 8px 24px rgba(15, 20, 40, .28); }
+.dash-app[data-s-gap] :is(.dash-grid, .dash-side-col, .dash-body) { gap: var(--dash-gap); }
+/* the styling controls */
+.style-row { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+.style-row-head { display: flex; justify-content: space-between; align-items: center; }
+.style-row-head output { color: var(--muted); font-size: var(--fs-xs); }
+.style-row input[type="range"] { width: 100%; accent-color: var(--dapp); }
+.style-seg { display: flex; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.style-seg button { flex: 1; padding: 6px 4px; border: 0; border-right: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.style-seg button:last-child { border-right: 0; }
+.style-seg button.is-active { background: var(--dapp); color: #fff; }
+.style-colour { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }

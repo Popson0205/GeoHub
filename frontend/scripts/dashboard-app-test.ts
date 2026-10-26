@@ -3,7 +3,7 @@ import {
   autoLayout, buildSources, dashboardFields, isManualLayout, layoutRects, newWidget, noFilters, normalizeConfig, parseRich, placeAll, safeEmbedUrl, setRegion, setWidgetRect,
   timeRange, widgetData, widgetProblem, withTimeRange, cleanTimeFilter,
 } from "../src/lib/dashboard";
-import { DASHBOARD_THEMES, cleanTheme, resolveThemeColors, themeToCssVars } from "../src/lib/dashboardThemes";
+import { DASHBOARD_THEMES, cleanStyle, cleanTheme, resolveThemeColors, styleToProps, themeToCssVars } from "../src/lib/dashboardThemes";
 import { buildReport } from "../src/lib/dashboardReport";
 import type { Dashboard, Feature, Form, Widget } from "../src/lib/types";
 
@@ -113,3 +113,12 @@ const short = buildReport({ projectName: "Proj", dashboards: [dash], forms: [for
 ok(short.dashboards[0].pages[0].elements.every((e) => e.type !== "table") && short.dashboards[0].pages[0].elements.length === 3, "a short report leaves out record tables");
 const lost = buildReport({ projectName: "Proj", dashboards: [dash], forms: [], features: [], now });
 ok(lost.dashboards[0].pages[0].elements.some((e) => e.data.kind === "problem"), "a report on a removed form says so instead of failing");
+
+// ---- fonts and styling ----
+const st = cleanStyle({ font: "serif", textSize: 500, titleSize: 30, headingWeight: 700, radius: 4, border: "thin", gap: 8, evil: 1, numberColor: "red", shadow: "huge" });
+ok(st?.font === "serif" && st.textSize === 150 && st.titleSize === 30 && st.radius === 4 && st.border === "thin" && st.gap === 8, "style keeps real choices and clamps sizes");
+ok(st && !("evil" in st) && st.numberColor === undefined && st.shadow === undefined, "style drops unknown keys, bad colours and bad options");
+ok(cleanStyle({ textSize: 100 }) === undefined && cleanStyle(null) === undefined, "normal values are not stored");
+ok(cleanTheme({ preset: "dark", style: { font: "mono" } })?.style?.font === "mono", "a theme keeps its style");
+const sp = styleToProps({ font: "mono", radius: 0, border: "none" });
+ok(sp.attrs["data-s-font"] === "1" && sp.attrs["data-s-radius"] === "1" && sp.attrs["data-s-border"] === "none" && !("data-s-gap" in sp.attrs), "only the chosen styles get a switch");
