@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BuilderSidebar, AddElementPanel, DataSourcesPanel, EmptyCanvas, ThemePanel, TimePanel, ViewPanel, type PanelKey, type ViewTab } from "../components/dashboard/Panels";
 import { WidgetCard } from "../components/dashboard/WidgetCard";
@@ -7,7 +7,7 @@ import { Button, ErrorState, Loading, useConfirm, useToast } from "../components
 import { loadApi } from "../lib/api";
 import {
   STATUS_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, dashboardFields, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isStatic,
-  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
+  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, totalRows, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
   type Filters, type Rect, type Slice,
 } from "../lib/dashboard";
 import { DEFAULT_THEME_PRESET, resolveThemeColors, themeToCssVars } from "../lib/dashboardThemes";
@@ -85,6 +85,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const statusCounts = useMemo(() => { const c: Partial<Record<FeatureStatus, number>> = {}; for (const s of sources.values()) for (const f of s.base) c[f.status] = (c[f.status] ?? 0) + 1; return c; }, [sources]);
   const manual = isManualLayout(page.widgets);
   const placed = useMemo(() => placeAll(page.widgets, drag?.rects), [page.widgets, drag]);
+  const gridRows = useMemo(() => totalRows(placed), [placed]);
   const sideWidgets = useMemo(() => page.widgets.filter(inSidebar), [page.widgets]);
   const rectOfSel = useMemo(() => (selected ? layoutRects(page.widgets).get(selected) : undefined), [page.widgets, selected]);
   const sel = page.widgets.find((w) => w.id === selected) ?? null;
@@ -115,7 +116,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     e.preventDefault(); e.stopPropagation(); setSelected(w.id);
     if (!canDrag()) { toast("Dragging needs a wider screen. Use the Left / Top / Wide / Tall boxes in the element settings instead.", "info"); return; }
     const grid = gridRef.current, cs = getComputedStyle(grid);
-    const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = parseFloat(cs.gridAutoRows) || 64;
+    const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = (grid.clientHeight - gapY * (gridRows - 1)) / gridRows || 64;   // rows stretch to fill the screen
     const stepX = (grid.clientWidth - gapX * (GRID_COLUMNS - 1)) / GRID_COLUMNS + gapX, stepY = rowH + gapY;
     const rects = layoutRects(page.widgets), start = rects.get(w.id);
     if (!start) return;
@@ -277,7 +278,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         <h2 className="print-only">{page.title}</h2>
         {page.widgets.length === 0
           ? <EmptyCanvas canEdit={canEdit} onPick={add} onPanel={openPanel} />
-          : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`}>
+          : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`} style={{ "--rows": gridRows } as CSSProperties}>
             <div className={`dash-body${sideWidgets.length ? " has-side" : ""}`}>
               <div className={`dash-grid${drag ? " is-dragging" : ""}`} ref={gridRef}>
                 {placed.map(({ w, span, rows, col, row }) => card(w, { span, rows, col, row }))}

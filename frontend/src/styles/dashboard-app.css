@@ -177,3 +177,25 @@
 .share-link input { flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: var(--fs-xs); }
 .share-rules ul { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--n-700); }
 .public-dash-error { max-width: 520px; padding-block: 12vh; text-align: center; }
+
+/* ---- one screen: on a desktop-width window the dashboard fits the window, with no page scrolling ----------------
+   The grid's rows stretch to share the height left under the header and filters (--rows is set by the page), so the
+   whole dashboard is visible at once in the builder and in a shared link. A table or list that holds more than its
+   card can show scrolls inside its own card. Below the 1101px breakpoint (phones, small windows) the page flows
+   and scrolls as before, so nothing becomes unreadably small. */
+@media (min-width: 1101px) {
+  .dashboard-canvas-outer { overflow: hidden; padding-bottom: var(--s-3); }
+  .dashboard-canvas-outer .dash-layout { flex: 1; min-height: 0; height: 100%; grid-template-rows: minmax(0, 1fr); }
+  .dashboard-canvas-outer .dash-layout > .dash-body { height: 100%; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
+  .dashboard-canvas-outer .dash-grid { height: 100%; min-height: 0; grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); }
+  .dashboard-canvas-outer .dash-grid > .widget, .dashboard-canvas-outer .dash-side-col > .widget { min-height: 0; height: auto; overflow: hidden; }
+  .dashboard-canvas-outer .dash-side-col { height: 100%; min-height: 0; }
+  .dashboard-canvas-outer .widget.is-side { flex: var(--h, 4) 1 0; height: auto; }
+  .dashboard-canvas-outer .widget .widget-body { min-height: 0; }
+  .dashboard-canvas-outer .widget .widget-body > * { max-height: 100%; }
+}
+/* A very short window would squash the rows to nothing, so below this height the canvas scrolls rather than shrinks. */
+@media (min-width: 1101px) and (max-height: 640px) {
+  .dashboard-canvas-outer { overflow: auto; }
+  .dashboard-canvas-outer .dash-layout { min-height: calc(var(--rows, 1) * 48px); }
+}

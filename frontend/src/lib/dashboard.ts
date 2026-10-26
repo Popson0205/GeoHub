@@ -431,6 +431,17 @@ export function placeAll(widgets: Widget[], override?: Map<string, Rect>): Place
     .sort((a, b) => a.row! - b.row! || a.col! - b.col!);   // reading order, so a phone shows them in a sensible sequence
 }
 
+/** How many grid rows a page's body needs, so the grid can stretch those rows to fill the screen exactly. */
+export function totalRows(placed: Placed[]): number {
+  let col = 0, row = 0, tall = 0, max = 1;
+  for (const p of placed) {
+    if (p.col != null && p.row != null) { max = Math.max(max, p.row + p.rows); continue; }
+    max = Math.max(max, row + p.rows); col += p.span; tall = Math.max(tall, p.rows);
+    if (col >= GRID_COLUMNS) { col = 0; row += tall; tall = 0; }
+  }
+  return max;
+}
+
 // ---------- pages ----------
 export const MAX_PAGES = 12;
 export const MAX_WIDGETS_PER_PAGE = 30;
