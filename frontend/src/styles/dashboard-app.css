@@ -231,3 +231,30 @@
 .style-seg button:last-child { border-right: 0; }
 .style-seg button.is-active { background: var(--dapp); color: #fff; }
 .style-colour { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+
+/* ---- layout: the filters sit in the header, and the dashboard gets the rest of the window ---- */
+.dashboard-canvas-outer { padding: 0 var(--s-3) var(--s-3); }
+.dashboard-canvas-header { margin: 0 calc(var(--s-3) * -1) var(--s-3); padding: 8px var(--s-3); gap: var(--s-4); flex-wrap: wrap; min-height: 56px; box-shadow: none; border-bottom: 1px solid color-mix(in srgb, var(--dash-head-fg, currentColor) 18%, transparent); }
+.dashboard-canvas-header .dash-title { flex: 1 1 220px; min-width: 0; flex-wrap: nowrap; }
+.dashboard-canvas-header .dash-title h1 { font-size: var(--fs-xl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dashboard-canvas-header .dash-title .meta { display: none; }
+.dashboard-canvas-header .dash-filters { display: flex; flex: 0 1 auto; align-items: flex-end; gap: var(--s-3); flex-wrap: wrap; margin: 0; padding: 0; background: transparent; border: 0; box-shadow: none; color: inherit; }
+.dashboard-canvas-header .dash-filters > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dashboard-canvas-header .dash-filters label { font-size: var(--fs-xs); opacity: .75; color: inherit; margin: 0; }
+.dashboard-canvas-header .dash-filters :is(select, input) { height: 30px; padding: 2px 8px; font-size: var(--fs-sm); color: inherit; background: color-mix(in srgb, var(--dash-head-fg, currentColor) 10%, transparent); border: 1px solid color-mix(in srgb, var(--dash-head-fg, currentColor) 30%, transparent); border-radius: var(--r-sm, 6px); color-scheme: light dark; }
+.dashboard-canvas-header .dash-filters select option { color: #111; background: #fff; }
+.dashboard-canvas-header .dash-filters .count { align-self: center; font-size: var(--fs-xs); opacity: .7; white-space: nowrap; }
+.dashboard-canvas-header .dash-filters .chip-x { color: inherit; }
+.dashboard-canvas-header .dash-actions { display: flex; align-items: center; gap: var(--s-2); flex: none; }
+.dashboard-canvas-header .dash-actions .meta { display: none; }
+.dashboard-canvas-header .dashboard-header-btn { padding: 4px 10px; }
+.dashboard-canvas-outer .dash-bar { margin: 0 0 var(--s-2); padding: 0; }
+@media (min-width: 1101px) { .dashboard-canvas-outer { padding-bottom: var(--s-2); } }
+@media (min-width: 901px) {
+  .dashboard-builder { position: relative; }
+  .dashboard-sidebar.is-collapsed { width: 52px; }
+  .dashboard-sidebar.is-collapsed .dashboard-sidebar-item { padding-inline: 14px; }
+  /* the builder's panels float over the dashboard instead of pushing it aside */
+  .dashboard-builder > .dashboard-side-panel { position: absolute; top: 8px; bottom: 8px; left: calc(var(--rail, 52px) + 8px); z-index: 70; width: 320px; border: 1px solid var(--line); border-radius: var(--r-lg, 12px); box-shadow: 0 18px 48px rgba(15, 20, 40, .28), 0 2px 8px rgba(15, 20, 40, .12); animation: dash-aside-in .18s ease-out; }
+  .dashboard-sidebar:not(.is-collapsed) ~ .dashboard-side-panel { --rail: 196px; }
+}

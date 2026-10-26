@@ -53,7 +53,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [saved, setSaved] = useState(false);
   const [panel, setPanel] = useState<PanelKey | null>(null);
   const [viewTab, setViewTab] = useState<ViewTab>("body");
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);   // a slim icon rail by default, so the dashboard gets the room
   const [drag, setDrag] = useState<{ id: string; rects: Map<string, Rect> } | null>(null);   // the layout while a chart is being dragged
   const gridRef = useRef<HTMLDivElement>(null);
   // "Fit to screen": on a desktop-width window the whole page is scaled down to fit under the header, so it never scrolls.
@@ -251,23 +251,6 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         <header className="dashboard-canvas-header">
           {!publicView && <Link className="dashboard-header-back" to={`/dashboards?project=${projectId}`} onClick={(e) => void leave(e)} title="Back to dashboards" aria-label="Back to dashboards">←</Link>}
           <div className="dash-title"><h1>{name}</h1>{cfg.description && <p className="meta">{cfg.description}</p>}{publicView && <p className="meta">Shared from {publicView.projectName || "Geohub"}</p>}</div>
-          <div className="dash-actions">
-            {time && <span className="meta">Data as of {time}</span>}
-            {canEdit && !publicView && <button type="button" className="dashboard-header-btn" onClick={() => openPanel("view", "sharing")}>Share{dashboard.shared ? " ·  Public" : ""}</button>}
-            <button type="button" className="dashboard-header-btn" onClick={onRefresh}>Refresh data</button>
-            <button type="button" className="dashboard-header-btn" onClick={() => window.print()}>Print / PDF</button>
-          </div>
-        </header>
-
-        <div className="dash-bar">
-          {(cfg.pages.length > 1 || editing) && (
-            <nav className="dash-tabs" aria-label="Dashboard pages">
-              {cfg.pages.map((p) => (
-                <Link key={p.id} to={{ search: pageSearch(p.id) }} className={`dash-tab${p.id === page.id ? " is-active" : ""}`} aria-current={p.id === page.id ? "page" : undefined}>{p.title || "Untitled page"}</Link>
-              ))}
-              {editing && <Button small onClick={addPage} disabled={cfg.pages.length >= MAX_PAGES}>+ Add page</Button>}
-            </nav>
-          )}
           <div className="dash-filters" aria-label="Filters">
             <div><label htmlFor="fstatus">Review status</label>
               <select id="fstatus" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value as Filters["status"] })}>
@@ -283,7 +266,23 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             {tl && <span className="chip-x is-static" title="Set in Time and region">{tl}</span>}
             <span className="count">{shown === total ? `${total} records` : `${shown} of ${total} records`}</span>
           </div>
-        </div>
+          <div className="dash-actions">
+            {time && <span className="meta">Data as of {time}</span>}
+            {canEdit && !publicView && <button type="button" className="dashboard-header-btn" onClick={() => openPanel("view", "sharing")}>Share{dashboard.shared ? " ·  Public" : ""}</button>}
+            <button type="button" className="dashboard-header-btn" onClick={onRefresh}>Refresh data</button>
+            <button type="button" className="dashboard-header-btn" onClick={() => window.print()}>Print / PDF</button>
+          </div>
+        </header>
+
+        {(cfg.pages.length > 1 || editing) && (
+          <div className="dash-bar">
+            <nav className="dash-tabs" aria-label="Dashboard pages">
+              {cfg.pages.map((p) => (
+                <Link key={p.id} to={{ search: pageSearch(p.id) }} className={`dash-tab${p.id === page.id ? " is-active" : ""}`} aria-current={p.id === page.id ? "page" : undefined}>{p.title || "Untitled page"}</Link>
+              ))}
+              {editing && <Button small onClick={addPage} disabled={cfg.pages.length >= MAX_PAGES}>+ Add page</Button>}
+            </nav>
+          </div>)}
         {editing && page.widgets.length > 0 && (
           <div className="dash-hintbar">
             <small className="meta dash-hint">Drag an element by its title bar to move it, and by its edge or corner to resize it. Press Save in the toolbar to keep your changes.</small>
