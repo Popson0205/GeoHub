@@ -100,7 +100,7 @@ export function LineChart({ data, active, onPick, bucket }: { data: Slice[]; act
             {...(onPick ? { onClick: () => onPick(d), role: "button", "aria-pressed": isOn(active, d.key), "aria-label": `Filter to ${d.label}`,
               // A long series stays mouse-only so the keyboard is not asked to stop on a hundred points.
               tabIndex: data.length <= 24 ? 0 : undefined, onKeyDown: (e: ReactKeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(d); } } } : {})}>
-            <title>{`${d.label}: ${fmt(d.value)}${onPick ? ` (click to filter to this ${bucket ?? "point"})` : ""}`}</title></circle>
+            <title>{`${d.label}: ${fmt(d.value)}${onPick ? " (click to filter to this ${bucket ?? "point"})" : ""}`}</title></circle>
           {i % every === 0 && <text x={x(i)} y={H - 8} textAnchor="middle" className="axis">{d.label}</text>}
         </g>
       ))}
