@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BuilderSidebar, AddElementPanel, DataSourcesPanel, EmptyCanvas, ThemePanel, TimePanel, ViewPanel, type PanelKey, type ViewTab } from "../components/dashboard/Panels";
 import { WidgetCard } from "../components/dashboard/WidgetCard";
@@ -7,7 +7,7 @@ import { Button, ErrorState, Loading, useConfirm, useToast } from "../components
 import { loadApi } from "../lib/api";
 import {
   STATUS_LABEL, MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, dashboardFields, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isStatic,
-  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, totalRows, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
+  layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, withRects, withTimeRange,
   type Filters, type Rect, type Slice,
 } from "../lib/dashboard";
 import { DEFAULT_THEME_PRESET, resolveThemeColors, themeToCssVars } from "../lib/dashboardThemes";
@@ -56,7 +56,24 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [collapsed, setCollapsed] = useState(false);
   const [drag, setDrag] = useState<{ id: string; rects: Map<string, Rect> } | null>(null);   // the layout while a chart is being dragged
   const gridRef = useRef<HTMLDivElement>(null);
+  // "Fit to screen": on a desktop-width window the whole page is scaled down to fit under the header, so it never scrolls.
+  const stageRef = useRef<HTMLDivElement>(null), innerRef = useRef<HTMLDivElement>(null), fitRef = useRef(1);
+  const [fit, setFit] = useState(1);
   const editing = canEdit && !publicView;
+  useLayoutEffect(() => {
+    const stage = stageRef.current, inner = innerRef.current;
+    if (!stage || !inner || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const wide = window.matchMedia("(min-width: 1101px)").matches;
+      const next = wide && inner.offsetHeight > 0 && stage.clientHeight > 0 ? Math.min(1, Math.max(0.3, stage.clientHeight / inner.offsetHeight)) : 1;
+      const r = Math.floor(next * 1000) / 1000;
+      if (Math.abs(r - fitRef.current) > 0.002) { fitRef.current = r; setFit(r); }
+    };
+    measure();
+    const ro = new ResizeObserver(measure); ro.observe(stage); ro.observe(inner);
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, [page.id, page.widgets.length === 0]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = JSON.stringify({ name, cfg }) !== snapshot;
   useEffect(() => {
@@ -85,7 +102,6 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const statusCounts = useMemo(() => { const c: Partial<Record<FeatureStatus, number>> = {}; for (const s of sources.values()) for (const f of s.base) c[f.status] = (c[f.status] ?? 0) + 1; return c; }, [sources]);
   const manual = isManualLayout(page.widgets);
   const placed = useMemo(() => placeAll(page.widgets, drag?.rects), [page.widgets, drag]);
-  const gridRows = useMemo(() => totalRows(placed), [placed]);
   const sideWidgets = useMemo(() => page.widgets.filter(inSidebar), [page.widgets]);
   const rectOfSel = useMemo(() => (selected ? layoutRects(page.widgets).get(selected) : undefined), [page.widgets, selected]);
   const sel = page.widgets.find((w) => w.id === selected) ?? null;
@@ -116,14 +132,14 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     e.preventDefault(); e.stopPropagation(); setSelected(w.id);
     if (!canDrag()) { toast("Dragging needs a wider screen. Use the Left / Top / Wide / Tall boxes in the element settings instead.", "info"); return; }
     const grid = gridRef.current, cs = getComputedStyle(grid);
-    const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = (grid.clientHeight - gapY * (gridRows - 1)) / gridRows || 64;   // rows stretch to fill the screen
+    const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = parseFloat(cs.gridAutoRows) || 64;
     const stepX = (grid.clientWidth - gapX * (GRID_COLUMNS - 1)) / GRID_COLUMNS + gapX, stepY = rowH + gapY;
     const rects = layoutRects(page.widgets), start = rects.get(w.id);
     if (!start) return;
     const x0 = e.clientX, y0 = e.clientY;
     let latest: Map<string, Rect> | null = null;
     const onMove = (ev: PointerEvent) => {
-      const dc = Math.round((ev.clientX - x0) / stepX), dr = Math.round((ev.clientY - y0) / stepY);
+      const dc = Math.round((ev.clientX - x0) / fitRef.current / stepX), dr = Math.round((ev.clientY - y0) / fitRef.current / stepY);
       const want: Rect = mode === "move" ? { ...start, col: start.col + dc, row: start.row + dr }
         : { ...start, cols: mode === "s" ? start.cols : start.cols + dc, rows: mode === "e" ? start.rows : start.rows + dr };
       latest = arrangeRects(rects, w.id, want);
@@ -278,12 +294,16 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         <h2 className="print-only">{page.title}</h2>
         {page.widgets.length === 0
           ? <EmptyCanvas canEdit={canEdit} onPick={add} onPanel={openPanel} />
-          : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`} style={{ "--rows": gridRows } as CSSProperties}>
+          : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`}>
+            <div className="dash-stage" ref={stageRef}>
+            <div className="dash-stage-inner" ref={innerRef} style={{ "--fit": fit } as CSSProperties}>
             <div className={`dash-body${sideWidgets.length ? " has-side" : ""}`}>
               <div className={`dash-grid${drag ? " is-dragging" : ""}`} ref={gridRef}>
                 {placed.map(({ w, span, rows, col, row }) => card(w, { span, rows, col, row }))}
               </div>
               {sideWidgets.length > 0 && <div className="dash-side-col" aria-label="Side column">{sideWidgets.map((w) => card(w, { span: 12, rows: 4 }, true))}</div>}
+            </div>
+            </div>
             </div>
             {editing && sel && (
               <WidgetSettings w={sel} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={(sourceOf(sel)?.defs) ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
