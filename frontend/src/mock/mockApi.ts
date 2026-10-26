@@ -1,5 +1,6 @@
 import { ApiError, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
+import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
@@ -14,7 +15,7 @@ import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects, seed
 
 type Row = Feature & { seq: number };
 interface State {
-  dashboards?: Dashboard[]; projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
+  dashboards?: Dashboard[]; dashboardLinks?: Record<string, string>; projects: Project[]; forms: Form[]; features: Row[]; imagery: ImageryAsset[]; datasets: Dataset[]; seq: number;
   sharing?: Record<string, { share_mode: ShareMode; share_token: string }>;
   members?: Record<string, ProjectMember[]>;
   maps?: MockMap[]; mapFeatures?: MockFeat[];
@@ -106,13 +107,14 @@ export class MockApi implements Api {
 
   // ---- dashboards ----
   private get dashboards(): Dashboard[] { return (this.s.dashboards ??= []); }
-  async listDashboards(projectId: string) { await wait(60); this.auth(); return this.dashboards.filter((d) => d.project_id === projectId).map((d) => ({ ...d, config: normalizeConfig(d.config) })); }
+  private get links(): Record<string, string> { return (this.s.dashboardLinks ??= {}); }      // dashboard id -> public token
+  async listDashboards(projectId: string) { await wait(60); this.auth(); return this.dashboards.filter((d) => d.project_id === projectId).map((d) => ({ ...d, config: normalizeConfig(d.config), shared: !!this.links[d.id] })); }
   async getDashboard(id: string) {
     await wait(60); this.auth();
     const d = this.dashboards.find((x) => x.id === id);
     if (!d) throw new ApiError(404, "Dashboard not found.");
     d.config = normalizeConfig(d.config);          // a copy saved before pages existed still opens
-    return d;
+    return { ...d, shared: !!this.links[d.id] };
   }
   async createDashboard(projectId: string, name: string, config: DashboardConfig = normalizeConfig(null)) {
     await wait(); this.auth();
@@ -122,11 +124,31 @@ export class MockApi implements Api {
   }
   async saveDashboard(p: Pick<Dashboard, "id" | "name" | "config">) {
     await wait(); this.auth();
-    const d = await this.getDashboard(p.id);
+    await this.getDashboard(p.id);                                  // 404 if it is gone
+    const d = this.dashboards.find((x) => x.id === p.id)!;           // the stored one: getDashboard hands out a copy
     d.name = p.name; d.config = p.config; d.updated_at = new Date().toISOString(); this.save();
-    return d;
+    return { ...d, shared: !!this.links[d.id] };
   }
-  async deleteDashboard(id: string) { await wait(); this.auth(); this.s.dashboards = this.dashboards.filter((d) => d.id !== id); this.save(); }
+  async deleteDashboard(id: string) { await wait(); this.auth(); this.s.dashboards = this.dashboards.filter((d) => d.id !== id); delete this.links[id]; this.save(); }
+  async getDashboardSharing(id: string) { await wait(60); this.auth(); await this.getDashboard(id); return { public: !!this.links[id], share_token: this.links[id] ?? null }; }
+  async setDashboardSharing(id: string, patch: { public?: boolean; regenerate_link?: boolean }) {
+    await wait(); this.auth(); await this.getDashboard(id);
+    const cur = this.links[id], fresh = () => uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
+    if (patch.public === false) delete this.links[id];
+    else if (patch.public === true || (cur && patch.regenerate_link)) { if (!cur || patch.regenerate_link) this.links[id] = fresh(); }
+    else if (patch.regenerate_link) throw new ApiError(409, "Turn the public link on first.");
+    this.save();
+    return { public: !!this.links[id], share_token: this.links[id] ?? null };
+  }
+  async getPublicDashboard(token: string) {
+    await wait();
+    const id = Object.keys(this.links).find((k) => this.links[k] === token);
+    const d = id && this.dashboards.find((x) => x.id === id);
+    if (!d) throw new ApiError(404, "This dashboard link is not valid, or it is no longer shared.");
+    const project = this.s.projects.find((p) => p.id === d.project_id);
+    return publicDashboard({ token, dashboard: { ...d, config: normalizeConfig(d.config) }, projectName: project?.name ?? "",
+      forms: this.s.forms.filter((f) => f.project_id === d.project_id), features: this.s.features.filter((f) => f.project_id === d.project_id).map((r) => this.strip(r)) });
+  }
 
   async listFeatures(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted).map((r) => this.strip(r)); }
   async createFeature(nf: NewFeature) {

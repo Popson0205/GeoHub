@@ -1,10 +1,11 @@
+import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
 import type {
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  Dashboard, DashboardConfig, ImportOptions,
+  Dashboard, DashboardConfig, DashboardSharing, ImportOptions, PublicDashboard,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
@@ -38,6 +39,11 @@ export interface Api {
   createDashboard(projectId: string, name: string, config?: DashboardConfig): Promise<Dashboard>;
   saveDashboard(d: Pick<Dashboard, "id" | "name" | "config">): Promise<Dashboard>;
   deleteDashboard(id: string): Promise<void>;
+  /** The public link of a dashboard (administrators only). `public: true` issues a link, `false` deletes it for good. */
+  getDashboardSharing(id: string): Promise<DashboardSharing>;
+  setDashboardSharing(id: string, patch: { public?: boolean; regenerate_link?: boolean }): Promise<DashboardSharing>;
+  /** A dashboard by its public link. No sign-in needed. */
+  getPublicDashboard(token: string): Promise<PublicDashboard>;
 
   listFeatures(projectId: string): Promise<Feature[]>;
   createFeature(f: NewFeature): Promise<Feature>;
@@ -210,7 +216,7 @@ function flattenFields(fields?: Record<string, string[] | string> | null, detail
 
 /** The API sends nulls for unset options and the app uses undefined; these two functions are the only place that differs. */
 function toDashboard(w: Wire): Dashboard {
-  return { id: w.id, project_id: w.project_id, name: w.name, updated_at: w.updated_at, config: normalizeConfig(w.config) };
+  return { id: w.id, project_id: w.project_id, name: w.name, updated_at: w.updated_at, config: normalizeConfig(w.config), shared: w.shared === true };
 }
 function toWireConfig(c: DashboardConfig) {
   return {
@@ -326,6 +332,16 @@ class HttpApi implements Api {
     return toDashboard(await this.req("PATCH", `/dashboards/${d.id}`, { name: d.name, config: toWireConfig(d.config) }));
   }
   async deleteDashboard(id: string) { await this.req("DELETE", `/dashboards/${id}`); }
+  async getDashboardSharing(id: string) { return this.req<DashboardSharing>("GET", `/dashboards/${id}/sharing`); }
+  async setDashboardSharing(id: string, patch: { public?: boolean; regenerate_link?: boolean }) { return this.req<DashboardSharing>("PATCH", `/dashboards/${id}/sharing`, patch); }
+  async getPublicDashboard(token: string): Promise<PublicDashboard> {
+    const w = await this.req<Wire>("GET", `/public/dashboards/${encodeURIComponent(token)}`);
+    return {
+      token: w.token, name: w.name, project_name: w.project_name, updated_at: w.updated_at, truncated: w.truncated === true, config: normalizeConfig(w.config),
+      forms: (w.forms as Wire[]).map((f) => toForm({ ...f, status: "published" })),
+      features: (w.features as Wire[]).map((f): Feature => ({ id: f.id, project_id: "", form_id: f.form_id, form_version: 0, geometry: f.geometry ?? NO_LOCATION, properties: f.properties ?? {}, status: "approved", version: 0, updated_at: f.updated_at })),
+    };
+  }
 
   async listFeatures(projectId: string) {
     const out: Feature[] = [];

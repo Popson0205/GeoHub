@@ -1,4 +1,6 @@
 """Dashboards: saved pages of charts. Who may see and change them, and what a layout may contain."""
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
@@ -194,3 +196,111 @@ def test_strangers_cannot_see_them_and_forms_must_belong_to_the_project(project,
     # a form slipped into a single chart is checked too, not just the page's own form
     r = o.post(f"/projects/{project.id}/dashboards", json={"name": "Bad", "config": {"pages": [{**PAGE, "widgets": [{**W, "form_id": other_form}]}]}})
     assert r.status_code == 422
+
+
+# ---- share by link ----
+def _record(project, props, decision="approved", geometry=None):
+    fid = str(uuid.uuid4())
+    r = project.owner.post(f"/projects/{project.id}/features", json={
+        "id": fid, "form_id": project.form_id, "geometry": geometry or {"type": "Point", "coordinates": [3.39, 6.52]}, "properties": props})
+    assert r.status_code == 201, r.text
+    if decision:
+        assert project.owner.post(f"/features/{fid}/review", json={"decision": decision}).status_code == 200
+    return fid
+
+
+def _shared_dashboard(project, widgets=None):
+    o = project.owner
+    widgets = widgets or [{"id": "w1", "type": "bar", "field": "type"}]
+    d = o.post(f"/projects/{project.id}/dashboards", json={"name": "Public one", "config": {"pages": [
+        {"id": "p", "title": "Overview", "form_id": project.form_id, "widgets": widgets}]}}).json()
+    link = o.patch(f"/dashboards/{d['id']}/sharing", json={"public": True}).json()
+    return d, link["share_token"]
+
+
+def test_a_dashboard_is_private_until_shared(project):
+    o = project.owner
+    d = o.post(f"/projects/{project.id}/dashboards", json={"name": "Mine"}).json()
+    assert d["shared"] is False
+    assert o.get(f"/dashboards/{d['id']}/sharing").json() == {"public": False, "share_token": None}
+    assert o.c.get("/public/dashboards/not-a-real-token").status_code == 404
+
+
+def test_the_public_link_shows_only_approved_records_and_only_the_fields_used(project):
+    o = project.owner
+    _record(project, {"type": "Clinic", "beds": 5, "services": ["ER"]})
+    _record(project, {"type": "Hospital", "beds": 90}, decision=None)                  # still waiting for review
+    _record(project, {"type": "Pharmacy", "beds": 2}, decision="rejected")
+    d, token = _shared_dashboard(project)
+    r = o.c.get(f"/public/dashboards/{token}")                                         # no sign-in
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert r.headers["cache-control"] == "no-store" and "noindex" in r.headers["x-robots-tag"]
+    assert [f["properties"] for f in body["features"]] == [{"type": "Clinic"}]       # approved only; beds and services were not used
+    assert [f["id"] for f in body["forms"][0]["fields"]] == ["type"]
+    assert body["features"][0]["geometry"] is None                                    # no map on this dashboard: no locations
+    assert body["name"] == "Public one" and body["project_name"] == "Health map"
+    assert "project_id" not in str(body["features"]) and "created_by" not in str(body)
+
+
+def test_locations_are_sent_only_when_the_dashboard_has_a_map(project):
+    _record(project, {"type": "Clinic"})
+    _, token = _shared_dashboard(project, [{"id": "m", "type": "map"}])
+    f = project.owner.c.get(f"/public/dashboards/{token}").json()["features"][0]
+    assert f["geometry"]["coordinates"] == [3.39, 6.52]
+
+
+def test_photos_are_never_public_even_if_a_table_asks_for_them(project):
+    _record(project, {"type": "Clinic", "photos": ["abc"]})
+    _, token = _shared_dashboard(project, [{"id": "t", "type": "table", "columns": ["type", "photos"]}])
+    body = project.owner.c.get(f"/public/dashboards/{token}").json()
+    assert body["features"][0]["properties"] == {"type": "Clinic"}
+    assert all(f["type"] != "photo" for f in body["forms"][0]["fields"])
+
+
+def test_turning_it_off_or_replacing_the_link_kills_the_old_one(project):
+    o = project.owner
+    d, token = _shared_dashboard(project)
+    assert o.c.get(f"/public/dashboards/{token}").status_code == 200
+    new = o.patch(f"/dashboards/{d['id']}/sharing", json={"regenerate_link": True}).json()["share_token"]
+    assert new != token and o.c.get(f"/public/dashboards/{token}").status_code == 404
+    assert o.c.get(f"/public/dashboards/{new}").status_code == 200
+    off = o.patch(f"/dashboards/{d['id']}/sharing", json={"public": False}).json()
+    assert off == {"public": False, "share_token": None} and o.c.get(f"/public/dashboards/{new}").status_code == 404
+    again = o.patch(f"/dashboards/{d['id']}/sharing", json={"public": True}).json()["share_token"]
+    assert again not in (token, new)                                                 # an old link never comes back
+    assert o.patch(f"/dashboards/{d['id']}/sharing", json={"public": False}).status_code == 200
+    assert o.patch(f"/dashboards/{d['id']}/sharing", json={"regenerate_link": True}).status_code == 409
+
+
+def test_only_administrators_manage_the_link_and_viewers_never_see_it(project, actor):
+    o = project.owner
+    viewer, collector, stranger = project.add("viewer"), project.add("collector"), actor("Stranger")
+    d, token = _shared_dashboard(project)
+    for who, status in ((viewer, 403), (collector, 403), (stranger, 404)):
+        assert who.get(f"/dashboards/{d['id']}/sharing").status_code == status
+        assert who.patch(f"/dashboards/{d['id']}/sharing", json={"public": False}).status_code == status
+    assert o.c.get(f"/public/dashboards/{token}").status_code == 200                  # their attempts changed nothing
+    seen = viewer.get(f"/dashboards/{d['id']}").json()
+    assert seen["shared"] is True and token not in str(seen)                          # viewers can tell it is public, not get the key
+    assert token not in str(viewer.get(f"/projects/{project.id}/dashboards").json())
+
+
+def test_a_link_shows_nothing_from_other_forms_or_projects(project, actor):
+    o = project.owner
+    _record(project, {"type": "Clinic"})
+    other_pid = o.post("/projects", json={"name": "Other"}).json()["id"]
+    other = o.post(f"/projects/{other_pid}/forms", json={"name": "Secret", "geometry_type": "point", "fields": [{"id": "type", "label": "Type", "type": "text"}]}).json()
+    o.post(f"/forms/{other['id']}/publish")
+    fid = str(uuid.uuid4())
+    o.post(f"/projects/{other_pid}/features", json={"id": fid, "form_id": other["id"], "geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"type": "TOP SECRET"}})
+    o.post(f"/features/{fid}/review", json={"decision": "approved"})
+    _, token = _shared_dashboard(project)
+    text = o.c.get(f"/public/dashboards/{token}").text
+    assert "TOP SECRET" not in text and "Secret" not in text and other["id"] not in text
+
+
+def test_deleting_the_dashboard_ends_the_link(project):
+    d, token = _shared_dashboard(project)
+    assert project.owner.delete(f"/dashboards/{d['id']}").status_code == 204
+    assert project.owner.c.get(f"/public/dashboards/{token}").status_code == 404

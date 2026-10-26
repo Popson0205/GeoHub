@@ -37,8 +37,10 @@ export default function DashboardPage() {
   return <DashboardView key={d.id} projectId={projectId} dashboard={d} forms={forms} features={feats.data ?? []} canEdit={canEdit} loadedAt={loadedAt} onRefresh={() => void feats.reload()} />;
 }
 
-export function DashboardView({ projectId, dashboard, forms, features, canEdit, onRefresh, loadedAt }:
-  { projectId: string; dashboard: Dashboard; forms: Form[]; features: Feature[]; canEdit: boolean; onRefresh: () => void; loadedAt?: Date }) {
+export function DashboardView({ projectId, dashboard, forms, features, canEdit, onRefresh, loadedAt, publicView }:
+  { projectId: string; dashboard: Dashboard; forms: Form[]; features: Feature[]; canEdit: boolean; onRefresh: () => void; loadedAt?: Date;
+    /** Seen through a public link: no toolbar, no way back into the project, read-only. */
+    publicView?: { projectName: string; truncated: boolean } }) {
   const toast = useToast();
   const confirm = useConfirm();
   const nav = useNavigate();
@@ -54,7 +56,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [collapsed, setCollapsed] = useState(false);
   const [drag, setDrag] = useState<{ id: string; rects: Map<string, Rect> } | null>(null);   // the layout while a chart is being dragged
   const gridRef = useRef<HTMLDivElement>(null);
-  const editing = canEdit;
+  const editing = canEdit && !publicView;
 
   const dirty = JSON.stringify({ name, cfg }) !== snapshot;
   useEffect(() => {
@@ -213,7 +215,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   );
 
   return (
-    <div className="dashboard-builder">
+    <div className={`dashboard-builder${publicView ? " is-public" : ""}`}>
+      {!publicView && <>
       <BuilderSidebar active={panel} onToggle={togglePanel} canEdit={canEdit} dirty={dirty} saving={saving} saved={saved} onSave={() => void save()} onDiscard={() => void discard()} collapsed={collapsed} onCollapse={() => setCollapsed((v) => !v)} />
 
       {panel === "add" && <AddElementPanel onPick={add} onClose={() => setPanel(null)} full={page.widgets.length >= MAX_WIDGETS_PER_PAGE} hasSource={hasSource} />}
@@ -221,17 +224,19 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         <ViewPanel key={viewTab} initialTab={viewTab} canEdit={canEdit} onClose={() => setPanel(null)} name={name} description={cfg.description ?? ""} onName={setName} onDescription={(v) => setCfg((c) => ({ ...c, description: v || undefined }))}
           pages={cfg.pages} page={page} forms={forms} selectedId={selected} onSelect={setSelected} onRemove={remove} onRegion={moveRegion}
           onPageTitle={(v) => patchPage((p) => ({ ...p, title: v }))} onPageForm={(id) => void choosePageForm(id)} onApplyTemplate={(id) => void applyTemplate(id)}
-          onMovePage={movePage} onRemovePage={() => void removePage()} onAddPage={addPage} />)}
+          onMovePage={movePage} onRemovePage={() => void removePage()} onAddPage={addPage} dashboardId={dashboard.id} dirty={dirty} />)}
       {panel === "data" && <DataSourcesPanel forms={forms} features={features} pages={cfg.pages} pageFormId={page.form_id} canEdit={canEdit} onUse={(id) => void choosePageForm(id)} onClose={() => setPanel(null)} />}
       {panel === "theme" && <ThemePanel theme={cfg.theme} canEdit={canEdit} onChange={setTheme} onClose={() => setPanel(null)} />}
       {panel === "time" && <TimePanel value={cfg.time_filter} canEdit={canEdit} onChange={setTime} onClose={() => setPanel(null)} />}
+      </>}
 
       <div className="dashboard-canvas-outer dash-app" style={themeVars}>
         <header className="dashboard-canvas-header">
-          <Link className="dashboard-header-back" to={`/dashboards?project=${projectId}`} onClick={(e) => void leave(e)} title="Back to dashboards" aria-label="Back to dashboards">←</Link>
-          <div className="dash-title"><h1>{name}</h1>{cfg.description && <p className="meta">{cfg.description}</p>}</div>
+          {!publicView && <Link className="dashboard-header-back" to={`/dashboards?project=${projectId}`} onClick={(e) => void leave(e)} title="Back to dashboards" aria-label="Back to dashboards">←</Link>}
+          <div className="dash-title"><h1>{name}</h1>{cfg.description && <p className="meta">{cfg.description}</p>}{publicView && <p className="meta">Shared from {publicView.projectName || "Geohub"}</p>}</div>
           <div className="dash-actions">
             {time && <span className="meta">Data as of {time}</span>}
+            {canEdit && !publicView && <button type="button" className="dashboard-header-btn" onClick={() => openPanel("view", "sharing")}>Share{dashboard.shared ? " ·  Public" : ""}</button>}
             <button type="button" className="dashboard-header-btn" onClick={onRefresh}>Refresh data</button>
             <button type="button" className="dashboard-header-btn" onClick={() => window.print()}>Print / PDF</button>
           </div>
@@ -268,6 +273,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             {manual && <Button small onClick={() => patchPage((pg) => ({ ...pg, widgets: resetRects(pg.widgets) }))}>Reset layout</Button>}
           </div>)}
 
+        {publicView?.truncated && <p className="hint" role="status">This dashboard has more records than a shared link can carry. The most recently changed are shown.</p>}
         <h2 className="print-only">{page.title}</h2>
         {page.widgets.length === 0
           ? <EmptyCanvas canEdit={canEdit} onPick={add} onPanel={openPanel} />

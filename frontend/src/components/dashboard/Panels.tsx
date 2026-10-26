@@ -6,6 +6,7 @@ import { TIME_PRESETS, WIDGET_LABEL, timeLabel } from "../../lib/dashboard";
 import type { TemplateId } from "../../lib/dashboardTemplates";
 import type { DashPage, DashTheme, Feature, Form, ThemeColorKey, TimeFilter, TimePreset, Widget, WidgetType } from "../../lib/types";
 import { ELEMENT_TYPES, ElementIcon } from "./Elements";
+import SharingTab from "./SharingPanel";
 
 export type PanelKey = "add" | "view" | "data" | "theme" | "time";
 
@@ -92,7 +93,7 @@ export function AddElementPanel({ onPick, onClose, full, hasSource }: { onPick: 
 }
 
 // ---------- View ----------
-export type ViewTab = "body" | "header" | "sidebar" | "pages";
+export type ViewTab = "body" | "header" | "sidebar" | "pages" | "sharing";
 export interface ViewPanelProps {
   canEdit: boolean; initialTab?: ViewTab; onClose: () => void;
   name: string; description: string; onName: (v: string) => void; onDescription: (v: string) => void;
@@ -100,6 +101,8 @@ export interface ViewPanelProps {
   onSelect: (id: string) => void; onRemove: (id: string) => void; onRegion: (id: string, r: "body" | "sidebar") => void;
   onPageTitle: (v: string) => void; onPageForm: (formId: string) => void; onApplyTemplate: (id: TemplateId) => void;
   onMovePage: (by: -1 | 1) => void; onRemovePage: () => void; onAddPage: () => void;
+  /** Given for a saved dashboard that an administrator is looking at: adds the Sharing tab. */
+  dashboardId?: string; dirty?: boolean;
 }
 const elementName = (w: Widget) => w.title.trim() || WIDGET_LABEL[w.type];
 
@@ -111,7 +114,7 @@ export function ViewPanel(p: ViewPanelProps) {
   return (
     <PanelShell title="View" onClose={p.onClose}>
       <div className="dashboard-view-tabs" role="tablist">
-        {(["body", "header", "sidebar", "pages"] as ViewTab[]).map((t) => (
+        {(["body", "header", "sidebar", "pages", ...(p.canEdit && p.dashboardId ? ["sharing"] : [])] as ViewTab[]).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className={`dashboard-view-tab${tab === t ? " is-active" : ""}`} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
         ))}
       </div>
@@ -145,6 +148,8 @@ export function ViewPanel(p: ViewPanelProps) {
               </li>);
           })}</ul>}
       </>)}
+
+      {tab === "sharing" && p.dashboardId && <SharingTab dashboardId={p.dashboardId} dirty={!!p.dirty} />}
 
       {tab === "pages" && (p.canEdit ? (
         <div className="stacked-form">

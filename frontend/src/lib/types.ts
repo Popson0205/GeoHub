@@ -299,4 +299,8 @@ export interface DashTheme { preset: string; overrides?: Partial<Record<ThemeCol
 export type TimePreset = "all_time" | "last_7_days" | "last_30_days" | "last_90_days" | "last_year" | "custom";
 export interface TimeFilter { preset: TimePreset; start?: string; end?: string }
 export interface DashboardConfig { description?: string; pages: DashPage[]; theme?: DashTheme; time_filter?: TimeFilter }
-export interface Dashboard { id: string; project_id: string; name: string; config: DashboardConfig; updated_at: string }
+export interface Dashboard { id: string; project_id: string; name: string; config: DashboardConfig; updated_at: string; /** Anyone with the link can view it */ shared?: boolean }
+/** The public link of a dashboard. The token is only ever given to administrators. */
+export interface DashboardSharing { public: boolean; share_token: string | null }
+/** A dashboard seen through its public link: the saved layout and the approved records it draws, never anything else. */
+export interface PublicDashboard { token: string; name: string; project_name: string; config: DashboardConfig; updated_at: string; truncated: boolean; forms: Form[]; features: Feature[] }

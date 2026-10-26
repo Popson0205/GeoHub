@@ -663,3 +663,42 @@ class DashboardOut(BaseModel):
     name: str
     config: DashboardConfig
     updated_at: datetime
+    shared: bool = Field(False, description="Anyone with the link can view it. The link itself is only given to administrators")
+
+
+class DashboardSharingOut(BaseModel):
+    public: bool
+    share_token: str | None = None
+
+
+class DashboardSharingPatch(BaseModel):
+    public: bool | None = Field(None, description="true issues a link, false deletes it")
+    regenerate_link: bool = Field(False, description="Issue a new link; the old one stops working")
+
+
+class PublicDashboardForm(BaseModel):
+    id: UUID
+    name: str
+    geometry_type: GeometryType
+    version: int
+    fields: list[dict[str, Any]] = Field(description="Only the fields the dashboard uses, and never photos or files")
+
+
+class PublicDashboardFeature(BaseModel):
+    id: UUID
+    form_id: UUID
+    geometry: Geometry | None = Field(None, description="Only for forms the dashboard shows on a map")
+    properties: dict[str, Any]
+    updated_at: datetime
+
+
+class PublicDashboardOut(BaseModel):
+    """A dashboard seen through its public link: its saved layout and the approved records it draws, nothing else."""
+    token: str
+    name: str
+    project_name: str
+    config: DashboardConfig
+    updated_at: datetime
+    truncated: bool = Field(False, description="There were more records than a public link carries; the newest are shown")
+    forms: list[PublicDashboardForm]
+    features: list[PublicDashboardFeature]

@@ -166,3 +166,14 @@
   .dash-body.has-side { grid-template-columns: minmax(0, 1fr) 220px; }
   .report-doc { border: 0; padding: 0; max-width: none; }
 }
+
+/* ---- sharing ---- */
+.dashboard-builder.is-public { background: var(--paper); color: var(--ink); }
+.dashboard-builder.is-public .dashboard-canvas-header { position: static; }
+.dash-card-public { margin-left: 8px; padding: 1px 8px; border-radius: var(--r-full); background: var(--dapp-soft); color: var(--dapp); font-size: var(--fs-xs); font-weight: 600; vertical-align: middle; }
+.share-tab { display: flex; flex-direction: column; gap: var(--s-3); }
+.share-tab p { margin: 0; }
+.share-link { display: flex; gap: 8px; }
+.share-link input { flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: var(--fs-xs); }
+.share-rules ul { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--n-700); }
+.public-dash-error { max-width: 520px; padding-block: 12vh; text-align: center; }

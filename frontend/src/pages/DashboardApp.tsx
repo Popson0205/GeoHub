@@ -29,7 +29,7 @@ export function DashboardGallery({ dashboards, canEdit, onDelete }: { dashboards
                 <span className="dash-card-badge">{n} {n === 1 ? "element" : "elements"}</span>
               </div>
               <div className="dash-card-body">
-                <strong>{d.name}</strong>
+                <strong>{d.name}{d.shared && <span className="dash-card-public" title="Anyone with the link can view it">Public link</span>}</strong>
                 <span>{d.config.description || "No description"}</span>
                 <small>{pages} {pages === 1 ? "page" : "pages"} · updated {new Date(d.updated_at).toLocaleDateString()}</small>
               </div>

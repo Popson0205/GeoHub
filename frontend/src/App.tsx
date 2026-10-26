@@ -20,6 +20,7 @@ import DataPage from "./pages/DataPage";
 import DashboardApp from "./pages/DashboardApp";
 import DashboardReports from "./pages/DashboardReports";
 import DashboardPage from "./pages/DashboardPage";
+import PublicDashboardPage from "./pages/PublicDashboardPage";
 import CollectHomePage from "./pages/CollectHomePage";
 import { isCollectorApp } from "./lib/pwa";
 
@@ -66,6 +67,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
+      {/* A dashboard shared by link: read-only, no sign-in */}
+      <Route path="/d/:token" element={<PublicDashboardPage />} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
       {/* A dashboard opens in its own full-screen workspace, like the form builder */}
       <Route path="/dashboards/:dashboardId" element={<RequireAuth><DashboardPage /></RequireAuth>} />
