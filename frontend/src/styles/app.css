@@ -1,8 +1,0 @@
-/* Geohub design system. Order matters: tokens, then base, then components, then layout, then pages. */
-@import "./tokens.css";
-@import "./base.css";
-@import "./components.css";
-@import "./layout.css";
-@import "./pages.css";
-@import "./dashboard.css";
-@import "./dashboard-app.css";

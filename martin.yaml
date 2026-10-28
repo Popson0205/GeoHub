@@ -1,7 +1,0 @@
-listen_addresses: '0.0.0.0:3000'
-# The connection string comes from the DATABASE_URL environment variable (the same Supabase database as the API).
-postgres:
-  functions:
-    feature_tiles:
-      schema: public
-      function: feature_tiles
