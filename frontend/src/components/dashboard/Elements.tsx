@@ -22,7 +22,7 @@ export function Gauge({ d }: { d: Data<"gauge"> }) {
 /** The author's own words. Only bold, italic and line breaks; nothing in here is ever read as HTML. */
 export function RichText({ content }: { content: string }) {
   const lines = parseRich(content);
-  if (!content.trim()) return <div className="widget-note">Empty. Select this element and write something.</div>;
+  if (!content.trim()) return <div className="widget-note">Empty. Use the gear button on this element to write something.</div>;
   return (
     <div className="rich-text">
       {lines.map((spans, i) => (

@@ -1,4 +1,6 @@
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { Button } from "../ui";
+import { ElementIcon } from "./Elements";
 import {
   GRID_COLUMNS, MAX_ROWS, METRIC_LABEL, MIN_COLS, MIN_ROWS, WIDGET_LABEL, dateFields, defaultTitle, groupFields, isStatic, numberFields, safeEmbedUrl, usesMetric,
   type FieldDef, type Rect,
@@ -7,6 +9,16 @@ import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib
 import type { Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
 const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+
+/** A collapsible group of related settings, so a long panel stays easy to scan. */
+function Section({ title, open = true, children }: { title: string; open?: boolean; children: ReactNode }) {
+  return (
+    <details className="dset-sec" open={open}>
+      <summary><span>{title}</span><svg className="dset-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></summary>
+      <div className="dset-sec-body">{children}</div>
+    </details>
+  );
+}
 
 /** Settings of the selected element: what it shows, where it gets its records, and where it sits. */
 export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose, onRegion }:
@@ -32,154 +44,174 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
   const range = (label: string, key: "textSize" | "headingSize" | "numberSize" | "radius", unit: string, fallback: number, id: string) => {
     const [lo, hi] = STYLE_LIMITS[key];
     return (
-      <div className="field"><label htmlFor={id}>{label}{own[key] !== undefined ? ` (${own[key]}${unit})` : " (dashboard default)"}</label>
-        <span className="row" style={{ alignItems: "center" }}>
-          <input id={id} type="range" min={lo} max={hi} value={own[key] ?? fallback} style={{ flex: 1 }} onChange={(e) => setOwn(key, Number(e.target.value))} />
-          {own[key] !== undefined && <button type="button" className="link-btn" onClick={() => setOwn(key, undefined)}>Reset</button>}
-        </span></div>
+      <div className="field dset-range"><div className="dset-range-head"><label htmlFor={id}>{label}</label>
+        <output htmlFor={id}>{own[key] !== undefined ? `${own[key]}${unit}` : "Default"}</output>
+        {own[key] !== undefined && <button type="button" className="link-btn dset-reset" onClick={() => setOwn(key, undefined)}>Reset</button>}</div>
+        <input id={id} type="range" min={lo} max={hi} value={own[key] ?? fallback} onChange={(e) => setOwn(key, Number(e.target.value))} /></div>
     );
   };
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => { panel.current?.focus({ preventScroll: true }); }, []);   // keyboard users land in the panel; Escape closes it
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { e.stopPropagation(); onClose(); } };
+  const name = w.title.trim() || defaultTitle(w, defs);
   return (
-    <aside className="dash-aside" aria-label="Chart settings">
-      <div className="row" style={{ alignItems: "center" }}><h2 style={{ flex: 1 }}>{WIDGET_LABEL[w.type]}</h2><Button small variant="ghost" onClick={onClose} aria-label="Close settings">Close</Button></div>
-      <div className="field"><label htmlFor="wt">Title</label><input id="wt" value={w.title} placeholder={defaultTitle({ ...w, title: "" }, defs)} onChange={(e) => onChange({ title: e.target.value })} maxLength={120} /></div>
-      {!isStatic(w.type) && onForm && forms.length > 1 && (
-        <div className="field"><label htmlFor="wsrc">Records from</label>
-          <select id="wsrc" value={w.form_id ?? ""} onChange={(e) => onForm(e.target.value)}>
-            {pageFormId && <option value="">This page's form</option>}
-            {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select></div>
-      )}
-      {onRegion && (
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={side} onChange={(e) => onRegion(e.target.checked ? "sidebar" : "body")} />Show in the side column</label>
-      )}
-      {side ? <small className="meta">The side column stacks its elements top to bottom, beside the main grid.</small>
-        : onRect && rect ? (
-        <fieldset className="dash-rect">
-          <legend>Position and size</legend>
-          <div className="dash-rect-grid">
-            <div className="field"><label htmlFor="rc">Left (column)</label><input id="rc" type="number" min={1} max={GRID_COLUMNS} value={rect.col + 1} onChange={(e) => onRect({ col: Number(e.target.value) - 1 })} /></div>
-            <div className="field"><label htmlFor="rr">Top (row)</label><input id="rr" type="number" min={1} value={rect.row + 1} onChange={(e) => onRect({ row: Number(e.target.value) - 1 })} /></div>
-            <div className="field"><label htmlFor="rs">Wide (columns)</label><input id="rs" type="number" min={MIN_COLS} max={GRID_COLUMNS} value={rect.cols} onChange={(e) => onRect({ cols: Number(e.target.value) })} /></div>
-            <div className="field"><label htmlFor="rh">Tall (rows)</label><input id="rh" type="number" min={MIN_ROWS} max={MAX_ROWS} value={rect.rows} onChange={(e) => onRect({ rows: Number(e.target.value) })} /></div>
-          </div>
-          <div className="row"><Button small onClick={() => onRect({ col: 0, cols: GRID_COLUMNS })}>Full row</Button></div>
-          <small className="meta">The page is 12 columns wide. You can also drag this chart by its title bar, and resize it by its edges or corner.</small>
-        </fieldset>
-      ) : (<>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={w.wide === true} onChange={(e) => onChange({ wide: e.target.checked || undefined })} />Full row</label>
-        <small className="meta">Size and position are set automatically until you move or resize a chart.</small>
-      </>)}
+    <aside ref={panel} tabIndex={-1} className="dash-aside" aria-label="Chart settings" onKeyDown={onKey}>
+      <header className="dset-head">
+        <span className="dset-icon"><ElementIcon type={w.type} size={20} /></span>
+        <div className="dset-titles"><small>{WIDGET_LABEL[w.type]} settings</small><h2 title={name}>{name}</h2></div>
+        <button type="button" className="dset-close" onClick={onClose} aria-label="Close settings" title="Close (Esc)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
 
-      {(w.type === "bar" || w.type === "pie") && (
-        <div className="field"><label htmlFor="wf">Group by</label>
-          <select id="wf" value={w.field ?? ""} onChange={(e) => onChange({ field: e.target.value })}>
-            {groupFields(defs).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-          </select></div>
-      )}
-      {w.type === "line" && (<>
-        <div className="field"><label htmlFor="wf">Date to plot</label>
-          <select id="wf" value={w.field ?? ""} onChange={(e) => onChange({ field: e.target.value })}>
-            {dateFields(defs).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-          </select></div>
-        <div className="field"><label htmlFor="wb">Group by</label>
-          <select id="wb" value={w.bucket} onChange={(e) => onChange({ bucket: e.target.value as Widget["bucket"] })}>
-            <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
-          </select></div>
-      </>)}
-      {usesMetric(w.type) && (<>
-        <div className="field"><label htmlFor="wm">Show</label>
-          <select id="wm" value={w.metric} onChange={(e) => setMetric(e.target.value as Metric)}>
-            {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => <option key={m} value={m} disabled={m !== "count" && !nums.length}>{METRIC_LABEL[m]}</option>)}
-          </select>
-          {!nums.length && <small className="meta">Add a number field to the form to total or average it.</small>}</div>
-        {w.metric !== "count" && (
-          <div className="field"><label htmlFor="wmf">of the field</label>
-            <select id="wmf" value={w.metric_field ?? ""} onChange={(e) => onChange({ metric_field: e.target.value })}>
-              {nums.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+      <div className="dset-body">
+        <Section title="Content">
+          <div className="field"><label htmlFor="wt">Title</label><input id="wt" value={w.title} placeholder={defaultTitle({ ...w, title: "" }, defs)} onChange={(e) => onChange({ title: e.target.value })} maxLength={120} /></div>
+          {!isStatic(w.type) && onForm && forms.length > 1 && (
+            <div className="field"><label htmlFor="wsrc">Records from</label>
+              <select id="wsrc" value={w.form_id ?? ""} onChange={(e) => onForm(e.target.value)}>
+                {pageFormId && <option value="">This page's form</option>}
+                {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select></div>
+          )}
+        {(w.type === "bar" || w.type === "pie") && (
+          <div className="field"><label htmlFor="wf">Group by</label>
+            <select id="wf" value={w.field ?? ""} onChange={(e) => onChange({ field: e.target.value })}>
+              {groupFields(defs).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
             </select></div>
         )}
-      </>)}
-      {w.type === "gauge" && (<>
-        <div className="field"><label htmlFor="wtg">Target (full dial)</label>
-          <input id="wtg" type="number" min={1} value={w.target ?? ""} placeholder="For example 500"
-            onChange={(e) => onChange({ target: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) || undefined, target_field: e.target.value === "" ? w.target_field : undefined })} /></div>
-        <div className="field"><label htmlFor="wtf">or the total of a number field</label>
-          <select id="wtf" value={w.target_field ?? ""} disabled={w.target != null} onChange={(e) => onChange({ target_field: e.target.value || undefined })}>
-            <option value="">Choose a field…</option>
-            {nums.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-          </select></div>
-      </>)}
-      {(w.type === "bar" || w.type === "pie") && (
-        <div className="field"><label htmlFor="wl">Groups shown</label><input id="wl" type="number" min={2} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(2, Number(e.target.value) || 8)) })} /></div>
-      )}
-      {w.type === "table" && (<>
-        {fieldBoxes("Columns (up to 12)", w.columns, (columns) => onChange({ columns }), [["__status", "Review status"], ["__updated", "Date record changed"]])}
-        <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
-      </>)}
-      {w.type === "list" && (<>
-        <div className="field"><label htmlFor="wlt">Heading of each row</label>
-          <select id="wlt" value={w.title_field ?? ""} onChange={(e) => onChange({ title_field: e.target.value })}>
-            <option value="" disabled>Choose a field…</option>
-            {defs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-          </select></div>
-        {fieldBoxes("Shown under it (up to 6)", w.subtitle_fields ?? [], (subtitle_fields) => onChange({ subtitle_fields }), [], 6)}
-        <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
-      </>)}
-      {w.type === "details" && (<>
-        {fieldBoxes("Fields to show (none ticked = all)", w.columns, (columns) => onChange({ columns }), [], 12)}
-        <small className="meta">Shows the most recently changed record that passes the filters.</small>
-      </>)}
-      {w.type === "rich_text" && (
-        <div className="field"><label htmlFor="wc">Text</label>
-          <textarea id="wc" rows={6} maxLength={4000} value={w.content ?? ""} placeholder="A note, instructions or context for this dashboard" onChange={(e) => onChange({ content: e.target.value })} />
-          <small className="meta">**bold**, *italic* and line breaks work. Nothing else is formatted.</small></div>
-      )}
-      {w.type === "embedded" && (
-        <div className="field"><label htmlFor="wu">Web address</label>
-          <input id="wu" type="url" maxLength={500} value={w.url ?? ""} placeholder="https://example.com/page" onChange={(e) => onChange({ url: e.target.value })} aria-invalid={!!w.url && !safeEmbedUrl(w.url)} />
-          <small className="meta">Must start with https://. Some sites refuse to be shown inside another page.</small></div>
-      )}
-      {w.type === "map" && <p className="meta">Shows where the records are. Records waiting for review are amber, rejected ones red.</p>}
-
-      <fieldset className="dash-rect" aria-label="Font and style of this element">
-        <legend>Font and style</legend>
-        <small className="meta">Only this element. Anything you leave unset follows the dashboard's Theme → Fonts and styling.</small>
-        <div className="field"><label htmlFor="wsf">Font</label>
-          <select id="wsf" value={own.font ?? ""} onChange={(e) => setOwn("font", (e.target.value || undefined) as WidgetStyle["font"])} style={own.font ? { fontFamily: DASH_FONTS[own.font].stack } : undefined}>
-            <option value="">Dashboard default</option>
-            {FONT_KEYS.map((k) => <option key={k} value={k} style={{ fontFamily: DASH_FONTS[k].stack }}>{DASH_FONTS[k].label}</option>)}
-          </select></div>
-        {range("Text size", "textSize", "%", 100, "wst")}
-        {range("Heading size", "headingSize", "px", 14, "wsh")}
-        <div className="field"><label htmlFor="wsw">Heading weight</label>
-          <select id="wsw" value={own.headingWeight ?? ""} onChange={(e) => setOwn("headingWeight", (e.target.value ? Number(e.target.value) : undefined) as WidgetStyle["headingWeight"])}>
-            <option value="">Dashboard default</option>
-            {[400, 500, 600, 700, 800].map((n) => <option key={n} value={n}>{n === 400 ? "Regular" : n === 500 ? "Medium" : n === 600 ? "Semi-bold" : n === 700 ? "Bold" : "Extra bold"}</option>)}
-          </select></div>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={own.headingCaps === true} onChange={(e) => setOwn("headingCaps", e.target.checked || undefined)} />Heading in capitals</label>
-        {hasNumbers && range("Number size", "numberSize", "%", 100, "wsn")}
-        {hasNumbers && (
-          <label className="theme-color-row">Number colour
-            <span className="style-colour"><input type="color" value={own.numberColor ?? "#17634c"} onChange={(e) => setOwn("numberColor", e.target.value)} />
-              {own.numberColor && <button type="button" className="link-btn" onClick={() => setOwn("numberColor", undefined)}>Reset</button>}</span></label>
+        {w.type === "line" && (<>
+          <div className="field"><label htmlFor="wf">Date to plot</label>
+            <select id="wf" value={w.field ?? ""} onChange={(e) => onChange({ field: e.target.value })}>
+              {dateFields(defs).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="wb">Group by</label>
+            <select id="wb" value={w.bucket} onChange={(e) => onChange({ bucket: e.target.value as Widget["bucket"] })}>
+              <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
+            </select></div>
+        </>)}
+        {usesMetric(w.type) && (<>
+          <div className="field"><label htmlFor="wm">Show</label>
+            <select id="wm" value={w.metric} onChange={(e) => setMetric(e.target.value as Metric)}>
+              {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => <option key={m} value={m} disabled={m !== "count" && !nums.length}>{METRIC_LABEL[m]}</option>)}
+            </select>
+            {!nums.length && <small className="meta">Add a number field to the form to total or average it.</small>}</div>
+          {w.metric !== "count" && (
+            <div className="field"><label htmlFor="wmf">of the field</label>
+              <select id="wmf" value={w.metric_field ?? ""} onChange={(e) => onChange({ metric_field: e.target.value })}>
+                {nums.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+              </select></div>
+          )}
+        </>)}
+        {w.type === "gauge" && (<>
+          <div className="field"><label htmlFor="wtg">Target (full dial)</label>
+            <input id="wtg" type="number" min={1} value={w.target ?? ""} placeholder="For example 500"
+              onChange={(e) => onChange({ target: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) || undefined, target_field: e.target.value === "" ? w.target_field : undefined })} /></div>
+          <div className="field"><label htmlFor="wtf">or the total of a number field</label>
+            <select id="wtf" value={w.target_field ?? ""} disabled={w.target != null} onChange={(e) => onChange({ target_field: e.target.value || undefined })}>
+              <option value="">Choose a field…</option>
+              {nums.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select></div>
+        </>)}
+        {(w.type === "bar" || w.type === "pie") && (
+          <div className="field"><label htmlFor="wl">Groups shown</label><input id="wl" type="number" min={2} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(2, Number(e.target.value) || 8)) })} /></div>
         )}
-        {range("Corner radius", "radius", "px", 12, "wsr")}
-        <div className="field"><label htmlFor="wsb">Border</label>
-          <select id="wsb" value={own.border ?? ""} onChange={(e) => setOwn("border", (e.target.value || undefined) as WidgetStyle["border"])}>
-            <option value="">Dashboard default</option><option value="none">None</option><option value="thin">Thin</option><option value="thick">Thick</option>
-          </select></div>
-        <label className="theme-color-row">Border colour
-          <span className="style-colour"><input type="color" value={own.borderColor ?? "#cccccc"} onChange={(e) => setOwn("borderColor", e.target.value)} />
-            {own.borderColor && <button type="button" className="link-btn" onClick={() => setOwn("borderColor", undefined)}>Reset</button>}</span></label>
-        {w.style && <div className="row"><Button small variant="ghost" onClick={() => onChange({ style: undefined })}>Reset this element's style</Button></div>}
-      </fieldset>
+        {w.type === "table" && (<>
+          {fieldBoxes("Columns (up to 12)", w.columns, (columns) => onChange({ columns }), [["__status", "Review status"], ["__updated", "Date record changed"]])}
+          <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
+        </>)}
+        {w.type === "list" && (<>
+          <div className="field"><label htmlFor="wlt">Heading of each row</label>
+            <select id="wlt" value={w.title_field ?? ""} onChange={(e) => onChange({ title_field: e.target.value })}>
+              <option value="" disabled>Choose a field…</option>
+              {defs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select></div>
+          {fieldBoxes("Shown under it (up to 6)", w.subtitle_fields ?? [], (subtitle_fields) => onChange({ subtitle_fields }), [], 6)}
+          <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
+        </>)}
+        {w.type === "details" && (<>
+          {fieldBoxes("Fields to show (none ticked = all)", w.columns, (columns) => onChange({ columns }), [], 12)}
+          <small className="meta">Shows the most recently changed record that passes the filters.</small>
+        </>)}
+        {w.type === "rich_text" && (
+          <div className="field"><label htmlFor="wc">Text</label>
+            <textarea id="wc" rows={6} maxLength={4000} value={w.content ?? ""} placeholder="A note, instructions or context for this dashboard" onChange={(e) => onChange({ content: e.target.value })} />
+            <small className="meta">**bold**, *italic* and line breaks work. Nothing else is formatted.</small></div>
+        )}
+        {w.type === "embedded" && (
+          <div className="field"><label htmlFor="wu">Web address</label>
+            <input id="wu" type="url" maxLength={500} value={w.url ?? ""} placeholder="https://example.com/page" onChange={(e) => onChange({ url: e.target.value })} aria-invalid={!!w.url && !safeEmbedUrl(w.url)} />
+            <small className="meta">Must start with https://. Some sites refuse to be shown inside another page.</small></div>
+        )}
+        {w.type === "map" && <p className="meta">Shows where the records are. Records waiting for review are amber, rejected ones red.</p>}
 
-      <div className="row">
-        {!manual && !side && <Button small onClick={() => onMove(-1)} disabled={index <= 0}>Move earlier</Button>}
-        {!manual && !side && <Button small onClick={() => onMove(1)} disabled={index >= count - 1}>Move later</Button>}
-        <Button small variant="danger" onClick={onRemove}>Remove</Button>
+        </Section>
+
+        <Section title="Layout">
+          {onRegion && (
+            <label className="dset-check"><input type="checkbox" checked={side} onChange={(e) => onRegion(e.target.checked ? "sidebar" : "body")} />Show in the side column</label>
+          )}
+        {side ? <small className="meta">The side column stacks its elements top to bottom, beside the main grid.</small>
+          : onRect && rect ? (
+          <fieldset className="dash-rect">
+            <legend>Position and size</legend>
+            <div className="dash-rect-grid">
+              <div className="field"><label htmlFor="rc">Left (column)</label><input id="rc" type="number" min={1} max={GRID_COLUMNS} value={rect.col + 1} onChange={(e) => onRect({ col: Number(e.target.value) - 1 })} /></div>
+              <div className="field"><label htmlFor="rr">Top (row)</label><input id="rr" type="number" min={1} value={rect.row + 1} onChange={(e) => onRect({ row: Number(e.target.value) - 1 })} /></div>
+              <div className="field"><label htmlFor="rs">Wide (columns)</label><input id="rs" type="number" min={MIN_COLS} max={GRID_COLUMNS} value={rect.cols} onChange={(e) => onRect({ cols: Number(e.target.value) })} /></div>
+              <div className="field"><label htmlFor="rh">Tall (rows)</label><input id="rh" type="number" min={MIN_ROWS} max={MAX_ROWS} value={rect.rows} onChange={(e) => onRect({ rows: Number(e.target.value) })} /></div>
+            </div>
+            <div className="row"><Button small onClick={() => onRect({ col: 0, cols: GRID_COLUMNS })}>Full row</Button></div>
+            <small className="meta">The page is 12 columns wide. You can also drag this chart by its title bar, and resize it by its edges or corner.</small>
+          </fieldset>
+        ) : (<>
+          <label className="dset-check"><input type="checkbox" checked={w.wide === true} onChange={(e) => onChange({ wide: e.target.checked || undefined })} />Full row</label>
+          <small className="meta">Size and position are set automatically until you move or resize a chart.</small>
+        </>)}
+
+          {!manual && !side && (
+            <div className="field"><span className="label">Order on the page</span>
+              <span className="row"><Button small onClick={() => onMove(-1)} disabled={index <= 0}>Move earlier</Button><Button small onClick={() => onMove(1)} disabled={index >= count - 1}>Move later</Button></span></div>
+          )}
+        </Section>
+
+        <Section title="Font and style" open={false}>
+          <small className="meta">Only this element. Anything you leave unset follows the dashboard's Theme → Fonts and styling.</small>
+          <div className="field"><label htmlFor="wsf">Font</label>
+            <select id="wsf" value={own.font ?? ""} onChange={(e) => setOwn("font", (e.target.value || undefined) as WidgetStyle["font"])} style={own.font ? { fontFamily: DASH_FONTS[own.font].stack } : undefined}>
+              <option value="">Dashboard default</option>
+              {FONT_KEYS.map((k) => <option key={k} value={k} style={{ fontFamily: DASH_FONTS[k].stack }}>{DASH_FONTS[k].label}</option>)}
+            </select></div>
+          {range("Text size", "textSize", "%", 100, "wst")}
+          {range("Heading size", "headingSize", "px", 14, "wsh")}
+          <div className="field"><label htmlFor="wsw">Heading weight</label>
+            <select id="wsw" value={own.headingWeight ?? ""} onChange={(e) => setOwn("headingWeight", (e.target.value ? Number(e.target.value) : undefined) as WidgetStyle["headingWeight"])}>
+              <option value="">Dashboard default</option>
+              {[400, 500, 600, 700, 800].map((n) => <option key={n} value={n}>{n === 400 ? "Regular" : n === 500 ? "Medium" : n === 600 ? "Semi-bold" : n === 700 ? "Bold" : "Extra bold"}</option>)}
+            </select></div>
+          <label className="dset-check"><input type="checkbox" checked={own.headingCaps === true} onChange={(e) => setOwn("headingCaps", e.target.checked || undefined)} />Heading in capitals</label>
+          {hasNumbers && range("Number size", "numberSize", "%", 100, "wsn")}
+          {hasNumbers && (
+            <label className="theme-color-row">Number colour
+              <span className="style-colour"><input type="color" value={own.numberColor ?? "#17634c"} onChange={(e) => setOwn("numberColor", e.target.value)} />
+                {own.numberColor && <button type="button" className="link-btn" onClick={() => setOwn("numberColor", undefined)}>Reset</button>}</span></label>
+          )}
+          {range("Corner radius", "radius", "px", 12, "wsr")}
+          <div className="field"><label htmlFor="wsb">Border</label>
+            <select id="wsb" value={own.border ?? ""} onChange={(e) => setOwn("border", (e.target.value || undefined) as WidgetStyle["border"])}>
+              <option value="">Dashboard default</option><option value="none">None</option><option value="thin">Thin</option><option value="thick">Thick</option>
+            </select></div>
+          <label className="theme-color-row">Border colour
+            <span className="style-colour"><input type="color" value={own.borderColor ?? "#cccccc"} onChange={(e) => setOwn("borderColor", e.target.value)} />
+              {own.borderColor && <button type="button" className="link-btn" onClick={() => setOwn("borderColor", undefined)}>Reset</button>}</span></label>
+          {w.style && <div className="row"><Button small variant="ghost" onClick={() => onChange({ style: undefined })}>Reset this element's style</Button></div>}
+        </Section>
       </div>
+
+      <footer className="dset-foot">
+        <Button small variant="danger" onClick={onRemove}>Remove</Button>
+        <Button small variant="primary" onClick={onClose}>Done</Button>
+      </footer>
     </aside>
   );
 }

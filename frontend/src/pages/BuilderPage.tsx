@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import CalcEditor from "../components/CalcEditor";
 import ConditionEditor from "../components/ConditionEditor";
@@ -11,7 +11,9 @@ import {
   PALETTE, PALETTE_CATEGORIES, TYPE_SPECS, allFields, allows, findField, hasChoices, inRepeat, isContainer, mapField, moveInto, newField, topLevelFields,
   type PaletteItem, type Prop,
 } from "../lib/fieldSpec";
+import { download } from "../lib/csv";
 import { checkFieldDefs } from "../lib/forms";
+import { formTemplateCsv, importFormCsv, type FormImportResult } from "../lib/formImport";
 import { useAsync } from "../lib/hooks";
 import { calcRefs, conditionRefs } from "../lib/logic";
 import { GEOMETRY_LABEL, type Form, type FormField } from "../lib/types";
@@ -35,6 +37,8 @@ export default function BuilderPage() {
   const [busy, setBusy] = useState<"save" | "publish" | null>(null);
   const [preview, setPreview] = useState(false);
   const [previewVal, setPreviewVal] = useState({});
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState<FormImportResult | null>(null);
 
   useEffect(() => { if (data) setForm(data); }, [data]);
   const dnd = useFieldDnd({ fields: form?.fields ?? [], enabled: !preview, onChange: (fields) => setForm((f) => (f ? { ...f, fields } : f)), onSelect: setSel });
@@ -67,6 +71,21 @@ export default function BuilderPage() {
     if (users.length && !(await confirm({ title: "Remove this field?", message: `${users.map((u) => u.label).join(", ")} use${users.length === 1 ? "s" : ""} this field in a rule. Removing it breaks that rule.`, confirmLabel: "Remove anyway", danger: true }))) return;
     setFields(mapField(form!.fields, id, () => null));
     setSel(null);
+  }
+
+  /** Build fields from a CSV file (one row per field). New fields go after the ones already in the form. */
+  async function importCsv(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast("That file is too big for a form definition (2 MB at most).", "error"); return; }
+    const result = importFormCsv(await file.text(), form!.fields);
+    setImported(result);
+    if (!result.count) { toast("No fields were found in that file. See the notes on the left.", "error"); return; }
+    if (form!.fields.length && !(await confirm({ title: "Add fields from the CSV?", message: `${result.count} field${result.count === 1 ? "" : "s"} will be added after the ${form!.fields.length} already in this form.`, confirmLabel: "Add them" }))) return;
+    setFields([...form!.fields, ...result.fields]);
+    setSel(null);
+    toast(`Added ${result.count} field${result.count === 1 ? "" : "s"}${result.problems.length ? `. ${result.problems.length} row${result.problems.length === 1 ? "" : "s"} need a look.` : "."}`, result.problems.length ? "info" : "success");
   }
 
   async function persist(publish: boolean) {
@@ -126,6 +145,19 @@ export default function BuilderPage() {
             ))}
           </div>
         ))}
+        <div className="palette-group" role="group" aria-label="Import">
+          <h3 className="palette-h">Import</h3>
+          <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" hidden onChange={importCsv} aria-label="Choose a CSV file" />
+          <Button small onClick={() => fileRef.current?.click()} className="palette-item" style={{ justifyContent: "flex-start" }}>Import fields from CSV…</Button>
+          <Button small onClick={() => download("geohub-form-template.csv", formTemplateCsv(), "text/csv")} className="palette-item" style={{ justifyContent: "flex-start" }}>Download CSV template</Button>
+          <span className="field-hint">One row per field: type, label, choices, required… XLSForm type names such as select_one and begin group also work.</span>
+          {imported && (imported.problems.length > 0 || imported.ignoredColumns.length > 0) && (
+            <div className="stack" role="status" style={{ gap: 4 }}>
+              {imported.problems.map((p, i) => <span key={i} className="field-error">{p.line ? `Line ${p.line}: ` : ""}{p.message}</span>)}
+              {imported.ignoredColumns.length > 0 && <span className="field-hint">Columns not used: {imported.ignoredColumns.join(", ")}.</span>}
+            </div>
+          )}
+        </div>
         <span className="field-hint">Click a field type to add it, or drag it onto the form.</span>
         <span className="field-hint">The point, line or area is drawn on the map, so the form only asks for the details.</span>
       </aside>

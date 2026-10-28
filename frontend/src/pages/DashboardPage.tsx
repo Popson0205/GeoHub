@@ -49,7 +49,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [name, setName] = useState(dashboard.name);
   const [cfg, setCfg] = useState<DashboardConfig>(dashboard.config);
   const [snapshot, setSnapshot] = useState(JSON.stringify({ name: dashboard.name, cfg: dashboard.config }));
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);         // the element that is highlighted (clicked or dragged)
+  const [settingsId, setSettingsId] = useState<string | null>(null);      // the element whose settings are open: only the gear button, "Add element" or the View list opens them
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [panel, setPanel] = useState<PanelKey | null>(null);
@@ -57,6 +58,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const [collapsed, setCollapsed] = useState(true);   // a slim icon rail by default, so the dashboard gets the room
   const [drag, setDrag] = useState<{ id: string; rects: Map<string, Rect> } | null>(null);   // the layout while a chart is being dragged
   const gridRef = useRef<HTMLDivElement>(null);
+  const justDragged = useRef(false);   // a drag that ends over empty canvas must not count as a click on it
   // "Fit to screen": on a desktop-width window the whole page is scaled down to fit under the header, so it never scrolls.
   const stageRef = useRef<HTMLDivElement>(null), innerRef = useRef<HTMLDivElement>(null), fitRef = useRef(1);
   const [fit, setFit] = useState(1);
@@ -90,7 +92,12 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const setFilters = (n: Filters | ((f: Filters) => Filters)) => setParams(filtersToParams(typeof n === "function" ? n(filters) : n, params), { replace: true });
   const pageSearch = (id: string) => { const q = new URLSearchParams(params); q.set("page", id); return `?${q.toString()}`; };
   const goPage = (id: string) => { const q = new URLSearchParams(params); q.set("page", id); setParams(q); };
-  useEffect(() => { setSelected(null); }, [page.id]);
+  useEffect(() => { setSelected(null); setSettingsId(null); }, [page.id]);
+  /** Click or drag an element: highlight it. If the settings panel is already open it follows to this element; otherwise it stays shut. */
+  const select = (id: string) => { setSelected(id); setSettingsId((cur) => (cur ? id : null)); };
+  /** The gear button: highlight the element and open its settings. */
+  const openSettings = (id: string) => { setSelected(id); setSettingsId(id); };
+  const closeSettings = () => setSettingsId(null);
 
   // The dashboard's own date range narrows what viewers' filters let through; it is part of the design and previews live.
   const range = useMemo(() => timeRange(cfg.time_filter, loadedAt ?? new Date()), [cfg.time_filter, loadedAt]);
@@ -103,8 +110,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const manual = isManualLayout(page.widgets);
   const placed = useMemo(() => placeAll(page.widgets, drag?.rects), [page.widgets, drag]);
   const sideWidgets = useMemo(() => page.widgets.filter(inSidebar), [page.widgets]);
-  const rectOfSel = useMemo(() => (selected ? layoutRects(page.widgets).get(selected) : undefined), [page.widgets, selected]);
-  const sel = page.widgets.find((w) => w.id === selected) ?? null;
+  const rectOfSel = useMemo(() => (settingsId ? layoutRects(page.widgets).get(settingsId) : undefined), [page.widgets, settingsId]);
+  const sel = page.widgets.find((w) => w.id === settingsId) ?? null;   // the element shown in the settings panel
   // A bar, pie or line that is itself filtering keeps all its groups on screen (the picked ones highlighted), so you can pick another
   // without clearing first. Every other element is filtered by it as usual.
   const crossSources = useMemo(() => {
@@ -138,12 +145,12 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     const own = isStatic(type) || page.form_id ? undefined : forms[0];                    // a page with no form: the element picks its own
     const defsFor = isStatic(type) ? [] : dashboardFields(own ?? pageForm);
     const w: Widget = { ...newWidget(type, defsFor), form_id: own?.id };
-    patchPage((pg) => ({ ...pg, widgets: [...pg.widgets, w] })); setSelected(w.id);
+    patchPage((pg) => ({ ...pg, widgets: [...pg.widgets, w] })); openSettings(w.id);   // a new element needs setting up, so its settings open
   }
   function move(id: string, by: -1 | 1) {
     patchPage((pg) => { const i = pg.widgets.findIndex((w) => w.id === id), j = i + by; if (i < 0 || j < 0 || j >= pg.widgets.length) return pg; const a = [...pg.widgets]; [a[i], a[j]] = [a[j], a[i]]; return { ...pg, widgets: a }; });
   }
-  function remove(id: string) { patchPage((pg) => ({ ...pg, widgets: settle(pg.widgets.filter((w) => w.id !== id)) })); if (selected === id) setSelected(null); }
+  function remove(id: string) { patchPage((pg) => ({ ...pg, widgets: settle(pg.widgets.filter((w) => w.id !== id)) })); if (selected === id) setSelected(null); if (settingsId === id) setSettingsId(null); }
   const setRect = (id: string, r: Partial<Rect>) => patchPage((pg) => ({ ...pg, widgets: setWidgetRect(pg.widgets, id, r) }));
   const moveRegion = (id: string, r: "body" | "sidebar") => patchPage((pg) => ({ ...pg, widgets: setRegion(pg.widgets, id, r) }));
   const canDrag = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1101px)").matches;   // below this the grid has fewer columns
@@ -151,7 +158,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   /** Drag a chart by its title bar (move) or by an edge or corner (resize). The others make way live; the result is kept on release. */
   function grab(w: Widget, mode: "move" | "e" | "s" | "se", e: ReactPointerEvent) {
     if (!editing || e.button !== 0 || !gridRef.current) return;
-    e.preventDefault(); e.stopPropagation(); setSelected(w.id);
+    e.preventDefault(); e.stopPropagation(); select(w.id);
     if (!canDrag()) { toast("Dragging needs a wider screen. Use the Left / Top / Wide / Tall boxes in the element settings instead.", "info"); return; }
     const grid = gridRef.current, cs = getComputedStyle(grid);
     const gapX = parseFloat(cs.columnGap) || 12, gapY = parseFloat(cs.rowGap) || 12, rowH = parseFloat(cs.gridAutoRows) || 64;
@@ -169,7 +176,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     };
     const done = (keep: boolean) => {
       window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel);
-      const final = latest; setDrag(null);
+      const final = latest; setDrag(null); justDragged.current = true; window.setTimeout(() => { justDragged.current = false; }, 0);
       if (keep && final) patchPage((pg) => ({ ...pg, widgets: withRects(pg.widgets, final) }));
     };
     const onUp = () => done(true), onCancel = () => done(false);
@@ -185,14 +192,14 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     if (!next || next.id === page.form_id) return;
     if (page.widgets.length && !(await confirm({ title: "Switch form?", message: "The charts use fields from the current form. They are replaced with a starter set for the new one.", confirmLabel: "Switch form" }))) return;
     patchPage((pg) => ({ ...pg, form_id: next.id, widgets: starterWidgets(next), filters: undefined }));
-    setFilters(noFilters()); setSelected(null);
+    setFilters(noFilters()); setSelected(null); setSettingsId(null);
   }
   async function applyTemplate(id: TemplateId) {
     const form = forms.find((f) => f.id === page.form_id);
     if (!form) return;
     const label = TEMPLATES.find((t) => t.id === id)?.name ?? "template";
     if (page.widgets.length && !(await confirm({ title: `Apply “${label}”?`, message: "The elements on this page are replaced. Other pages are not touched. Nothing is saved until you press Save, and Discard brings everything back.", confirmLabel: "Replace elements" }))) return;
-    patchPage((pg) => ({ ...pg, widgets: templateWidgets(id, form) })); setSelected(null);
+    patchPage((pg) => ({ ...pg, widgets: templateWidgets(id, form) })); setSelected(null); setSettingsId(null);
   }
   function addPage() {
     if (cfg.pages.length >= MAX_PAGES) { toast(`A dashboard can have up to ${MAX_PAGES} pages.`, "error"); return; }
@@ -236,7 +243,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   async function discard() {
     if (dirty && !(await confirm({ title: "Discard your changes?", message: "The dashboard goes back to how it was last saved.", confirmLabel: "Discard", danger: true }))) return;
     const s = JSON.parse(snapshot) as { name: string; cfg: DashboardConfig };
-    setName(s.name); setCfg(s.cfg); setSelected(null);
+    setName(s.name); setCfg(s.cfg); setSelected(null); setSettingsId(null);
   }
   async function leave(e: React.MouseEvent) {
     if (!dirty) return;
@@ -256,7 +263,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const card = (w: Widget, extra: { span: number; rows: number; col?: number; row?: number }, side = false) => (
     <WidgetCard key={w.id} w={w} span={extra.span} height={extra.rows} col={extra.col} row={extra.row} side={side} dragging={drag?.id === w.id} onGrab={(m, e) => grab(w, m, e)}
       source={sourceOf(w)} hasForm={!!(w.form_id ?? page.form_id)} showSource={!!w.form_id && w.form_id !== page.form_id}
-      filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && setSelected(w.id)} onPick={(s) => pick(w, s)}
+      filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && select(w.id)} onSettings={editing ? () => openSettings(w.id) : undefined} settingsOpen={settingsId === w.id} onPick={(s) => pick(w, s)}
       onClear={isFiltered(filters) ? () => setFilters(noFilters()) : undefined} />
   );
 
@@ -268,7 +275,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
       {panel === "add" && <AddElementPanel onPick={add} onClose={() => setPanel(null)} full={page.widgets.length >= MAX_WIDGETS_PER_PAGE} hasSource={hasSource} />}
       {panel === "view" && (
         <ViewPanel key={viewTab} initialTab={viewTab} canEdit={canEdit} onClose={() => setPanel(null)} name={name} description={cfg.description ?? ""} onName={setName} onDescription={(v) => setCfg((c) => ({ ...c, description: v || undefined }))}
-          pages={cfg.pages} page={page} forms={forms} selectedId={selected} onSelect={setSelected} onRemove={remove} onRegion={moveRegion}
+          pages={cfg.pages} page={page} forms={forms} selectedId={selected} onSelect={openSettings} onRemove={remove} onRegion={moveRegion}
           filterFields={filterDefs} onPageFilters={(ids) => patchPage((p) => ({ ...p, filters: ids.length ? ids : undefined }))}
           onPageTitle={(v) => patchPage((p) => ({ ...p, title: v }))} onPageForm={(id) => void choosePageForm(id)} onApplyTemplate={(id) => void applyTemplate(id)}
           onMovePage={movePage} onRemovePage={() => void removePage()} onAddPage={addPage} dashboardId={dashboard.id} dirty={dirty} />)}
@@ -324,7 +331,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
           </div>)}
         {editing && page.widgets.length > 0 && (
           <div className="dash-hintbar">
-            <small className="meta dash-hint">Drag an element by its title bar to move it, and by its edge or corner to resize it. Press Save in the toolbar to keep your changes.</small>
+            <small className="meta dash-hint">Drag an element by its title bar to move it, and by its edge or corner to resize it. Click the gear on an element for its settings. Press Save in the toolbar to keep your changes.</small>
             {manual && <Button small onClick={() => patchPage((pg) => ({ ...pg, widgets: resetRects(pg.widgets) }))}>Reset layout</Button>}
           </div>)}
 
@@ -333,7 +340,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         {page.widgets.length === 0
           ? <EmptyCanvas canEdit={canEdit} onPick={add} onPanel={openPanel} />
           : <div className={`dash-layout${editing && sel ? " has-aside" : ""}`}>
-            <div className="dash-stage" ref={stageRef}>
+            <div className="dash-stage" ref={stageRef} onClick={editing ? (e) => { if (!justDragged.current && !(e.target as HTMLElement).closest(".widget")) { setSelected(null); setSettingsId(null); } } : undefined}>
             <div className="dash-stage-inner" ref={innerRef} style={{ "--fit": fit } as CSSProperties}>
             <div className={`dash-body${sideWidgets.length ? " has-side" : ""}`}>
               <div className={`dash-grid${drag ? " is-dragging" : ""}`} ref={gridRef}>
@@ -346,7 +353,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             {editing && sel && (
               <WidgetSettings w={sel} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={(sourceOf(sel)?.defs) ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
                 forms={forms} pageFormId={page.form_id} onForm={(id) => setWidgetForm(sel, id)} onRegion={(r) => moveRegion(sel.id, r)}
-                onChange={(p) => patch(sel.id, p)} onMove={(by) => move(sel.id, by)} onRemove={() => remove(sel.id)} onClose={() => setSelected(null)} />
+                onChange={(p) => patch(sel.id, p)} onMove={(by) => move(sel.id, by)} onRemove={() => remove(sel.id)} onClose={closeSettings} />
             )}
           </div>}
       </div>

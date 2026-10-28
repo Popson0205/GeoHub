@@ -272,3 +272,59 @@
   .dashboard-builder > .dashboard-side-panel { position: absolute; top: 8px; bottom: 8px; left: calc(var(--rail, 52px) + 8px); z-index: 70; width: 320px; border: 1px solid var(--line); border-radius: var(--r-lg, 12px); box-shadow: 0 18px 48px rgba(15, 20, 40, .28), 0 2px 8px rgba(15, 20, 40, .12); animation: dash-aside-in .18s ease-out; }
   .dashboard-sidebar:not(.is-collapsed) ~ .dashboard-side-panel { --rail: 196px; }
 }
+
+/* ======================================================================================================
+   Element gear button and settings panel (edit mode).
+   Clicking an element only highlights it. Its settings open from the gear in its corner.
+   ====================================================================================================== */
+.widget-gear {
+  position: absolute; top: 6px; right: 6px; z-index: 4; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-md, 8px); background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--n-600, #5b6a62);
+  cursor: pointer; opacity: .6; transition: opacity .12s, background-color .12s, color .12s, border-color .12s, transform .12s;
+}
+.widget:hover > .widget-gear, .widget.is-selected > .widget-gear, .widget-gear:focus-visible, .widget-gear.is-open { opacity: 1; }
+.widget-gear:hover { background: var(--card); border-color: var(--line); color: var(--ink-900, #14201a); }
+.widget-gear:active { transform: scale(.94); }
+.widget-gear.is-open { background: var(--dash-accent, var(--green-600)); border-color: var(--dash-accent, var(--green-600)); color: #fff; }
+.widget-gear:focus-visible { outline: 2px solid var(--focus, var(--green-500)); outline-offset: 2px; }
+.widget.is-editable .widget-head { padding-right: 32px; }                    /* the title never runs under the gear */
+.widget.is-editable.t-kpi .widget-head { padding-right: 0; justify-content: center; }
+.widget.is-editable.t-map > .widget-gear { top: 8px; right: 8px; }
+@media (hover: none) { .widget-gear { opacity: 1; width: 36px; height: 36px; } }   /* touch screens have no hover, and need a bigger target */
+@media print { .widget-gear { display: none !important; } }
+
+.dashboard-canvas-outer .dash-aside { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; outline: none; }
+.dset-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); background: var(--card); }
+.dset-icon { display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: var(--r-md, 8px); background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 12%, var(--card)); color: var(--dash-accent, var(--green-700)); }
+.dset-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dset-titles small { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.dash-aside .dset-titles h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dset-close { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--r-md, 8px); background: transparent; color: var(--n-600, #5b6a62); cursor: pointer; }
+.dset-close:hover { background: var(--n-100); color: var(--ink-900, #14201a); }
+.dset-close:focus-visible { outline: 2px solid var(--focus, var(--green-500)); outline-offset: 1px; }
+
+.dset-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.dset-sec { border-bottom: 1px solid var(--line); }
+.dset-sec > summary { display: flex; align-items: center; justify-content: space-between; padding: var(--s-3) var(--s-4); list-style: none; cursor: pointer; user-select: none; font-size: var(--fs-sm); font-weight: 600; letter-spacing: .01em; }
+.dset-sec > summary::-webkit-details-marker { display: none; }
+.dset-sec > summary:hover { background: var(--n-50); }
+.dset-sec > summary:focus-visible { outline: 2px solid var(--focus, var(--green-500)); outline-offset: -2px; }
+.dset-chev { color: var(--muted); transition: transform .15s; }
+.dset-sec[open] > summary .dset-chev { transform: rotate(180deg); }
+.dset-sec-body { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-1, 4px) var(--s-4) var(--s-4); }
+.dash-aside .field > label, .dash-aside .field > .label { display: block; margin-bottom: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--n-700); }
+.dash-aside .field > small { display: block; margin-top: 4px; }
+.dash-aside .field :is(input:not([type="checkbox"], [type="range"], [type="color"]), select, textarea) { width: 100%; box-sizing: border-box; }
+.dash-aside .dash-rect { padding: 0; border: 0; gap: var(--s-3); }
+.dash-aside .dash-rect legend { padding: 0; margin-bottom: var(--s-2); font-size: var(--fs-xs); font-weight: 600; color: var(--n-700); }
+.dset-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); cursor: pointer; }
+.dset-check input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--green-600); }
+.dset-range-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: 4px; }
+.dset-range-head label { flex: 1; margin: 0 !important; }
+.dset-range-head output { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.dset-reset { font-size: var(--fs-xs); color: var(--green-800); text-decoration: underline; }
+.dset-range input[type="range"] { width: 100%; accent-color: var(--dash-accent, var(--green-600)); }
+.dash-aside .theme-color-row { padding: 2px 0; }
+
+.dset-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); background: var(--card); box-shadow: 0 -4px 12px rgba(15, 20, 40, .05); }
+@media (max-width: 900px) { .dashboard-canvas-outer .dash-aside { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 78vh; } }
