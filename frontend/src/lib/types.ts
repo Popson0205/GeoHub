@@ -49,7 +49,10 @@ export type Calc =
   | { fn: "sum" | "product" | "min" | "max" | "avg"; args: Operand[] }
   | { fn: "diff" | "ratio"; args: [Operand, Operand] }
   | { fn: "count_selected"; args: [Operand] }
-  | { fn: "today" | "now" };
+  | { fn: "today" | "now" }
+  /** Generated once when the record is started, then kept: a unique id the collector never types. */
+  | { fn: "uuid" }
+  | { fn: "short_id"; prefix?: string };
 
 export interface FormField {
   id: string;

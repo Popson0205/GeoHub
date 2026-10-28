@@ -51,6 +51,11 @@ const TYPE_ALIASES: Record<string, TypeMatch> = {
   photo: { type: "photo" }, image: { type: "photo" }, audio: { type: "audio" }, video: { type: "video" }, file: { type: "file" }, signature: { type: "signature" },
   note: { type: "note" }, instructions: { type: "note" },
   calculation: { type: "calculation" }, calculate: { type: "calculation" },
+  // generated once per record: the collector never types these
+  auto_id: { type: "calculation", preset: { calc: { fn: "short_id" } } }, autoid: { type: "calculation", preset: { calc: { fn: "short_id" } } },
+  short_id: { type: "calculation", preset: { calc: { fn: "short_id" } } }, id: { type: "calculation", preset: { calc: { fn: "short_id" } } },
+  uuid: { type: "calculation", preset: { calc: { fn: "uuid" } } }, unique_id: { type: "calculation", preset: { calc: { fn: "uuid" } } },
+  today_date: { type: "calculation", preset: { calc: { fn: "today" } } },
   group: { type: "group" }, repeat: { type: "repeat" },
 };
 const BEGIN = /^(begin|start)[\s_]+(group|repeat)$/, END = /^end[\s_]+(group|repeat)$/;
@@ -75,7 +80,7 @@ const splitChoices = (s: string): string[] => {
 };
 
 const KNOWN = ["type", "name", "id", "label", "choices", "options", "hint", "placeholder", "required", "default", "readonly", "read_only", "appearance",
-  "min", "max", "min_length", "max_length", "min_items", "max_items", "pattern", "pattern_message", "unit", "decimals", "list_name", "list"];
+  "min", "max", "min_length", "max_length", "min_items", "max_items", "pattern", "pattern_message", "unit", "decimals", "list_name", "list", "prefix", "calculation", "calc"];
 
 export function importFormCsv(text: string, existing: FormField[] = []): FormImportResult {
   const parsed = parseCsv(text);
@@ -167,7 +172,17 @@ export function importFormCsv(text: string, existing: FormField[] = []): FormImp
       if (t === "choice" && typeof f.default === "string" && !ch.includes(f.default)) delete f.default;
     }
     if (t === "note") f.text = cell(r, "hint") || label;
-    if (t === "calculation") problems.push({ line, message: `“${label}” is a calculation. Choose what to calculate in the builder; it cannot be written in a CSV.` });
+    if (t === "calculation" && !f.calc) {
+      // XLSForm writes the formula in a "calculation" column. Only the ones GeoHub can do without code are understood.
+      const formula = cell(r, "calculation", "calc").replace(/^once\((.*)\)$/i, "$1").replace(/\s+/g, "").toLowerCase();
+      if (formula === "uuid()") f.calc = { fn: "uuid" };
+      else if (formula === "today()") f.calc = { fn: "today" };
+      else if (formula === "now()") f.calc = { fn: "now" };
+    }
+    const prefix = cell(r, "prefix");
+    if (prefix && f.calc?.fn === "short_id") f.calc = { fn: "short_id", prefix: prefix.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 10) || undefined };
+    if (f.calc?.fn === "short_id" && f.calc.prefix === undefined) f.calc = { fn: "short_id" };
+    if (t === "calculation" && !f.calc) problems.push({ line, message: `“${label}” is a calculation. Choose what to calculate in the builder; it cannot be written in a CSV.` });
     if (t === "photo") f.max_items = f.max_items ?? 3;
     if (isContainer(t)) f.children = [];
 
@@ -193,21 +208,22 @@ const allows0 = (t: FieldType, p: string): boolean => (TYPE_SPECS[t].props as re
 
 /** A starter file to download, with one example of everything that matters. */
 export function formTemplateCsv(): string {
-  const head = ["type", "name", "label", "hint", "required", "choices", "default", "min", "max", "appearance"];
+  const head = ["type", "name", "label", "hint", "required", "choices", "default", "min", "max", "appearance", "prefix"];
   const rows: string[][] = [
-    ["text", "site_name", "Site name", "As written on the signboard", "yes", "", "", "", "", ""],
-    ["integer", "households", "Number of households", "", "", "", "", "0", "10000", ""],
-    ["decimal", "depth_m", "Depth (m)", "", "", "", "", "0", "", ""],
-    ["select_one", "condition", "Condition", "", "yes", "Working; Needs repair; Broken", "", "", "", "radio"],
-    ["select_multiple", "uses", "What is it used for?", "", "", "Drinking; Washing; Farming", "", "", "", ""],
-    ["boolean", "has_fence", "Is it fenced?", "", "", "", "no", "", "", "switch"],
-    ["date", "visit_date", "Date of visit", "", "yes", "", "today", "", "", ""],
-    ["photo", "site_photo", "Photo of the site", "", "", "", "", "", "", ""],
-    ["note", "tip", "Take the photo from the road", "", "", "", "", "", "", ""],
-    ["begin group", "contact", "Contact person", "", "", "", "", "", "", ""],
-    ["text", "contact_name", "Name", "", "", "", "", "", "", ""],
-    ["text", "contact_phone", "Phone", "", "", "", "", "", "", ""],
-    ["end group", "", "", "", "", "", "", "", "", ""],
+    ["auto_id", "record_id", "Record ID", "Made automatically", "", "", "", "", "", "", "WP-"],
+    ["text", "site_name", "Site name", "As written on the signboard", "yes", "", "", "", "", "", ""],
+    ["integer", "households", "Number of households", "", "", "", "", "0", "10000", "", ""],
+    ["decimal", "depth_m", "Depth (m)", "", "", "", "", "0", "", "", ""],
+    ["select_one", "condition", "Condition", "", "yes", "Working; Needs repair; Broken", "", "", "", "radio", ""],
+    ["select_multiple", "uses", "What is it used for?", "", "", "Drinking; Washing; Farming", "", "", "", "", ""],
+    ["boolean", "has_fence", "Is it fenced?", "", "", "", "no", "", "", "switch", ""],
+    ["date", "visit_date", "Date of visit", "", "yes", "", "today", "", "", "", ""],
+    ["photo", "site_photo", "Photo of the site", "", "", "", "", "", "", "", ""],
+    ["note", "tip", "Take the photo from the road", "", "", "", "", "", "", "", ""],
+    ["begin group", "contact", "Contact person", "", "", "", "", "", "", "", ""],
+    ["text", "contact_name", "Name", "", "", "", "", "", "", "", ""],
+    ["text", "contact_phone", "Phone", "", "", "", "", "", "", "", ""],
+    ["end group", "", "", "", "", "", "", "", "", "", ""],
   ];
   return [head, ...rows].map((r) => r.map(csvEscape).join(",")).join("\r\n") + "\r\n";
 }

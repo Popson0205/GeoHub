@@ -1,6 +1,6 @@
 import { GPS_KEYS } from "./gps";
 import { TYPE_SPECS, allFields, hasChoices, slugifyFieldId, topLevelFields, walk } from "./fieldSpec";
-import { calcRefs, conditionRefs, isEmpty, resolve } from "./logic";
+import { calcRefs, conditionRefs, generateId, isEmpty, isGenerated, resolve } from "./logic";
 import type { FieldType, Form, FormField, Props } from "./types";
 
 export { slugifyFieldId };
@@ -130,7 +130,8 @@ export function applyDefaults(fields: FormField[], props: Props = {}): Props {
     return v;
   };
   for (const f of topLevelFields(fields)) {
-    if (f.default !== undefined && isEmpty(out[f.id]) && f.type !== "repeat") out[f.id] = token(f.default, f.type);
+    if (f.type === "calculation" && f.calc && isGenerated(f.calc) && isEmpty(out[f.id])) out[f.id] = generateId(f.calc);
+    else if (f.default !== undefined && isEmpty(out[f.id]) && f.type !== "repeat") out[f.id] = token(f.default, f.type);
   }
   return out;
 }

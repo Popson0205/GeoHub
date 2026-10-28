@@ -62,6 +62,27 @@ const two = (args: Operand[], get: Get): [number, number] | null => {
 };
 const pad = (n: number) => String(n).padStart(2, "0");
 
+// ---- generated ids ----
+const ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // no 0 O 1 I L, so an id can be read out loud or copied by hand
+function randomBytes(n: number): number[] {
+  const out = new Uint8Array(n);
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) crypto.getRandomValues(out);
+  else for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+  return Array.from(out);
+}
+const newUuid = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); });
+/** True for calculations that make a new value instead of working one out from answers. They run once and are then kept. */
+export const isGenerated = (c: Calc | undefined): boolean => !!c && (c.fn === "uuid" || c.fn === "short_id");
+/** A new id for a `uuid` or `short_id` calculation. */
+export function generateId(c: Calc): string {
+  if (c.fn === "uuid") return newUuid();
+  const prefix = c.fn === "short_id" ? c.prefix ?? "" : "";
+  return prefix + randomBytes(8).map((b) => ID_ALPHABET[b % ID_ALPHABET.length]).join("");
+}
+
 /** The value of a calculation, or null when its inputs are not there yet. */
 export function evalCalc(c: Calc, get: Get): number | string | null {
   switch (c.fn) {
@@ -79,6 +100,7 @@ export function evalCalc(c: Calc, get: Get): number | string | null {
     }
     case "today": { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
     case "now": return new Date().toISOString();
+    case "uuid": case "short_id": return generateId(c);
   }
 }
 
@@ -115,7 +137,9 @@ function scan(fields: FormField[], next: Props, root: Props, ids: Set<string>, p
     const visible = parentVisible && (!f.visible || evalCondition(f.visible, get));
     if (!visible) st.hidden.add(key);
     else if (f.required || f.must_be_true || (f.required_if && evalCondition(f.required_if, get))) st.required.add(key);
-    if (f.type === "calculation" && f.calc) {
+    if (f.type === "calculation" && f.calc && isGenerated(f.calc)) {
+      if (visible && isEmpty(next[f.id])) next[f.id] = generateId(f.calc);       // made once; an existing id is never replaced
+    } else if (f.type === "calculation" && f.calc) {
       let v = evalCalc(f.calc, get);
       if (typeof v === "number" && f.decimals !== undefined) v = Number(v.toFixed(f.decimals));
       if (v === null) delete next[f.id]; else next[f.id] = v;

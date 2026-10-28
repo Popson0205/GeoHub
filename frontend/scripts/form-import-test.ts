@@ -6,7 +6,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
 // the downloadable template imports cleanly
 const t = importFormCsv(formTemplateCsv());
 ok(t.problems.length === 0, `template has no problems (${t.problems.map((p) => p.message).join("; ")})`);
-ok(t.count === 12 && t.fields.length === 10, `template: 12 fields, 10 at the top (${t.count}/${t.fields.length})`);
+ok(t.count === 13 && t.fields.length === 11, `template: 13 fields, 11 at the top (${t.count}/${t.fields.length})`);
 const g = t.fields.find((f) => f.type === "group");
 ok(g?.children?.length === 2, "begin group / end group nests two fields");
 const cond = t.fields.find((f) => f.id === "condition");
@@ -15,6 +15,13 @@ ok(t.fields.find((f) => f.id === "households")?.integer === true && t.fields.fin
 ok(t.fields.find((f) => f.id === "visit_date")?.default === "$today", "default today -> $today");
 ok(t.fields.find((f) => f.id === "has_fence")?.default === false, "boolean default no -> false");
 ok(Object.keys(checkFieldDefs(t.fields)).length === 0, "the builder's own checks find nothing wrong");
+
+// generated ids
+const idf = t.fields.find((f) => f.id === "record_id");
+ok(idf?.type === "calculation" && idf.calc?.fn === "short_id" && (idf.calc as any).prefix === "WP-", "auto_id row -> short_id calculation with its prefix");
+const ids = importFormCsv("type,label,calculation\nuuid,Row id,\ncalculate,Made,once(uuid())\nauto_id,Code,\ncalculate,Other,a+b");
+ok(ids.fields[0].calc?.fn === "uuid" && ids.fields[1].calc?.fn === "uuid" && ids.fields[2].calc?.fn === "short_id", "uuid, XLSForm once(uuid()) and auto_id are understood");
+ok(ids.problems.some((p) => /Other/.test(p.message)), "a formula GeoHub cannot run is reported, not guessed");
 
 // semicolon file, BOM, XLSForm choice list rows, unknown column, existing ids
 const csv = "\uFEFFtype;name;label;extra\r\nselect_one yn;ok;Is it ok?;x\r\nchoices yn;;Yes;\r\nchoices yn;;No;\r\ntext;ok;Is it ok?;\r\ngeopoint;loc;Where;\r\nbogus;a;A;\r\nend group;;;\r\n";

@@ -1,7 +1,7 @@
 // Run with: npm run test:forms
 import { applyDefaults, checkFieldDefs, pruneProperties, validateProperties } from "../src/lib/forms";
 import { moveField, moveInto, newField, PALETTE, slugifyFieldId, TYPE_SPECS } from "../src/lib/fieldSpec";
-import { evalCalc, evalCondition, resolve } from "../src/lib/logic";
+import { evalCalc, evalCondition, generateId, resolve } from "../src/lib/logic";
 import type { FormField } from "../src/lib/types";
 
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) process.exitCode = 1; };
@@ -82,7 +82,7 @@ ok(Object.keys(checkFieldDefs(fields)).length === 0, "the sample form has no des
 // registry and tree helpers
 ok(PALETTE.every((p) => p.type in TYPE_SPECS), "every palette entry maps to a type");
 ok(new Set(PALETTE.map((p) => p.key)).size === PALETTE.length, "palette keys are unique");
-ok(PALETTE.length === 23, "23 palette entries cover the 26 requested elements (the 3 GPS ones are the form's geometry, not fields)");
+ok(PALETTE.length === 25, "25 palette entries: the 23 for the 26 requested elements (the 3 GPS ones are the form's geometry, not fields) plus Auto ID and UUID");
 ok(slugifyFieldId("Water Source!", [{ id: "water_source", label: "x", type: "text" }]) === "water_source_2", "ids are unique slugs");
 const g = newField(PALETTE.find((p) => p.key === "group")!, []);
 const tree = [g, newField(PALETTE.find((p) => p.key === "text")!, [g])];
@@ -91,3 +91,21 @@ ok(nested.length === 1 && nested[0].children?.length === 1, "move a field into a
 ok(moveInto(nested, g.id, g.id) === nested, "a group cannot move into itself");
 ok(moveInto(nested, tree[1].id, null).length === 2, "move a field out of a group");
 ok(moveField([tree[0], tree[1]], tree[1].id, -1)[0].id === tree[1].id, "move a field up");
+
+// generated ids: made once, then kept
+const idForm: FormField[] = [
+  newField(PALETTE.find((p) => p.key === "auto_id")!, []),
+  { id: "name", label: "Name", type: "text" },
+  { id: "u", label: "U", type: "calculation", calc: { fn: "uuid" } },
+  { id: "rep", label: "Rep", type: "repeat", children: [{ id: "rid", label: "Row id", type: "calculation", calc: { fn: "short_id", prefix: "R-" } }] },
+];
+ok(idForm[0].calc?.fn === "short_id" && idForm[0].id === "auto_id_short_code", `the Auto ID palette item keeps its calculation (${idForm[0].id})`);
+ok(Object.keys(checkFieldDefs(idForm)).length === 0, "generated ids pass the design checks");
+const start = applyDefaults(idForm);
+ok(/^ID-[A-HJKMNP-Z2-9]{8}$/.test(String(start.auto_id_short_code)) && /^[0-9a-f-]{36}$/.test(String(start.u)), `a new record gets its ids at once (${start.auto_id_short_code}, ${start.u})`);
+const again = resolve(idForm, { ...start, name: "x" }).values;
+ok(again.auto_id_short_code === start.auto_id_short_code && again.u === start.u, "typing in other fields never changes the ids");
+ok(pruneProperties({ fields: idForm }, start).auto_id_short_code === start.auto_id_short_code, "the id is saved with the record");
+ok(resolve(idForm, {}).values.u !== undefined, "a record that has no id yet gets one");
+ok(generateId({ fn: "short_id" }) !== generateId({ fn: "short_id" }) && generateId({ fn: "uuid" }) !== generateId({ fn: "uuid" }), "two ids are never the same");
+ok(String(generateId({ fn: "short_id", prefix: "WP-" })).startsWith("WP-"), "the prefix is used");

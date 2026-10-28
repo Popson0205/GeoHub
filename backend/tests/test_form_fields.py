@@ -145,3 +145,23 @@ def test_type_table_matches_the_frontend():
         assert TYPE_SPECS[name]["stores"] == stores, name
         assert TYPE_SPECS[name]["answers"] == (answers == "true"), name
         assert TYPE_SPECS[name]["appearances"] == re.findall(r'"(\w+)"', apps), name
+
+
+def test_generated_ids_are_made_once_and_kept():
+    fields = [{"id": "rid", "label": "ID", "type": "calculation", "calc": {"fn": "short_id", "prefix": "WP-"}},
+              {"id": "u", "label": "U", "type": "calculation", "calc": {"fn": "uuid"}}]
+    assert check_field_defs(fields) == {}
+    values, _, _ = resolve(fields, {})
+    assert re.fullmatch(r"WP-[A-HJKMNP-Z2-9]{8}", values["rid"]) and len(values["u"]) == 36
+    again, _, _ = resolve(fields, dict(values))
+    assert again["rid"] == values["rid"] and again["u"] == values["u"]
+    assert eval_calc({"fn": "short_id"}, lambda i: None) != eval_calc({"fn": "short_id"}, lambda i: None)
+
+
+def test_generated_id_rules_are_checked():
+    bad = check_field_defs([{"id": "a", "label": "A", "type": "calculation", "calc": {"fn": "short_id", "prefix": "no spaces!"}}])
+    assert "a" in bad or bad
+    bad2 = check_field_defs([{"id": "a", "label": "A", "type": "calculation", "calc": {"fn": "uuid", "prefix": "X"}}])
+    assert bad2
+    bad3 = check_field_defs([{"id": "a", "label": "A", "type": "calculation", "calc": {"fn": "uuid", "args": [{"const": 1}]}}])
+    assert bad3

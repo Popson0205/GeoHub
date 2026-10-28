@@ -5,10 +5,11 @@ A repeat stores a list of rows under its own id. Everything here mirrors fronten
 backend/tests/test_form_fields.py checks the two type tables agree.
 """
 import math
+import secrets
 from typing import Any
 import re
 from datetime import date, datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 RESERVED_IDS = {"feature_id", "longitude", "latitude", "wkt", "geometry", "status", "uuid"}
 TEXT_CAP = 5000
@@ -52,7 +53,9 @@ ALL_PROPS = {"appearance", "hint", "placeholder", "required", "required_if", "vi
              "max_length", "min_items", "max_items", "pattern", "pattern_message", "choices", "integer", "decimals", "unit",
              "must_be_true", "true_label", "false_label", "text", "calc", "store", "children"}
 COND_OPS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "filled", "empty"}
-CALC_FNS = {"concat", "sum", "product", "min", "max", "avg", "diff", "ratio", "count_selected", "today", "now"}
+CALC_FNS = {"concat", "sum", "product", "min", "max", "avg", "diff", "ratio", "count_selected", "today", "now", "uuid", "short_id"}
+GENERATED_FNS = {"uuid", "short_id"}          # made once when a record starts, then kept (never recomputed)
+_ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # same as the client: no 0 O 1 I L
 
 
 # ------------------------------------------------------------------------------------------ tree helpers
@@ -229,6 +232,10 @@ def eval_calc(c: dict, get):
     if fn == "concat":
         parts = [", ".join(map(_s, v)) if isinstance(v, list) else _s(v) for v in (operand(a) for a in args) if not _empty(v)]
         return c.get("sep", " ").join(parts) if parts else None
+    if fn == "uuid":
+        return str(uuid4())
+    if fn == "short_id":
+        return c.get("prefix", "") + "".join(secrets.choice(_ID_ALPHABET) for _ in range(8))
     if fn == "today":
         return date.today().isoformat()
     if fn == "now":
@@ -252,7 +259,10 @@ def _scan(fields, nxt: dict, root: dict, ids: set, parent_visible: bool, prefix:
         elif f.get("required") or f.get("must_be_true") or (f.get("required_if") and eval_condition(f["required_if"], get)):
             st["required"].add(key)
         t = f["type"]
-        if t == "calculation" and f.get("calc"):
+        if t == "calculation" and f.get("calc") and f["calc"].get("fn") in GENERATED_FNS:
+            if visible and _empty(nxt.get(f["id"])):       # an id that is already there is kept
+                nxt[f["id"]] = eval_calc(f["calc"], get)
+        elif t == "calculation" and f.get("calc"):
             v = eval_calc(f["calc"], get)
             if isinstance(v, (int, float)) and f.get("decimals") is not None:
                 v = round(v, f["decimals"])
@@ -317,9 +327,11 @@ def _check_calc(c) -> str | None:
     if not isinstance(c, dict) or c.get("fn") not in CALC_FNS:
         return "choose what to calculate: " + ", ".join(sorted(CALC_FNS))
     fn = c["fn"]
-    if set(c) - {"fn", "args", "sep"}:
-        return "a calculation only has fn, args and sep"
-    if fn in ("today", "now"):
+    if set(c) - {"fn", "args", "sep", "prefix"}:
+        return "a calculation only has fn, args, sep and prefix"
+    if "prefix" in c and (fn != "short_id" or not isinstance(c["prefix"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{0,10}", c["prefix"])):
+        return "prefix is only for short_id: up to 10 letters, digits, - or _"
+    if fn in ("today", "now", "uuid", "short_id"):
         return None if not c.get("args") else f"{fn} takes no values"
     args = c.get("args")
     if not isinstance(args, list) or len(args) > 50:

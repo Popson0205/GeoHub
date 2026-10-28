@@ -60,6 +60,11 @@ Operators: `eq ne gt gte lt lte in not_in contains filled empty`.
 
 Calculations are a closed set: `sum product min max avg diff ratio concat count_selected today now`, with operands `{field}` or `{const}`.
 
+**Generated values** are calculations with no operands that make a new value instead of working one out: `uuid` (a UUID) and `short_id` (8 characters from an alphabet without 0 O 1 I L, with an optional `prefix` such as `WP-`).
+They are made once, when a record (or a repeat row) is started, and then kept: typing in other fields, editing the record later and saving never change them.
+If a record arrives without one, the server makes it. In the builder they are the "Auto ID" and "Unique ID (UUID)" entries under Computed.
+In a form CSV: `auto_id`, `uuid` or `calculate` with `once(uuid())`.
+
 Behaviour that matters:
 
 - A hidden field is not validated, not required, and its answer is dropped on save (`pruneProperties`). Children of a hidden group are hidden.

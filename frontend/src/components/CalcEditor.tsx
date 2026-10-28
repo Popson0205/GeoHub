@@ -6,6 +6,7 @@ const FN_LABEL: Record<Fn, string> = {
   sum: "Add up", product: "Multiply", min: "Smallest", max: "Largest", avg: "Average",
   diff: "First minus second", ratio: "First divided by second", concat: "Join as text",
   count_selected: "Count selected choices", today: "Today's date", now: "Current date and time",
+  short_id: "Auto ID (short code)", uuid: "Unique ID (UUID)",
 };
 const NUMERIC: Fn[] = ["sum", "product", "min", "max", "avg", "diff", "ratio"];
 
@@ -15,7 +16,8 @@ function withFn(fn: Fn, old: Calc | undefined): Calc {
     case "diff": case "ratio": return { fn, args: [args[0] ?? { const: 0 }, args[1] ?? { const: 1 }] };
     case "count_selected": return { fn, args: [args[0] ?? { const: "" }] };
     case "concat": return { fn, args, sep: " " };
-    case "today": case "now": return { fn };
+    case "today": case "now": case "uuid": return { fn };
+    case "short_id": return { fn, prefix: old && old.fn === "short_id" ? old.prefix : "ID-" };
     default: return { fn, args };
   }
 }
@@ -69,6 +71,14 @@ export default function CalcEditor({ value, onChange, candidates, idBase }: Prop
       {hasArgs && !fixed && (
         <div className="row"><Button small disabled={candidates.length === 0} onClick={() => setArgs([...args, { field: candidates[0]?.id ?? "" }])}>Add a value</Button></div>
       )}
+      {calc.fn === "short_id" && (
+        <div className="field">
+          <label htmlFor={`${idBase}-prefix`}>Start every ID with (optional)</label>
+          <input id={`${idBase}-prefix`} value={calc.prefix ?? ""} maxLength={10} onChange={(e) => onChange({ fn: "short_id", prefix: e.target.value.replace(/[^A-Za-z0-9_-]/g, "") || undefined })} />
+          <span className="field-hint">Made once when a record is started, for example {calc.prefix ?? ""}K7M2QX4P. It is saved with the record and never changes.</span>
+        </div>
+      )}
+      {calc.fn === "uuid" && <span className="field-hint">A long unique code made once when a record is started and saved with it. It never changes.</span>}
       {calc.fn === "concat" && (
         <div className="field">
           <label htmlFor={`${idBase}-sep`}>Put this between values</label>

@@ -80,6 +80,8 @@ export const PALETTE: PaletteItem[] = [
   { key: "signature", label: "Signature", type: "signature", category: "Media" },
   { key: "note", label: "Note / Instructions", type: "note", category: "Display" },
   { key: "calculation", label: "Calculation", type: "calculation", category: "Computed" },
+  { key: "auto_id", label: "Auto ID (short code)", type: "calculation", category: "Computed", preset: { calc: { fn: "short_id", prefix: "ID-" }, store: true } },
+  { key: "uuid", label: "Unique ID (UUID)", type: "calculation", category: "Computed", preset: { calc: { fn: "uuid" }, store: true } },
   { key: "group", label: "Group / Section", type: "group", category: "Structure" },
   { key: "repeat", label: "Repeat section", type: "repeat", category: "Structure" },
 ];
@@ -207,7 +209,7 @@ export function newField(item: PaletteItem, existing: FormField[]): FormField {
   if (hasChoices(t)) f.choices = ["Option 1", "Option 2"];
   if (t === "photo") f.max_items = 3;
   if (t === "note") f.text = "Write the instructions here.";
-  if (t === "calculation") { f.calc = { fn: "sum", args: [] }; f.store = true; }
+  if (t === "calculation") { f.calc = f.calc ?? { fn: "sum", args: [] }; f.store = true; }
   if (isContainer(t)) f.children = [];
   return f;
 }
