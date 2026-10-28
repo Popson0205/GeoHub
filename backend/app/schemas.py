@@ -504,6 +504,21 @@ MAX_WIDGETS_PER_PAGE = 30
 MAX_PAGE_FILTERS = 6
 
 
+class WidgetStyle(BaseModel):
+    """Font and style for one element. Same choices as DashboardStyle, limited to what an element can set for itself; it wins over the dashboard's."""
+    model_config = ConfigDict(extra="forbid")
+    font: Literal["system", "humanist", "rounded", "serif", "slab", "mono"] | None = None
+    textSize: int | None = Field(None, ge=80, le=150)
+    headingSize: int | None = Field(None, ge=10, le=24)
+    headingWeight: Literal[400, 500, 600, 700, 800] | None = None
+    headingCaps: bool | None = None
+    numberSize: int | None = Field(None, ge=70, le=200)
+    numberColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    radius: int | None = Field(None, ge=0, le=28)
+    border: Literal["none", "thin", "thick"] | None = None
+    borderColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
 class DashboardWidget(BaseModel):
     """One chart, number, table or map on a dashboard page. Mirrors `Widget` in frontend/src/lib/types.ts.
     Size and position are optional: without col/row/cols/rows the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
@@ -526,6 +541,8 @@ class DashboardWidget(BaseModel):
     subtitle_fields: list[str] = Field(default_factory=list, max_length=6, description="List: fields shown under the heading")
     content: str | None = Field(None, max_length=4000, description="Rich text: **bold**, *italic* and line breaks. Never treated as HTML")
     url: str | None = Field(None, max_length=500, description="Embedded content: an https:// address shown in a sandboxed frame")
+    style: WidgetStyle | None = Field(None, description="Font and style for this element only; overrides the dashboard-wide style")
+
     # Manual placement on the 12-column grid, set by dragging or resizing in the editor. All four or none; none = automatic layout.
     col: int | None = Field(None, ge=0, le=11, description="Left edge, in columns from 0")
     row: int | None = Field(None, ge=0, le=200, description="Top edge, in rows from 0")

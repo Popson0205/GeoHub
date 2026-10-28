@@ -1,7 +1,7 @@
 // Dashboard looks. A theme is a handful of colours; the builder turns them into CSS variables on the dashboard canvas
 // only, so nothing outside the dashboard changes. Presets are fixed; a person can change any single colour on top of one.
 import type { CSSProperties } from "react";
-import type { DashFont, DashStyle, DashTheme, ThemeColorKey } from "./types";
+import type { DashFont, DashStyle, DashTheme, ThemeColorKey, WidgetStyle } from "./types";
 
 export const THEME_KEYS: ThemeColorKey[] = ["background", "foreground", "accent", "cardBackground", "cardForeground", "headerBackground", "headerForeground"];
 export type ThemeColors = Record<ThemeColorKey, string>;
@@ -64,6 +64,22 @@ export function cleanStyle(raw: unknown): DashStyle | undefined {
   if (r.shadow === "none" || r.shadow === "soft" || r.shadow === "strong") o.shadow = r.shadow;
   const g = num(r.gap, STYLE_LIMITS.gap); if (g !== undefined) o.gap = g;
   return Object.keys(o).length ? o : undefined;
+}
+export const WIDGET_STYLE_KEYS = ["font", "textSize", "headingSize", "headingWeight", "headingCaps", "numberSize", "numberColor", "radius", "border", "borderColor"] as const;
+/** An element's own style: the same checks as the dashboard style, limited to the choices an element can make. */
+export function cleanWidgetStyle(raw: unknown): WidgetStyle | undefined {
+  const all = cleanStyle(raw) as Record<string, unknown> | undefined;
+  if (!all) return undefined;
+  const o: Record<string, unknown> = {};
+  for (const k of WIDGET_STYLE_KEYS) if (all[k] !== undefined) o[k] = all[k];
+  return Object.keys(o).length ? (o as WidgetStyle) : undefined;
+}
+/** CSS variables and data-w-* switches for one element. Rules in dashboard-app.css read them, so only what the author set changes. */
+export function widgetStyleToProps(style?: WidgetStyle | null): { vars: CSSProperties; attrs: Record<string, string> } {
+  const { vars, attrs: s } = styleToProps(cleanWidgetStyle(style));
+  const attrs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(s)) attrs[k.replace("data-s-", "data-w-")] = v;
+  return { vars, attrs };
 }
 export const hasStyle = (t?: DashTheme | null) => !!cleanStyle(t?.style);
 

@@ -289,6 +289,8 @@ export interface Widget {
   subtitle_fields?: string[];// list: fields shown under the heading
   content?: string;          // rich_text: **bold**, *italic* and line breaks
   url?: string;              // embedded: an https:// address shown in a frame
+  /** Font and style for this element only. Anything set here wins over the dashboard-wide Theme → Fonts and styling. */
+  style?: WidgetStyle;
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
 export interface DashPage {
@@ -306,6 +308,8 @@ export interface DashStyle {
   titleAlign?: "left" | "center"; numberSize?: number; numberColor?: string;   // numberSize: % of normal, 70–200
   radius?: number; border?: "none" | "thin" | "thick"; borderColor?: string; shadow?: "none" | "soft" | "strong"; gap?: number;   // px
 }
+/** The part of DashStyle an element can set for itself. Dashboard-only choices (page title, spacing between elements) stay on the theme. */
+export type WidgetStyle = Pick<DashStyle, "font" | "textSize" | "headingSize" | "headingWeight" | "headingCaps" | "numberSize" | "numberColor" | "radius" | "border" | "borderColor">;
 export interface DashTheme { preset: string; overrides?: Partial<Record<ThemeColorKey, string>>; style?: DashStyle }
 /** A date range every chart on the dashboard is limited to (on the date a record changed), on top of the viewer's own filters. */
 export type TimePreset = "all_time" | "last_7_days" | "last_30_days" | "last_90_days" | "last_year" | "custom";

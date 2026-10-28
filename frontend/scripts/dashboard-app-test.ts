@@ -3,7 +3,7 @@ import {
   autoLayout, buildSources, dashboardFields, isManualLayout, layoutRects, newWidget, noFilters, normalizeConfig, parseRich, placeAll, safeEmbedUrl, setRegion, setWidgetRect,
   timeRange, widgetData, widgetProblem, withTimeRange, cleanTimeFilter,
 } from "../src/lib/dashboard";
-import { DASHBOARD_THEMES, cleanStyle, cleanTheme, resolveThemeColors, styleToProps, themeToCssVars } from "../src/lib/dashboardThemes";
+import { DASHBOARD_THEMES, cleanWidgetStyle, widgetStyleToProps, cleanStyle, cleanTheme, resolveThemeColors, styleToProps, themeToCssVars } from "../src/lib/dashboardThemes";
 import { buildReport } from "../src/lib/dashboardReport";
 import type { Dashboard, Feature, Form, Widget } from "../src/lib/types";
 
@@ -122,3 +122,17 @@ ok(cleanStyle({ textSize: 100 }) === undefined && cleanStyle(null) === undefined
 ok(cleanTheme({ preset: "dark", style: { font: "mono" } })?.style?.font === "mono", "a theme keeps its style");
 const sp = styleToProps({ font: "mono", radius: 0, border: "none" });
 ok(sp.attrs["data-s-font"] === "1" && sp.attrs["data-s-radius"] === "1" && sp.attrs["data-s-border"] === "none" && !("data-s-gap" in sp.attrs), "only the chosen styles get a switch");
+
+// ---- an element's own font and style ----
+const own = normalizeConfig({ pages: [{ id: "p", title: "P", widgets: [{ id: "a", type: "kpi", title: "A", metric: "count", bucket: "month", limit: 8, columns: [],
+  style: { font: "serif", headingSize: 18, numberColor: "#aa0000", gap: 20, titleSize: 30, evil: 1, radius: 999, textSize: 100 } }, { id: "b", type: "kpi", title: "B", metric: "count", bucket: "month", limit: 8, columns: [] }] }] });
+const [wa, wb] = own.pages[0].widgets;
+ok(wa.style?.font === "serif" && wa.style.headingSize === 18 && wa.style.numberColor === "#aa0000", "an element keeps its own font and style");
+ok(wa.style?.radius === 28, "an out-of-range element value is clamped");
+ok(!("gap" in (wa.style ?? {})) && !("titleSize" in (wa.style ?? {})) && !("evil" in (wa.style ?? {})) && !("textSize" in (wa.style ?? {})), "dashboard-only, unknown and default values are dropped");
+ok(wb.style === undefined, "an element with no style carries none");
+ok(cleanWidgetStyle({}) === undefined && cleanWidgetStyle(null) === undefined, "an empty element style is nothing");
+const wp = widgetStyleToProps({ font: "mono", radius: 4 });
+ok(wp.attrs["data-w-font"] === "1" && wp.attrs["data-w-radius"] === "1" && !("data-s-font" in wp.attrs), "element style switches are data-w-*, not the dashboard's data-s-*");
+ok((wp.vars as Record<string, string>)["--dash-radius"] === "4px", "element style sets its CSS variables");
+ok(Object.keys(widgetStyleToProps(undefined).attrs).length === 0, "no element style, no switches");

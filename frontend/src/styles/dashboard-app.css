@@ -221,6 +221,20 @@
 .dash-app[data-s-shadow="soft"] .widget { box-shadow: 0 2px 8px rgba(15, 20, 40, .10); }
 .dash-app[data-s-shadow="strong"] .widget { box-shadow: 0 8px 24px rgba(15, 20, 40, .28); }
 .dash-app[data-s-gap] :is(.dash-grid, .dash-side-col, .dash-body) { gap: var(--dash-gap); }
+
+/* ---- an element's own font and styling: same rules as above, switched on per element by data-w-*. They come last, so they win over the dashboard-wide ones. ---- */
+.dash-app .widget[data-w-font], .dash-app .widget[data-w-font] :is(button, input, select, textarea, h3) { font-family: var(--dash-font); }
+.dash-app .widget[data-w-text] { font-size: var(--dash-text); }
+.dash-app .widget[data-w-heading] .widget-head h3 { font-size: var(--dash-heading-size); }
+.dash-app .widget[data-w-weight] .widget-head h3 { font-weight: var(--dash-heading-weight); }
+.dash-app .widget[data-w-caps] .widget-head h3 { text-transform: uppercase; letter-spacing: .06em; }
+.dash-app .widget[data-w-number] :is(.kpi-value, .gauge-value) { zoom: var(--dash-number-scale); }
+.dash-app .widget[data-w-ncolor] :is(.kpi-value, .gauge-value) { color: var(--dash-number-color) !important; }
+.dash-app .widget[data-w-radius] { border-radius: var(--dash-radius); }
+.dash-app .widget[data-w-border="none"] { border-width: 0; }
+.dash-app .widget[data-w-border="thin"] { border: 1px solid var(--dash-border, var(--line)); }
+.dash-app .widget[data-w-border="thick"] { border: 3px solid var(--dash-border, var(--line)); }
+.dash-app .widget[data-w-bcolor] { border-color: var(--dash-border); }
 /* the styling controls */
 .style-row { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
 .style-row-head { display: flex; justify-content: space-between; align-items: center; }

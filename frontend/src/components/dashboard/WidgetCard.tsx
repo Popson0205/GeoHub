@@ -4,6 +4,7 @@ import MapView, { type MapFeature } from "../MapView";
 import { Button } from "../ui";
 import { download } from "../../lib/csv";
 import { METRIC_LABEL, activeBuckets, defaultTitle, findField, fmt, isStatic, slicesCsv, widgetData, type Filters, type Slice, type Source } from "../../lib/dashboard";
+import { widgetStyleToProps } from "../../lib/dashboardThemes";
 import type { Widget } from "../../lib/types";
 import { DetailsList, EmbedFrame, EmptyNote, Gauge, ItemList, RichText } from "./Elements";
 
@@ -57,10 +58,11 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
   }
 
   const placed = col != null && row != null && !side;
-  const style = (side ? { "--h": height } : placed ? { "--h": height, "--gc": `${col + 1} / span ${span}`, "--gr": `${row + 1} / span ${height}` } : { gridRow: `span ${height}` }) as CSSProperties;
+  const own = useMemo(() => widgetStyleToProps(w.style), [w.style]);   // this element's own font and style; wins over the dashboard's
+  const style = { ...(side ? { "--h": height } : placed ? { "--h": height, "--gc": `${col + 1} / span ${span}`, "--gr": `${row + 1} / span ${height}` } : { gridRow: `span ${height}` }), ...own.vars } as CSSProperties;
   return (
     <section className={`widget t-${w.type} s${span}${placed ? " is-placed" : ""}${side ? " is-side" : ""}${editing ? " is-editable" : ""}${selected ? " is-selected" : ""}${dragging ? " is-dragging" : ""}`}
-      style={style} aria-label={title} onClick={editing ? onSelect : undefined}>
+      style={style} {...own.attrs} aria-label={title} onClick={editing ? onSelect : undefined}>
       <div className={`widget-head${grab ? " is-grab" : ""}`} onPointerDown={grab ? (e) => grab("move", e) : undefined}>
         {grab && <span className="grip" aria-hidden="true">⋮⋮</span>}
         <h3>{title}</h3>

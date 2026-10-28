@@ -60,6 +60,25 @@ def test_the_new_elements_and_the_side_column_are_kept():
     assert DashboardConfig(pages=[PAGE]).pages[0].widgets[0].region is None      # nothing is in the side column unless put there
 
 
+def test_an_element_keeps_its_own_font_and_style():
+    c = DashboardConfig(pages=[{**PAGE, "widgets": [
+        {"id": "k", "type": "kpi", "style": {"font": "serif", "headingSize": 18, "headingWeight": 700, "numberColor": "#aa0000", "radius": 4, "border": "thin"}},
+        {"id": "b", "type": "bar"},
+    ]}])
+    k, b = c.pages[0].widgets
+    assert k.style.font == "serif" and k.style.headingSize == 18 and k.style.numberColor == "#aa0000" and k.style.border == "thin"
+    assert b.style is None                                                       # an element with no style follows the dashboard's
+    assert k.model_dump(exclude_none=True)["style"]["font"] == "serif"
+
+
+@pytest.mark.parametrize("bad", [{"font": "comic"}, {"headingSize": 99}, {"radius": -1}, {"numberColor": "red"}, {"border": "dashed"},
+                                 {"gap": 10}, {"titleSize": 30}, {"evil": 1}])
+def test_bad_element_styles_are_refused(bad):
+    # Dashboard-only choices (gap, page title size) are not an element's to set, and unknown keys never get stored.
+    with pytest.raises(ValidationError):
+        DashboardConfig(pages=[{**PAGE, "widgets": [{"id": "k", "type": "kpi", "style": bad}]}])
+
+
 @pytest.mark.parametrize("url", ["javascript:alert(1)", "http://example.com", "data:text/html,hi", "https://user:pw@example.com", "https://localhost/x", "//example.com"])
 def test_only_plain_https_pages_can_be_embedded(url):
     with pytest.raises(ValidationError):

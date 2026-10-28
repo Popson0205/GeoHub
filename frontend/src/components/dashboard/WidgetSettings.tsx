@@ -3,7 +3,8 @@ import {
   GRID_COLUMNS, MAX_ROWS, METRIC_LABEL, MIN_COLS, MIN_ROWS, WIDGET_LABEL, dateFields, defaultTitle, groupFields, isStatic, numberFields, safeEmbedUrl, usesMetric,
   type FieldDef, type Rect,
 } from "../../lib/dashboard";
-import type { Form, Metric, Widget } from "../../lib/types";
+import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib/dashboardThemes";
+import type { Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
 const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -24,6 +25,20 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         {extra.map(([id, text]) => <label key={id}><input type="checkbox" checked={ids.includes(id)} onChange={() => set(toggle(ids, id))} />{text}</label>)}
       </div></div>
   );
+  // This element's own font and style. It wins over the dashboard-wide Theme → Fonts and styling; cleared choices fall back to it.
+  const own: WidgetStyle = cleanWidgetStyle(w.style) ?? {};
+  const setOwn = <K extends keyof WidgetStyle>(key: K, value: WidgetStyle[K] | undefined) => onChange({ style: cleanWidgetStyle({ ...own, [key]: value }) });
+  const hasNumbers = w.type === "kpi" || w.type === "gauge";
+  const range = (label: string, key: "textSize" | "headingSize" | "numberSize" | "radius", unit: string, fallback: number, id: string) => {
+    const [lo, hi] = STYLE_LIMITS[key];
+    return (
+      <div className="field"><label htmlFor={id}>{label}{own[key] !== undefined ? ` (${own[key]}${unit})` : " (dashboard default)"}</label>
+        <span className="row" style={{ alignItems: "center" }}>
+          <input id={id} type="range" min={lo} max={hi} value={own[key] ?? fallback} style={{ flex: 1 }} onChange={(e) => setOwn(key, Number(e.target.value))} />
+          {own[key] !== undefined && <button type="button" className="link-btn" onClick={() => setOwn(key, undefined)}>Reset</button>}
+        </span></div>
+    );
+  };
   return (
     <aside className="dash-aside" aria-label="Chart settings">
       <div className="row" style={{ alignItems: "center" }}><h2 style={{ flex: 1 }}>{WIDGET_LABEL[w.type]}</h2><Button small variant="ghost" onClick={onClose} aria-label="Close settings">Close</Button></div>
@@ -126,6 +141,39 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
           <small className="meta">Must start with https://. Some sites refuse to be shown inside another page.</small></div>
       )}
       {w.type === "map" && <p className="meta">Shows where the records are. Records waiting for review are amber, rejected ones red.</p>}
+
+      <fieldset className="dash-rect" aria-label="Font and style of this element">
+        <legend>Font and style</legend>
+        <small className="meta">Only this element. Anything you leave unset follows the dashboard's Theme → Fonts and styling.</small>
+        <div className="field"><label htmlFor="wsf">Font</label>
+          <select id="wsf" value={own.font ?? ""} onChange={(e) => setOwn("font", (e.target.value || undefined) as WidgetStyle["font"])} style={own.font ? { fontFamily: DASH_FONTS[own.font].stack } : undefined}>
+            <option value="">Dashboard default</option>
+            {FONT_KEYS.map((k) => <option key={k} value={k} style={{ fontFamily: DASH_FONTS[k].stack }}>{DASH_FONTS[k].label}</option>)}
+          </select></div>
+        {range("Text size", "textSize", "%", 100, "wst")}
+        {range("Heading size", "headingSize", "px", 14, "wsh")}
+        <div className="field"><label htmlFor="wsw">Heading weight</label>
+          <select id="wsw" value={own.headingWeight ?? ""} onChange={(e) => setOwn("headingWeight", (e.target.value ? Number(e.target.value) : undefined) as WidgetStyle["headingWeight"])}>
+            <option value="">Dashboard default</option>
+            {[400, 500, 600, 700, 800].map((n) => <option key={n} value={n}>{n === 400 ? "Regular" : n === 500 ? "Medium" : n === 600 ? "Semi-bold" : n === 700 ? "Bold" : "Extra bold"}</option>)}
+          </select></div>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={own.headingCaps === true} onChange={(e) => setOwn("headingCaps", e.target.checked || undefined)} />Heading in capitals</label>
+        {hasNumbers && range("Number size", "numberSize", "%", 100, "wsn")}
+        {hasNumbers && (
+          <label className="theme-color-row">Number colour
+            <span className="style-colour"><input type="color" value={own.numberColor ?? "#17634c"} onChange={(e) => setOwn("numberColor", e.target.value)} />
+              {own.numberColor && <button type="button" className="link-btn" onClick={() => setOwn("numberColor", undefined)}>Reset</button>}</span></label>
+        )}
+        {range("Corner radius", "radius", "px", 12, "wsr")}
+        <div className="field"><label htmlFor="wsb">Border</label>
+          <select id="wsb" value={own.border ?? ""} onChange={(e) => setOwn("border", (e.target.value || undefined) as WidgetStyle["border"])}>
+            <option value="">Dashboard default</option><option value="none">None</option><option value="thin">Thin</option><option value="thick">Thick</option>
+          </select></div>
+        <label className="theme-color-row">Border colour
+          <span className="style-colour"><input type="color" value={own.borderColor ?? "#cccccc"} onChange={(e) => setOwn("borderColor", e.target.value)} />
+            {own.borderColor && <button type="button" className="link-btn" onClick={() => setOwn("borderColor", undefined)}>Reset</button>}</span></label>
+        {w.style && <div className="row"><Button small variant="ghost" onClick={() => onChange({ style: undefined })}>Reset this element's style</Button></div>}
+      </fieldset>
 
       <div className="row">
         {!manual && !side && <Button small onClick={() => onMove(-1)} disabled={index <= 0}>Move earlier</Button>}
