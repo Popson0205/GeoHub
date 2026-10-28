@@ -1,0 +1,310 @@
+/* ---- dashboards ---- */
+:root {
+  --chart-1: #17634c; --chart-2: #b8431a; --chart-3: #2f6fa3; --chart-4: #c28a14;
+  --chart-5: #7a5aa6; --chart-6: #2a9d9d; --chart-7: #c0577a; --chart-8: #72837a;
+}
+.dash-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: var(--s-3) 0; }
+.dash-toolbar .grow { flex: 1; }
+.dash-toolbar input[type="text"] { min-width: 220px; font-size: var(--fs-xl); font-weight: 600; }
+.dash-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.dash-filters label { display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.dash-filters .count { margin-left: auto; font-size: var(--fs-sm); color: var(--muted); align-self: center; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.chip-x { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px 2px 10px; border: 1px solid var(--green-300); border-radius: var(--r-full); background: var(--green-50); color: var(--green-800); font-size: var(--fs-sm); }
+.chip-x button { border: 0; background: transparent; cursor: pointer; font-size: var(--fs-lg); line-height: 1; color: inherit; }
+
+.dash-bar { position: static; z-index: 20; background: var(--paper, var(--n-50, #fff)); padding-top: var(--s-2); margin-bottom: var(--s-4); }
+.dash-bar .dash-filters { margin-bottom: 0; }
+.dash-tabs { display: flex; align-items: center; gap: var(--s-1, 4px); margin-bottom: var(--s-3); overflow-x: auto; border-bottom: 1px solid var(--line); }
+.dash-tab { flex: none; padding: var(--s-2) var(--s-4); margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--r-md) var(--r-md) 0 0; color: var(--n-700); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.dash-tab:hover { background: var(--green-50); }
+.dash-tab.is-active { background: var(--card); border-color: var(--line); color: var(--green-800); font-weight: 600; box-shadow: inset 0 -2px 0 var(--green-500); }
+.dash-pagebar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-4); background: var(--green-50); border: 1px dashed var(--green-300); border-radius: var(--r-lg); }
+.dash-pagebar .field { margin: 0; }
+.dash-pagebar .row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.print-only { display: none; }
+.dash-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+.dash-layout.has-aside { grid-template-columns: minmax(0, 1fr) 320px; }
+/* The grid: 12 equal columns and rows of one fixed height. Every chart is placed by the layout engine (lib/dashboard.ts
+   autoLayout) as "span N columns, M rows", so edges line up exactly and nothing is ever dragged or sized by hand. */
+.dash-grid { --dash-row: 64px; --dash-gap: var(--s-4); display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--dash-row); gap: var(--dash-gap); max-width: 1440px; margin-inline: auto; }
+.widget { grid-column: span 12; display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; min-height: 0; overflow: hidden; padding: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs); break-inside: avoid; }
+.widget.s3 { grid-column: span 3; }
+.widget.s4 { grid-column: span 4; }
+.widget.s6 { grid-column: span 6; }
+.widget.s8 { grid-column: span 8; }
+.widget-body { flex: 1; min-height: 0; overflow: auto; }
+.widget-body.is-kpi { display: flex; align-items: center; overflow: hidden; }
+.widget-body.is-map { position: relative; overflow: hidden; min-height: 120px; }
+.widget-body.is-line .line-chart { height: 100%; }
+.widget.is-editable { cursor: pointer; }
+.widget.is-selected { outline: 2px solid var(--green-500); outline-offset: 1px; }
+.widget-head { display: flex; align-items: center; gap: var(--s-2); }
+.widget-head small { white-space: nowrap; }
+.widget-head h3 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--n-700); }
+.widget-note { padding: var(--s-4); border: 1px dashed var(--line-strong, var(--n-300)); border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-sm); text-align: center; }
+.widget-note.is-problem { border-color: var(--accent-500); color: var(--accent-500); }
+.kpi-value { font-size: 40px; font-weight: 600; line-height: 1.1; color: var(--ink-900); }
+.kpi-unit { margin-left: 4px; font-size: var(--fs-lg); color: var(--muted); font-weight: 500; }
+
+.bars { display: flex; flex-direction: column; gap: 6px; }
+.bar-row { display: grid; grid-template-columns: minmax(70px, 30%) 1fr auto; align-items: center; gap: var(--s-2); padding: 3px 6px; border: 0; border-radius: var(--r-sm, 6px); background: transparent; font: inherit; text-align: left; color: inherit; }
+.bar-row.is-pick { cursor: pointer; }
+.bar-row.is-pick:hover, .bar-row.is-active { background: var(--green-50); }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+.bar-track { display: block; height: 14px; background: var(--n-100); border-radius: var(--r-full); overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: var(--r-full); }
+.bar-value { min-width: 36px; text-align: right; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--n-700); }
+
+.donut { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4); }
+.donut svg { width: 150px; height: 150px; flex: none; }
+.donut-total { font-size: 20px; font-weight: 600; fill: var(--ink-900); }
+.donut-sub { font-size: 9px; fill: var(--n-500); }
+.legend { flex: 1; min-width: 140px; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.legend-row { display: flex; align-items: center; gap: var(--s-2); width: 100%; padding: 3px 6px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: var(--fs-sm); text-align: left; color: inherit; }
+.legend-row.is-pick { cursor: pointer; }
+.legend-row.is-pick:hover, .legend-row.is-active { background: var(--green-50); }
+.legend-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-value { color: var(--n-600); font-variant-numeric: tabular-nums; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+.line-chart { width: 100%; height: auto; }
+.line-chart .grid { stroke: var(--n-200); stroke-width: 1; }
+.line-chart .axis { font-size: 11px; fill: var(--n-500); }
+.line-chart .area { fill: var(--chart-1); opacity: .12; }
+.line-chart .line { fill: none; stroke: var(--chart-1); stroke-width: 2.5; stroke-linejoin: round; }
+.line-chart .point { fill: var(--chart-1); }
+
+.dash-table { overflow-x: auto; }
+.dash-map { position: absolute; inset: 0; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
+/* The map must fill its tile. Without this its wrapper (position: relative; flex: 1) collapses to zero height inside a non-flex box, and nothing draws.
+   Same rule the thumbnail and review maps use. */
+.dash-map .map-wrap { position: absolute; inset: 0; flex: none; min-height: 0; }
+
+.dash-aside { position: sticky; top: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.dash-aside h2 { margin: 0; font-size: var(--fs-lg); }
+.dash-aside .field { margin: 0; }
+.dash-aside .cols { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-md); }
+.dash-aside .cols label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.dash-aside .row { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+/* Laptop and tablet: 6 columns. Narrow cards pair up, wider ones take the row. Phone: one column. */
+@media (min-width: 901px) { .dash-bar { position: sticky; top: 0; } }
+@media (max-width: 1100px) {
+  .dash-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .widget, .widget.s4, .widget.s6, .widget.s8 { grid-column: span 6; }
+  .widget.s3 { grid-column: span 3; }
+}
+@media (max-width: 900px) {
+  .dash-layout.has-aside { grid-template-columns: minmax(0, 1fr); }
+  .dash-aside { position: static; }
+}
+@media (max-width: 640px) {
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+  .widget, .widget.s3, .widget.s4, .widget.s6, .widget.s8 { grid-column: 1 / -1; }
+}
+@media print {
+  .topbar, .dash-toolbar, .dash-tabs, .dash-pagebar, .dash-filters .btn, .dash-aside, .widget-head .btn { display: none !important; }
+  .print-only { display: block; }
+  .dash-bar { position: static; }
+  .dash-layout.has-aside { grid-template-columns: minmax(0, 1fr); }
+  .dash-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .widget.s3 { grid-column: span 3; } .widget.s4 { grid-column: span 4; } .widget.s6 { grid-column: span 6; } .widget.s8 { grid-column: span 8; } .widget { grid-column: span 12; box-shadow: none; }
+}
+
+/* ======================================================================================================
+   Standard dashboard look: tinted canvas, one slim header, compact filter strip, tiles that fill their cell.
+   Everything is scoped to .dash-app so the rest of the site is untouched.
+   ====================================================================================================== */
+.container.dash-app { max-width: 1680px; padding-block: var(--s-4) var(--s-8); }
+.dash-app { --dash-row: 64px; --dash-gap: 12px; }
+.dash-app .dash-grid { --dash-gap: 12px; max-width: none; width: 100%; margin-inline: 0; }
+
+/* header: title on the left, actions on the right, one line */
+.dash-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-4); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs); }
+.dash-title { min-width: 0; flex: 1 1 260px; }
+.dash-title h1 { margin: 0; font-size: var(--fs-xl); line-height: 1.2; }
+.dash-title .meta { margin: 2px 0 0; }
+.dash-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.dash-actions .meta { margin-right: var(--s-2); }
+
+/* tabs and filters become one slim strip */
+.dash-app .dash-bar { margin-bottom: var(--s-3); padding-top: var(--s-1, 4px); background: var(--n-50); }
+.dash-app .dash-tabs { margin-bottom: var(--s-2); }
+.dash-app .dash-filters { padding: var(--s-2) var(--s-3); gap: var(--s-2) var(--s-3); border-radius: var(--r-md); box-shadow: var(--sh-xs); }
+.dash-app .dash-filters select, .dash-app .dash-filters input { padding-block: 4px; }
+
+/* tiles */
+.dash-app .widget { gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-md); box-shadow: 0 1px 2px rgba(16,24,20,.06), 0 1px 3px rgba(16,24,20,.04); }
+.dash-app .widget-head { padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); }
+.dash-app .widget-head h3 { font-size: var(--fs-sm); font-weight: 600; letter-spacing: .01em; color: var(--n-600); }
+.dash-app .widget-body { display: flex; flex-direction: column; justify-content: center; }
+.dash-app .widget-body.is-table, .dash-app .widget-body.is-map, .dash-app .widget-body.is-bar { justify-content: flex-start; }
+
+/* number cards: big centred value, coloured edge, no divider under the title */
+.dash-app .widget.t-kpi { position: relative; padding-left: calc(var(--s-3) + 4px); text-align: center; }
+.dash-app .widget.t-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--kpi, var(--chart-1)); }
+.dash-app .widget.t-kpi:nth-child(4n+2) { --kpi: var(--chart-3); }
+.dash-app .widget.t-kpi:nth-child(4n+3) { --kpi: var(--chart-4); }
+.dash-app .widget.t-kpi:nth-child(4n+4) { --kpi: var(--chart-2); }
+.dash-app .widget.t-kpi .widget-head { border-bottom: 0; padding-bottom: 0; justify-content: center; }
+.dash-app .widget.t-kpi .widget-head h3 { flex: none; text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .06em; }
+.dash-app .widget-body.is-kpi { justify-content: center; }
+.dash-app .kpi-value { font-size: clamp(32px, 4vw, 52px); font-weight: 700; letter-spacing: -.02em; color: var(--kpi, var(--ink-900)); }
+
+/* charts fill the tile instead of sitting at the top of it */
+.dash-app .bars { width: 100%; gap: 8px; }
+.dash-app .bar-row { grid-template-columns: minmax(80px, 38%) 1fr auto; }
+.dash-app .bar-track { height: 12px; }
+.dash-app .donut { flex-wrap: nowrap; justify-content: center; width: 100%; height: 100%; gap: var(--s-3); box-sizing: border-box; min-width: 0; }
+.dash-app .donut svg { width: auto; height: 100%; max-height: 180px; max-width: 45%; aspect-ratio: 1; flex: 0 1 auto; }
+.dash-app .legend { flex: 1 1 0; min-width: 90px; }
+.dash-app .legend-row, .dash-app .bar-row { box-sizing: border-box; }
+.dash-app .widget-body.is-line .line-chart { height: 100%; min-height: 160px; }
+
+/* tables: sticky header, zebra rows, scroll inside the tile */
+.dash-app .dash-table { height: 100%; overflow: auto; }
+.dash-app .dash-table th { position: sticky; top: 0; z-index: 1; background: var(--n-100); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; }
+.dash-app .dash-table tbody tr:nth-child(even) { background: var(--n-50, #f7f9f8); }
+.dash-app .dash-table td, .dash-app .dash-table th { padding: 6px 10px; white-space: nowrap; }
+
+/* maps: edge to edge inside the tile */
+.dash-app .widget.t-map { padding: 0; }
+.dash-app .widget.t-map .widget-head { padding: var(--s-2) var(--s-3); }
+.dash-app .widget.t-map .dash-map { border: 0; border-radius: 0; }
+
+@media (max-width: 640px) {
+  .dash-app .donut { flex-wrap: wrap; }
+  .dash-app .donut svg { height: 150px; }
+}
+@media print { .dash-header { box-shadow: none; } .dash-actions { display: none !important; } }
+
+/* Checkbox lists inside a .field: the global ".field input" rule makes every input full width, which stretched these. */
+.field .cols input[type="checkbox"], .dash-pagebar input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; min-height: 0; padding: 0; flex: none; accent-color: var(--green-600); }
+.field .cols label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+
+/* ======================================================================================================
+   One screen, no page scrolling (view mode, laptop and larger).
+   The dashboard fills the space under the top bar. The grid is stretched to that height and its rows share it, so a
+   tile with "5 rows" gets five parts of the height rather than 5 x 64px. Edit mode, tablets and phones scroll as before.
+   If a page has so many charts that tiles would get too small, the grid keeps a minimum row height and scrolls instead.
+   ====================================================================================================== */
+@media screen and (min-width: 1101px) and (min-height: 560px) {
+  .container.dash-app.is-fit { flex: 1; min-height: 0; max-width: none; display: flex; flex-direction: column; overflow: hidden; padding: 8px 12px; }
+  .is-fit > * { flex: none; }
+  .is-fit .dash-layout { flex: 1 1 auto; min-height: 0; align-items: stretch; overflow: auto; }
+  .is-fit .dash-grid { --dash-gap: 8px; grid-auto-rows: minmax(18px, 1fr); height: 100%; min-height: 0; }
+
+  /* header: title and actions in one slim row */
+  .is-fit .dash-header { padding: 6px 12px; margin-bottom: 6px; }
+  .is-fit .dash-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .is-fit .dash-title h1 { font-size: var(--fs-lg); }
+  .is-fit .dash-title .meta { margin: 0; }
+  .is-fit .dash-actions .btn, .is-fit .dash-actions button { min-height: 30px; padding-block: 0; font-size: var(--fs-sm); }
+
+  /* tabs left, filters right, on one line */
+  .is-fit .dash-bar { position: static; display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 6px; padding: 0; background: transparent; }
+  .is-fit .dash-tabs { flex: none; margin: 0; border-bottom: 0; }
+  .is-fit .dash-tab { padding: 4px 14px; }
+  .is-fit .dash-filters { flex: 1 1 auto; justify-content: flex-end; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; gap: 6px 14px; align-items: center; }
+  .is-fit .dash-filters > div:not(.chips) { display: flex; align-items: center; gap: 6px; }
+  .is-fit .dash-filters label { margin: 0; white-space: nowrap; }
+  .is-fit .dash-filters select, .is-fit .dash-filters input { min-height: 28px; padding-block: 0; }
+  .is-fit .dash-filters .count { margin-left: 4px; white-space: nowrap; }
+
+  /* tiles: tighter, and every body fills what is left */
+  .is-fit .widget { padding: 8px 10px; gap: 4px; }
+  .is-fit .widget-head { padding-bottom: 4px; }
+  .is-fit .widget-head .btn { min-height: 22px; padding: 0 6px; }
+  .is-fit .widget-body { overflow: hidden; }
+  .is-fit .widget-body.is-table { overflow: auto; }
+  .is-fit .widget.t-kpi { padding: 4px 10px 4px 14px; gap: 0; justify-content: center; }
+  .is-fit .widget.t-kpi .widget-head { padding: 0; }
+  .is-fit .widget-body.is-kpi { flex: none; }
+  .is-fit .kpi-value { font-size: clamp(22px, 4.6vh, 44px); line-height: 1.05; }
+
+  /* bars share the tile height; the legend scrolls only if it truly cannot fit */
+  .is-fit .bars { height: 100%; gap: 2px; }
+  .is-fit .bar-row { flex: 1 1 0; min-height: 18px; max-height: 34px; padding-block: 0; }
+  .is-fit .legend { max-height: 100%; overflow: auto; }
+  .is-fit .donut svg { max-height: 100%; }
+  .is-fit .widget-body.is-line .line-chart { min-height: 0; height: 100%; }
+  .is-fit .dash-table td, .is-fit .dash-table th { padding: 3px 10px; }
+}
+
+/* ======================================================================================================
+   Free layout: drag a chart by its title bar, resize it by its edges or corner (edit mode).
+   A chart with a saved rectangle carries --gc / --gr (its grid column and row); they apply on laptop screens and wider and in print.
+   Smaller screens keep the stacked layout, in reading order.
+   ====================================================================================================== */
+.widget.is-placed { grid-row: span var(--h, 1); }   /* narrow screens: stacked, each as tall as it was set */
+@media (min-width: 1101px) { .widget.is-placed { grid-column: var(--gc); grid-row: var(--gr); } }
+@media print { .widget.is-placed { grid-column: var(--gc); grid-row: var(--gr); } }
+
+.dash-hint { flex: 1 1 100%; }
+.widget.is-editable { position: relative; }
+.widget-head.is-grab { cursor: grab; touch-action: none; user-select: none; }
+.widget-head.is-grab:active { cursor: grabbing; }
+.widget-head .grip { color: var(--n-400, #9aa7a0); letter-spacing: -2px; font-size: var(--fs-sm); line-height: 1; }
+.widget.is-dragging { z-index: 5; opacity: .92; outline: 2px dashed var(--green-500); outline-offset: 1px; box-shadow: 0 8px 24px rgba(16,24,20,.18); }
+.dash-grid.is-dragging { user-select: none; cursor: grabbing; }
+.dash-grid.is-dragging .widget:not(.is-dragging) { transition: none; }
+.rh { position: absolute; z-index: 3; touch-action: none; }
+.rh-e { top: 28px; right: 0; bottom: 12px; width: 8px; cursor: ew-resize; }
+.rh-s { left: 12px; right: 12px; bottom: 0; height: 8px; cursor: ns-resize; }
+.rh-se { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--green-500) 50%, var(--green-500) 58%, transparent 58%, transparent 72%, var(--green-500) 72%, var(--green-500) 80%, transparent 80%); border-bottom-right-radius: var(--r-md); }
+.rh-e:hover, .rh-s:hover, .widget.is-selected .rh-e, .widget.is-selected .rh-s { background: color-mix(in srgb, var(--green-500) 35%, transparent); }
+.dash-rect { margin: 0; padding: var(--s-2) var(--s-3) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); display: flex; flex-direction: column; gap: var(--s-2); }
+.dash-rect legend { padding: 0 var(--s-1, 4px); font-size: var(--fs-sm); font-weight: 600; }
+.dash-rect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.dash-rect .field label { font-size: var(--fs-xs); color: var(--muted); }
+.dash-rect .field input { width: 100%; }
+@media print { .rh, .grip { display: none !important; } }
+
+/* ---- template gallery (New dashboard) ---- */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-3); margin-top: var(--s-1, 4px); }
+.tpl-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: var(--s-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; font-weight: 400; }
+.tpl-card:hover { border-color: var(--green-300); background: var(--green-50); }
+.tpl-card.is-picked { border-color: var(--green-500); box-shadow: 0 0 0 2px var(--green-500); }
+.tpl-card:focus-within { outline: 2px solid var(--focus, var(--green-500)); outline-offset: 2px; }
+.tpl-card input { position: absolute; opacity: 0; pointer-events: none; }
+.tpl-card strong { font-size: var(--fs-sm); }
+.tpl-card small { color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; }
+.tpl-thumb { width: 100%; height: 110px; padding: 4px; background: var(--n-50, #f7f9f8); border: 1px solid var(--line); border-radius: var(--r-sm, 6px); box-sizing: border-box; }
+.tpl-thumb .tt { fill: var(--chart-1); opacity: .85; }
+.tpl-thumb .tt-kpi { fill: var(--chart-4); }
+.tpl-thumb .tt-bar { fill: var(--chart-3); }
+.tpl-thumb .tt-pie { fill: var(--chart-5); }
+.tpl-thumb .tt-line { fill: var(--chart-1); }
+.tpl-thumb .tt-map { fill: var(--chart-6); }
+.tpl-thumb .tt-table { fill: var(--chart-8); }
+.tpl-thumb .tpl-empty { font-size: 9px; fill: var(--n-500); }
+
+/* ---- filters the author put in the header ---- */
+.fdrop { position: relative; }
+.fdrop-label { display: block; margin-bottom: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.fdrop details { position: relative; }
+.fdrop summary { list-style: none; cursor: pointer; min-width: 120px; max-width: 200px; padding: 4px 28px 4px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); color: inherit; font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.fdrop summary::-webkit-details-marker { display: none; }
+.fdrop summary::after { content: "▾"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.fdrop details.has-value summary { border-color: var(--green-300); background: var(--green-50); color: var(--green-800); }
+.fdrop-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 220px; max-width: 320px; max-height: 320px; overflow: auto; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); box-shadow: var(--sh-md, 0 6px 20px rgba(0,0,0,.15)); color: var(--fg, inherit); }
+.fdrop-panel ul { list-style: none; margin: 0; padding: 0; }
+.fdrop-panel label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.fdrop-panel label:hover { background: var(--green-50); }
+.fdrop-opt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdrop-panel small { color: var(--muted); }
+.fdrop-clear { margin-top: 4px; border: 0; background: transparent; color: var(--green-800); cursor: pointer; font-size: var(--fs-sm); text-decoration: underline; }
+.filter-picker { border: 0; padding: 0; }
+.filter-picker legend { font-weight: 600; margin-bottom: 4px; }
+.check-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+/* ---- empty states and clickable points ---- */
+.widget-note p { margin: 0 0 var(--s-2); }
+.widget-note small { display: block; }
+.widget-note.is-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; box-sizing: border-box; }
+.note-action { border: 1px solid currentColor; border-radius: var(--r-full); background: transparent; color: var(--green-800); padding: 3px 12px; font-size: var(--fs-sm); cursor: pointer; }
+.widget-note.is-problem .note-action { color: inherit; }
+.line-chart .point.is-pick { cursor: pointer; }
+.line-chart .point.is-active { stroke: var(--card); stroke-width: 2; }
+.line-chart .point-hit { fill: transparent; cursor: pointer; }
+.fdrop-panel label.is-zero { opacity: .5; cursor: not-allowed; }

@@ -1,0 +1,49 @@
+# Local stack: API, worker, Redis, MinIO (S3), Martin (vector tiles), TiTiler (imagery).
+# The database is Supabase (DATABASE_URL in .env). To work offline with a throwaway local Postgres instead:
+#   docker compose -f docker-compose.yml -f docker-compose.localdb.yml up --build
+x-app: &app
+  build: .
+  env_file: .env
+  depends_on: {redis: {condition: service_started}, minio-setup: {condition: service_completed_successfully}}
+
+services:
+  redis:
+    image: redis:7
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment: {MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: minio12345}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+  minio-setup:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: >
+      sh -c "until mc alias set local http://minio:9000 minio minio12345; do sleep 1; done;
+             mc mb --ignore-existing local/hub; mc version enable local/hub; mc anonymous set none local/hub"
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+  worker:
+    <<: *app
+    command: rq worker default --url redis://redis:6379/0
+  martin:
+    image: ghcr.io/maplibre/martin
+    command: ["--config", "/config/martin.yaml"]
+    volumes: ["./martin:/config:ro"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}     # same Supabase database as the API
+    depends_on: {api: {condition: service_started}}   # api applies the migrations that create feature_tiles()
+    restart: on-failure
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    environment:
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio12345
+      AWS_HTTPS: "NO"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+  backup:
+    <<: *app
+    command: sh -c "while true; do python -m app.ops.backup; sleep 86400; done"
+volumes: {miniodata: {}}
