@@ -351,7 +351,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             </div>
             </div>
             {editing && sel && (
-              <WidgetSettings w={sel} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={(sourceOf(sel)?.defs) ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
+              <WidgetSettings w={sel} source={sourceOf(sel)} projectId={projectId} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={(sourceOf(sel)?.defs) ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
                 forms={forms} pageFormId={page.form_id} onForm={(id) => setWidgetForm(sel, id)} onRegion={(r) => moveRegion(sel.id, r)}
                 onChange={(p) => patch(sel.id, p)} onMove={(by) => move(sel.id, by)} onRemove={() => remove(sel.id)} onClose={closeSettings} />
             )}

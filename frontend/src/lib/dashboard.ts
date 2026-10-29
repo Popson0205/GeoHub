@@ -4,6 +4,7 @@
 import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
 import { cleanTheme, cleanWidgetStyle } from "./dashboardThemes";
+import { cleanViewerStyle } from "./symbology";
 import type { Bucket, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
@@ -552,6 +553,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
     ...(typeof x.content === "string" ? { content: x.content } : {}),
     ...(typeof x.url === "string" ? { url: x.url } : {}),
     ...(cleanWidgetStyle(x.style) ? { style: cleanWidgetStyle(x.style) } : {}),
+    ...(x.type === "map" && x.map_style && typeof x.map_style === "object" ? { map_style: cleanViewerStyle(x.map_style) } : {}),
   });
   const pageOf = (x: Record<string, unknown>): DashPage => ({
     id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,

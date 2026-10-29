@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
@@ -542,6 +543,14 @@ class DashboardWidget(BaseModel):
     content: str | None = Field(None, max_length=4000, description="Rich text: **bold**, *italic* and line breaks. Never treated as HTML")
     url: str | None = Field(None, max_length=500, description="Embedded content: an https:// address shown in a sandboxed frame")
     style: WidgetStyle | None = Field(None, description="Font and style for this element only; overrides the dashboard-wide style")
+    map_style: dict[str, Any] | None = Field(None, description="Map element: basemap and how its layer is drawn (colours, symbols). Checked again by the client before use")
+
+    @field_validator("map_style")
+    @classmethod
+    def _map_style_is_small(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is not None and len(json.dumps(v)) > 20000:
+            raise ValueError("map_style is too large")
+        return v
 
     # Manual placement on the 12-column grid, set by dragging or resizing in the editor. All four or none; none = automatic layout.
     col: int | None = Field(None, ge=0, le=11, description="Left edge, in columns from 0")

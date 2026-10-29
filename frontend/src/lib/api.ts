@@ -231,6 +231,7 @@ function toWireConfig(c: DashboardConfig) {
         col: x.col ?? null, row: x.row ?? null, cols: x.cols ?? null, rows: x.rows ?? null,
         region: x.region ?? null, target: x.target ?? null, target_field: x.target_field ?? null, title_field: x.title_field ?? null,
         subtitle_fields: x.subtitle_fields ?? [], content: x.content ?? null, url: x.url ?? null,
+        style: x.style ?? null, map_style: x.map_style ?? null,
       })),
     })),
   };

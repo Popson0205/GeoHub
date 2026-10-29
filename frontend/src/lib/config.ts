@@ -9,4 +9,5 @@ export const config = {
   useMock: String(env.VITE_USE_MOCK ?? "true") !== "false",
   apiUrl,
   basemapUrl: String(env.VITE_BASEMAP_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+  basemapLightUrl: String(env.VITE_BASEMAP_LIGHT_URL ?? "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"),
 };

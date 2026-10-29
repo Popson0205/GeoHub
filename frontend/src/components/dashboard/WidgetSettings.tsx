@@ -1,10 +1,12 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { Button } from "../ui";
+import SymbologyPanel from "../SymbologyPanel";
 import { ElementIcon } from "./Elements";
 import {
   GRID_COLUMNS, MAX_ROWS, METRIC_LABEL, MIN_COLS, MIN_ROWS, WIDGET_LABEL, dateFields, defaultTitle, groupFields, isStatic, numberFields, safeEmbedUrl, usesMetric,
-  type FieldDef, type Rect,
+  type FieldDef, type Rect, type Source,
 } from "../../lib/dashboard";
+import { BASEMAPS, cleanViewerStyle, emptyViewerStyle, loadViewerStyle, statusLayer, type BasemapId } from "../../lib/symbology";
 import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib/dashboardThemes";
 import type { Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
@@ -21,8 +23,8 @@ function Section({ title, open = true, children }: { title: string; open?: boole
 }
 
 /** Settings of the selected element: what it shows, where it gets its records, and where it sits. */
-export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose, onRegion }:
-  { w: Widget; rect?: Rect; manual?: boolean; onRect?: (p: Partial<Rect>) => void; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
+export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose, onRegion, source, projectId }:
+  { /** map elements: the records the element draws on, so its colours can be set from real values. */ source?: Source; projectId?: string; w: Widget; rect?: Rect; manual?: boolean; onRect?: (p: Partial<Rect>) => void; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
     onChange: (p: Partial<Widget>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; onClose: () => void; onRegion?: (r: "body" | "sidebar") => void }) {
   const nums = numberFields(defs);
   const side = w.region === "sidebar";
@@ -143,7 +145,27 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
             <input id="wu" type="url" maxLength={500} value={w.url ?? ""} placeholder="https://example.com/page" onChange={(e) => onChange({ url: e.target.value })} aria-invalid={!!w.url && !safeEmbedUrl(w.url)} />
             <small className="meta">Must start with https://. Some sites refuse to be shown inside another page.</small></div>
         )}
-        {w.type === "map" && <p className="meta">Shows where the records are. Records waiting for review are amber, rejected ones red.</p>}
+        {w.type === "map" && <p className="meta">Shows where the records are. Until you style it, records are coloured by review status.</p>}
+        {w.type === "map" && source && (() => {
+          const ms = w.map_style ? cleanViewerStyle(w.map_style) : emptyViewerStyle();
+          const fid = source.form.id;
+          const layer = ms.layers[fid] ?? statusLayer();
+          const set = (next: typeof ms) => onChange({ map_style: next });
+          const fromProject = projectId ? loadViewerStyle(projectId) : null;
+          return (
+            <Section title="Map style">
+              <SymbologyPanel form={source.form} features={source.base} value={layer} onChange={(n) => set({ ...ms, layers: { ...ms.layers, [fid]: n } })} />
+              <div className="field"><label htmlFor="wbm">Basemap</label>
+                <select id="wbm" value={ms.basemap} onChange={(e) => set({ ...ms, basemap: e.target.value as BasemapId })}>
+                  {BASEMAPS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                </select></div>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {fromProject?.layers[fid] && <Button small onClick={() => set({ ...ms, basemap: fromProject.basemap, layers: { ...ms.layers, [fid]: fromProject.layers[fid] } })}>Copy the project map's style</Button>}
+                {w.map_style && <Button small variant="ghost" onClick={() => onChange({ map_style: undefined })}>Back to review colours</Button>}
+              </div>
+            </Section>
+          );
+        })()}
 
         </Section>
 
