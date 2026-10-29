@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BuilderSidebar, AddElementPanel, DataSourcesPanel, EmptyCanvas, ThemePanel, TimePanel, ViewPanel, type PanelKey, type ViewTab } from "../components/dashboard/Panels";
-import ControlBar from "../components/dashboard/ControlBar";
+import { ActiveFilters, HeaderControls } from "../components/dashboard/ControlBar";
+import { HeaderMenu } from "../components/dashboard/HeaderMenu";
 import { clearExternalValues } from "../components/dashboard/externalValues";
 import { FiltersPanel } from "../components/dashboard/FiltersPanel";
 import { WidgetCard } from "../components/dashboard/WidgetCard";
@@ -308,17 +309,24 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
         <header className="dashboard-canvas-header">
           {!publicView && <Link className="dashboard-header-back" to={`/dashboards?project=${projectId}`} onClick={(e) => void leave(e)} title="Back to dashboards" aria-label="Back to dashboards">←</Link>}
           <div className="dash-title"><h1>{name}</h1>{cfg.description && <p className="meta">{cfg.description}</p>}{publicView && <p className="meta">Shared from {publicView.projectName || "Geohub"}</p>}</div>
+          <HeaderControls controls={workingControls} source={pageSource} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters}
+            unfinished={unfinishedControls} editing={editing} onEdit={() => setPanel("filters")} />
           <div className="dash-actions">
-            {time && <span className="meta">Data as of {time}</span>}
+            {(time || tl) && <span className="meta dash-asof" title={tl ? `Dashboard range: ${tl}` : undefined}>{[time && `Data as of ${time}`, tl].filter(Boolean).join(" · ")}</span>}
             {canEdit && !publicView && <button type="button" className="dashboard-header-btn" onClick={() => openPanel("view", "sharing")}>Share{dashboard.shared ? " ·  Public" : ""}</button>}
-            <button type="button" className="dashboard-header-btn" onClick={() => { clearExternalValues(); onRefresh(); }}>Refresh data</button>
-            <button type="button" className="dashboard-header-btn" onClick={() => window.print()}>Print / PDF</button>
+            <HeaderMenu
+              help={editing && page.widgets.length > 0 ? "Drag an element by its title bar to move it, and by its edge or corner to resize it. Click the gear on an element for its settings. Press Save in the toolbar to keep your changes." : undefined}
+              items={[
+                { label: "Refresh data", onClick: () => { clearExternalValues(); onRefresh(); } },
+                { label: "Print / PDF", onClick: () => window.print() },
+                { label: "Add page", onClick: addPage, hidden: !editing, disabled: cfg.pages.length >= MAX_PAGES },
+                { label: "Reset layout", onClick: () => patchPage((pg) => ({ ...pg, widgets: resetRects(pg.widgets) })), hidden: !(editing && manual && page.widgets.length > 0) },
+              ]} />
           </div>
         </header>
-        <ControlBar controls={workingControls} source={pageSource} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters}
-          shown={shown} total={total} designRange={tl} unfinished={unfinishedControls} editing={editing} onEdit={() => setPanel("filters")} />
+        <ActiveFilters filters={filters} setFilters={setFilters} shown={shown} total={total} />
 
-        {(cfg.pages.length > 1 || editing) && (
+        {cfg.pages.length > 1 && (
           <div className="dash-bar">
             <nav className="dash-tabs" aria-label="Dashboard pages">
               {cfg.pages.map((p) => (
@@ -326,11 +334,6 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
               ))}
               {editing && <Button small onClick={addPage} disabled={cfg.pages.length >= MAX_PAGES}>+ Add page</Button>}
             </nav>
-          </div>)}
-        {editing && page.widgets.length > 0 && (
-          <div className="dash-hintbar">
-            <small className="meta dash-hint">Drag an element by its title bar to move it, and by its edge or corner to resize it. Click the gear on an element for its settings. Press Save in the toolbar to keep your changes.</small>
-            {manual && <Button small onClick={() => patchPage((pg) => ({ ...pg, widgets: resetRects(pg.widgets) }))}>Reset layout</Button>}
           </div>)}
 
         {publicView?.truncated && <p className="hint" role="status">This dashboard has more records than a shared link can carry. The most recently changed are shown.</p>}

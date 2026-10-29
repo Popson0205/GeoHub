@@ -385,3 +385,50 @@
   .dash-controls .fdrop, .dash-control-add, .dash-control-todo, .dash-controls .chip-x button { display: none !important; }
   .dash-controls { margin: 0 0 8px; padding: 0; border: 0; }
 }
+
+/* ---- Esri-style header: title on the left, selectors as divided cells, a few actions on the right. Nothing else sits above the dashboard,
+   so the page gets the room. The chip strip exists only while something is filtered; page tabs only when there is more than one page. ---- */
+.dashboard-canvas-header { padding-top: 0; padding-bottom: 0; min-height: 56px; margin-bottom: var(--s-2); }
+.dashboard-canvas-header .dash-title { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; }
+.dashboard-canvas-header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dashboard-canvas-header .dash-title .meta { display: none; }
+.dashboard-canvas-header .dash-controls { flex: 0 1 auto; align-self: stretch; margin: 0; padding: 0; background: transparent; color: inherit; border: 0; gap: 0; flex-wrap: nowrap; align-items: stretch; }
+.dashboard-canvas-header .fdrop { display: flex; flex-direction: column; justify-content: center; position: relative; padding: 0 14px; min-width: 130px; border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+.dashboard-canvas-header .fdrop-label { margin: 0 0 1px; font-size: 11px; font-weight: 600; letter-spacing: .01em; opacity: .75; }
+.dashboard-canvas-header .fdrop summary, .dashboard-canvas-header .fdrop details.has-value summary { height: auto; min-width: 0; max-width: 200px; padding: 0 20px 0 0; border: 0; background: transparent; color: inherit; font-size: var(--fs-md, 1rem); font-weight: 600; }
+.dashboard-canvas-header .fdrop details:not(.has-value) summary { font-weight: 400; opacity: .85; }
+.dashboard-canvas-header .fdrop summary::after { right: 0; }
+.dashboard-canvas-header .fdrop details[open] summary, .dashboard-canvas-header .fdrop summary:hover { background: transparent; opacity: 1; }
+.dashboard-canvas-header .fdrop:hover, .dashboard-canvas-header .fdrop:has(details[open]) { background: color-mix(in srgb, currentColor 8%, transparent); }
+.dashboard-canvas-header .fdrop-panel { top: 100%; left: 0; }
+.dashboard-canvas-header .dash-control-add, .dashboard-canvas-header .dash-control-todo { align-self: center; height: 32px; margin-left: 10px; }
+.dashboard-canvas-header .dash-actions { flex: none; display: flex; align-items: center; gap: 8px; padding-left: 14px; border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent); align-self: stretch; }
+.dash-asof { font-size: var(--fs-sm); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.dash-menu { position: relative; }
+.dash-menu summary { list-style: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-md); cursor: pointer; font-size: 22px; line-height: 1; user-select: none; }
+.dash-menu summary::-webkit-details-marker { display: none; }
+.dash-menu summary:hover, .dash-menu[open] summary { background: color-mix(in srgb, currentColor 12%, transparent); }
+.dash-menu summary:focus-visible { outline: 2px solid var(--dash-accent, var(--green-600)); outline-offset: 1px; }
+.dash-menu-panel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; width: 260px; padding: 6px; border-radius: var(--r-md); background: var(--dash-card, var(--card)); color: var(--dash-card-fg, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--dash-card-fg, var(--ink)) 22%, transparent); box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
+.dash-menu-panel button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm, 6px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dash-menu-panel button:hover:not(:disabled) { background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 14%, transparent); }
+.dash-menu-panel button:disabled { opacity: .4; cursor: not-allowed; }
+.dash-menu-help { margin: 6px 4px 2px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent); font-size: var(--fs-sm); opacity: .75; }
+
+.dash-active { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 0 var(--s-2); min-height: 28px; }
+.dash-active .dash-chips { flex: 0 1 auto; }
+.dash-active .chip-x { border-color: color-mix(in srgb, var(--dash-accent, var(--green-600)) 55%, transparent); background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 12%, transparent); color: var(--dash-fg, inherit); font-size: var(--fs-sm); padding-top: 0; padding-bottom: 0; }
+.dash-active .dash-count { margin-left: auto; color: var(--dash-fg, inherit); }
+.dash-active .btn { color: var(--dash-fg, inherit); }
+.dash-bar .dash-tabs { margin-bottom: var(--s-2); }
+
+@media (max-width: 900px) {
+  .dashboard-canvas-header { flex-wrap: wrap; padding-top: 6px; padding-bottom: 6px; }
+  .dashboard-canvas-header .dash-controls { order: 3; flex: 1 1 100%; overflow-x: auto; }
+  .dashboard-canvas-header .fdrop:first-child { border-left: 0; padding-left: 0; }
+  .dashboard-canvas-header .dash-actions { border-left: 0; padding-left: 0; }
+  .dash-asof { display: none; }
+}
+@media print { .dash-menu, .dash-active .btn { display: none !important; } .dashboard-canvas-header .dash-controls .fdrop { border: 0; } }

@@ -30,19 +30,32 @@ function CategoryControl({ c, source, forms, features, filters, effective, now, 
     onToggle={toggle} onClear={() => setFilters((f) => ({ ...f, equals: f.equals.filter((e) => !own(e)) }))} />;
 }
 
-export interface ControlBarProps {
-  controls: DashControl[]; source?: Source; forms: Form[]; features: Feature[];
-  filters: Filters; effective: Filters; now: Date; setFilters: SetFilters;
-  shown: number; total: number;
-  /** The date range the author set for the whole dashboard (Time and region). Viewers cannot change it, so it is shown but not removable. */
-  designRange?: string;
+type Common = { filters: Filters; setFilters: SetFilters };
+
+export interface HeaderControlsProps extends Common {
+  controls: DashControl[]; source?: Source; forms: Form[]; features: Feature[]; effective: Filters; now: Date;
   /** Controls an author has not finished setting up (shown to authors only), and the way to the panel that fixes them. */
   unfinished: { id: string; label: string; message: string }[];
   editing: boolean; onEdit: () => void;
 }
 
-/** The bar under the title: the filters the author chose, what is filtering right now, and how many records are left. */
-export default function ControlBar({ controls, source, forms, features, filters, effective, now, setFilters, shown, total, designRange, unfinished, editing, onEdit }: ControlBarProps) {
+/** The selectors, set into the title bar as divided cells (the way an Esri dashboard header holds them). */
+export function HeaderControls({ controls, source, forms, features, filters, effective, now, setFilters, unfinished, editing, onEdit }: HeaderControlsProps) {
+  if (!controls.length && !unfinished.length && !editing) return null;
+  return (
+    <div className="dash-controls" role="group" aria-label="Filters">
+      {controls.map((c) => c.kind === "date"
+        ? <DateSelect key={c.id} id={`ctl-${c.id}`} label={controlLabel(c, [])} days={filters.last?.days ?? null}
+            onChange={(days) => setFilters((f) => ({ ...f, last: days == null ? undefined : { days, src: c.id, ...(c.field && c.field !== UPDATED_ID ? { field: c.field } : {}) } }))} />
+        : source && <CategoryControl key={c.id} c={c} source={source} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters} />)}
+      {editing && unfinished.map((u) => <button key={u.id} type="button" className="dash-control-todo" onClick={onEdit} title={u.message}>{u.label}: finish setting up</button>)}
+      {editing && !controls.length && !unfinished.length && <button type="button" className="dash-control-add" onClick={onEdit}>+ Add a filter</button>}
+    </div>
+  );
+}
+
+/** What is filtering right now and how many records are left. A slim line that is there only while something is filtered. */
+export function ActiveFilters({ filters, setFilters, shown, total }: Common & { shown: number; total: number }) {
   const chips: { key: string; text: string; remove: () => void }[] = [];
   for (const e of filters.equals) chips.push({ key: `e${e.field}|${e.value}`, text: e.label, remove: () => setFilters((f) => ({ ...f, equals: f.equals.filter((x) => x !== e) })) });
   for (const r of filters.ranges ?? []) chips.push({ key: `r${r.field}${r.from}${r.to}`, text: r.label, remove: () => setFilters((f) => ({ ...f, ranges: (f.ranges ?? []).filter((x) => x !== r) })) });
@@ -51,26 +64,13 @@ export default function ControlBar({ controls, source, forms, features, filters,
   if (filters.status !== "all") chips.push({ key: "status", text: `Review status: ${STATUS_LABEL[filters.status]}`, remove: () => setFilters((f) => ({ ...f, status: "all" })) });
   if (filters.from) chips.push({ key: "from", text: `Changed from ${filters.from}`, remove: () => setFilters((f) => ({ ...f, from: undefined })) });
   if (filters.to) chips.push({ key: "to", text: `Changed until ${filters.to}`, remove: () => setFilters((f) => ({ ...f, to: undefined })) });
-
-  if (!controls.length && !chips.length && !unfinished.length && !editing && !designRange) return null;
-  const count = shown === total ? `${total} ${total === 1 ? "record" : "records"}` : `${shown} of ${total} records`;
+  if (!isFiltered(filters)) return null;
   return (
-    <div className="dash-controls" role="group" aria-label="Filters">
-      <div className="dash-controls-set">
-        {controls.map((c) => c.kind === "date"
-          ? <DateSelect key={c.id} id={`ctl-${c.id}`} label={controlLabel(c, [])} days={filters.last?.days ?? null}
-              onChange={(days) => setFilters((f) => ({ ...f, last: days == null ? undefined : { days, src: c.id, ...(c.field && c.field !== UPDATED_ID ? { field: c.field } : {}) } }))} />
-          : source && <CategoryControl key={c.id} c={c} source={source} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters} />)}
-        {editing && unfinished.map((u) => <button key={u.id} type="button" className="dash-control-todo" onClick={onEdit} title={u.message}>{u.label}: finish setting up</button>)}
-        {editing && !controls.length && !unfinished.length && <button type="button" className="dash-control-add" onClick={onEdit}>+ Add a filter</button>}
-      </div>
-      <div className="dash-controls-state">
-        {(chips.length > 0 || designRange) && <ul className="dash-chips" aria-label="Active filters">
-          {designRange && <li className="chip-x is-static" title="Set by the dashboard's author in Time and region">{designRange}</li>}
-          {chips.map((c) => <li key={c.key} className="chip-x">{c.text}<button type="button" aria-label={`Remove filter ${c.text}`} onClick={c.remove}>×</button></li>)}</ul>}
-        {isFiltered(filters) && <Button small variant="ghost" onClick={() => setFilters(noFilters())}>Clear all</Button>}
-        <span className="dash-count" aria-live="polite">{count}</span>
-      </div>
+    <div className="dash-active" role="group" aria-label="Active filters">
+      <ul className="dash-chips">{chips.map((c) => (
+        <li key={c.key} className="chip-x">{c.text}<button type="button" aria-label={`Remove filter ${c.text}`} onClick={c.remove}>×</button></li>))}</ul>
+      <Button small variant="ghost" onClick={() => setFilters(noFilters())}>Clear all</Button>
+      <span className="dash-count" aria-live="polite">{shown} of {total} {total === 1 ? "record" : "records"}</span>
     </div>
   );
 }
