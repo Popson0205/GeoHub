@@ -165,7 +165,7 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     mapRef.current = map;
     if (!preview) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     if (!preview) map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    if (geolocate && !preview) map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true }), "top-right");
+    if (geolocate && !preview) map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true, fitBoundsOptions: { maxZoom: 18 } }), "top-right");
 
     map.on("load", () => {
       map.addSource("features", { type: "geojson", data: empty as never });

@@ -35,6 +35,18 @@ export function combineFixes(fixes: Fix[]) {
   return { lon: lon / sw, lat: lat / sw, hacc: best, elev, vacc, used: use.length };
 }
 
+/**
+ * The box the map should zoom to for a position: about 1.5 times the reading's accuracy around it, never tighter than
+ * 30 m (so a very good reading still shows some surroundings) and never wider than 2 km (so a poor one still zooms in).
+ * Returned as [west, south, east, north] in degrees.
+ */
+export function viewAround(lon: number, lat: number, accuracyM: number): [number, number, number, number] {
+  const metres = Math.max(30, Math.min(Number.isFinite(accuracyM) ? accuracyM * 1.5 : 100, 2000));
+  const dLat = metres / 111320;
+  const dLon = metres / (111320 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+}
+
 /** The extra values saved with a record collected by GPS. */
 export function gpsProps(c: ReturnType<typeof combineFixes>): Record<string, number | string> {
   const out: Record<string, number | string> = { gps_hacc_m: round(c.hacc), gps_src: "gps" };

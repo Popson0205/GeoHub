@@ -4,12 +4,12 @@ import { useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
 import SignaturePad from "../components/SignaturePad";
-import MapView, { type MapFeature } from "../components/MapView";
+import MapView, { type Bbox, type MapFeature } from "../components/MapView";
 import { BrandMark } from "../components/Shell";
 import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
-import { combineFixes, gpsProps, withoutGps, type Fix } from "../lib/gps";
+import { combineFixes, gpsProps, viewAround, withoutGps, type Fix } from "../lib/gps";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
@@ -106,6 +106,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   useEffect(() => { setBusy(drafting); return () => setBusy(false); }, [drafting]);
 
   // Capturing watches the GPS for a few seconds and averages the good readings, instead of trusting a single one.
+  const [flyTo, setFlyTo] = useState<{ bounds: Bbox; key: number } | null>(null);
+  const showOnMap = useCallback((lon: number, lat: number, hacc: number) => setFlyTo({ bounds: viewAround(lon, lat, hacc), key: Date.now() }), []);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const stopWatch = useCallback(() => {
@@ -128,7 +130,10 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         const r = combineFixes(fixes);
         setAccuracy(Math.round(r.hacc));
         setDraft((d) => d && { ...d, geometry: { type: "Point", coordinates: [r.lon, r.lat] }, props: { ...withoutGps(d.props), ...gpsProps(r) } });
-        if ((fixes.length >= 3 && r.hacc <= GOOD) || fixes.length >= MAX_FIXES) stopWatch();
+        const settled = (fixes.length >= 3 && r.hacc <= GOOD) || fixes.length >= MAX_FIXES;
+        // Zoom to the first reading, and again when the reading has settled. In between the map is left alone, so it does not fight the person panning it.
+        if (fixes.length === 1 || settled) showOnMap(r.lon, r.lat, r.hacc);
+        if (settled) stopWatch();
       },
       (err) => {
         stopWatch();
@@ -137,7 +142,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
-    timerRef.current = window.setTimeout(() => { if (fixes.length) stopWatch(); }, MAX_MS);
+    timerRef.current = window.setTimeout(() => { if (fixes.length) { const r = combineFixes(fixes); showOnMap(r.lon, r.lat, r.hacc); stopWatch(); } }, MAX_MS);
   }
 
   async function save() {
@@ -219,6 +224,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         onCancelDraw={() => setPlacing(false)}
         fitKey={collectOnly ? projectId : `${projectId}:${features.length > 0}`}
         geolocate
+        flyTo={flyTo}
         label="Collection map"
       />
 

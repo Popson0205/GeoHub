@@ -20,3 +20,16 @@ ok(Object.keys(withoutGps({ name: "x", ...p })).join() === "name", "device value
 const form = { fields: [{ id: "name", type: "text", label: "Name" }] } as any;
 const saved = pruneProperties(form, { name: "Well", ...p });
 ok(saved.name === "Well" && saved.gps_elev_m === p.gps_elev_m && saved.gps_src === "gps", "device values survive saving a record");
+
+// zooming to a position
+import { viewAround } from "../src/lib/gps";
+{
+  const [w, s, e, n] = viewAround(7.5, 9, 5);
+  const metresN = (n - s) / 2 * 111320, metresE = (e - w) / 2 * 111320 * Math.cos((9 * Math.PI) / 180);
+  ok(w < 7.5 && e > 7.5 && s < 9 && n > 9 && Math.abs((w + e) / 2 - 7.5) < 1e-9 && Math.abs((s + n) / 2 - 9) < 1e-9, "the box is centred on the position");
+  ok(Math.abs(metresN - 30) < 0.01 && Math.abs(metresE - 30) < 0.01, "a very good reading still shows at least 30 m around it");
+  const mid = viewAround(7.5, 9, 40); ok(Math.abs((mid[3] - mid[1]) / 2 * 111320 - 60) < 0.01, "otherwise about 1.5 times the accuracy");
+  const poor = viewAround(7.5, 9, 50000); ok(Math.abs((poor[3] - poor[1]) / 2 * 111320 - 2000) < 0.01, "a very poor reading is capped at 2 km so the map still zooms in");
+  const polar = viewAround(10, 89.9, 30); ok(polar.every(Number.isFinite), "near the poles the box stays finite");
+  ok(viewAround(1, 1, NaN).every(Number.isFinite), "an unknown accuracy still gives a box");
+}
