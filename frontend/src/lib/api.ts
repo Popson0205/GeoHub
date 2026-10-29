@@ -225,6 +225,12 @@ function toWireConfig(c: DashboardConfig) {
     time_filter: c.time_filter ?? null,
     pages: c.pages.map((p) => ({
       id: p.id, title: p.title, form_id: p.form_id ?? null,
+      controls: (p.controls ?? []).map((c) => ({
+        id: c.id, kind: c.kind, label: c.label, field: c.field ?? null, multi: c.multi !== false,
+        source: c.source?.type === "form" ? { type: "form", form_id: c.source.form_id, field: c.source.field }
+          : c.source?.type === "url" ? { type: "url", url: c.source.url, column: c.source.column ?? null } : null,
+      })),
+      exclude: p.exclude ?? {},
       widgets: p.widgets.map((x) => ({
         id: x.id, type: x.type, title: x.title, wide: x.wide ?? false, form_id: x.form_id ?? null, metric: x.metric,
         metric_field: x.metric_field ?? null, field: x.field ?? null, bucket: x.bucket, limit: x.limit, columns: x.columns,

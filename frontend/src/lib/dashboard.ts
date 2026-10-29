@@ -5,7 +5,7 @@ import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
 import { cleanTheme, cleanWidgetStyle } from "./dashboardThemes";
 import { cleanViewerStyle } from "./symbology";
-import type { Bucket, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
+import type { Bucket, DashControl, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, OptionSource, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
 
@@ -59,15 +59,31 @@ export interface Filters {
   status: "all" | FeatureStatus;
   from?: string;   // YYYY-MM-DD, on the date the record changed
   to?: string;
-  equals: { field: string; value: string; label: string }[];   // set by clicking a bar or slice, or by a header dropdown
+  /** `src` says what set it: a filter control, or the element that was clicked. It decides which elements the value reaches (see scopeFilters). */
+  equals: { field: string; value: string; label: string; src?: string }[];   // set by clicking a bar or slice, or by a category selector
   /** Set by clicking a point on a line chart: records whose date for `field` falls on or between two days. */
   ranges?: RangeFilter[];
+  /** Set by the date filter: records from the last `days` days, or from today only when `days` is 0. */
+  last?: LastFilter;
 }
-export interface RangeFilter { field: string; from: string; to: string; label: string }
+export interface RangeFilter { field: string; from: string; to: string; label: string; src?: string }
+export interface LastFilter { days: number; src?: string; field?: string }
 export const noFilters = (): Filters => ({ status: "all", equals: [] });
-export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0 || (f.ranges ?? []).length > 0;
+export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0 || (f.ranges ?? []).length > 0 || !!f.last;
 
-export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[]): Feature[] {
+// ---------- the date filter: Today, or the last N days ----------
+export const MAX_LAST_DAYS = 3650;
+export const LAST_PRESETS: { days: number; label: string }[] = [{ days: 0, label: "Today" }, { days: 7, label: "Last 7 days" }, { days: 30, label: "Last 30 days" }, { days: 90, label: "Last 90 days" }];
+export const lastLabel = (days: number): string => (days <= 0 ? "Today" : `Last ${days} ${days === 1 ? "day" : "days"}`);
+/** A whole number of days from 0 to MAX_LAST_DAYS, or null. */
+export function cleanDays(v: unknown): number | null {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= MAX_LAST_DAYS ? n : null;
+}
+
+export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[], now: Date = new Date()): Feature[] {
+  const lastFrom = f.last ? dayKey(now.getTime() - f.last.days * 86400000) : "";
+  const lastDef = f.last ? (findField(defs, f.last.field ?? UPDATED_ID) ?? UPDATED_DEF) : undefined;
   const bins = new Map<string, Binner | null>();
   const wanted = new Map<string, Set<string>>();
   for (const e of f.equals) { const s = wanted.get(e.field) ?? new Set<string>(); s.add(e.value); wanted.set(e.field, s); }
@@ -78,6 +94,10 @@ export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[]
     const day = r.updated_at.slice(0, 10);
     if (f.from && day < f.from) return false;
     if (f.to && day > f.to) return false;
+    if (lastFrom && lastDef) {
+      const v = raw(r, lastDef), d = typeof v === "string" ? v.slice(0, 10) : "";
+      if (!d || d < lastFrom) return false;
+    }
     // Values of the same field are alternatives (Well or Borehole); different fields all have to match.
     for (const [field, values] of wanted) {
       const d = findField(defs, field);
@@ -121,6 +141,28 @@ export function toggleEquals(f: Filters, e: Filters["equals"][number]): Filters 
   return { ...f, equals: has ? f.equals.filter((x) => !(x.field === e.field && x.value === e.value)) : [...f.equals, e] };
 }
 export const selectedValues = (f: Filters, field?: string): string[] => (field ? f.equals.filter((e) => e.field === field).map((e) => e.value) : []);
+/** The values one category selector has picked (an old address with no source counts for every selector on that field). */
+export const controlValues = (f: Filters, c: DashControl): string[] => f.equals.filter((e) => e.field === c.field && (e.src === c.id || e.src === undefined)).map((e) => e.value);
+
+// ---------- which filter changes which element ----------
+// Every filter has a source: a control in the bar, or an element that was clicked (bar, pie, line). By default a filter changes
+// every element. `exclude` lists, per source, the elements it leaves alone; storing the exceptions (not the targets) means an
+// element added later is filtered like the rest until the author says otherwise.
+export type Exclude = Record<string, string[]> | undefined;
+export const reaches = (src: string | undefined, elementId: string, exclude: Exclude): boolean => !src || !(exclude?.[src] ?? []).includes(elementId);
+/** The filters that reach one element. The dashboard's own date range (no source) reaches all of them. */
+export function scopeFilters(f: Filters, elementId: string, exclude: Exclude): Filters {
+  if (!exclude) return f;
+  const ranges = f.ranges?.filter((r) => reaches(r.src, elementId, exclude));
+  return { ...f, equals: f.equals.filter((e) => reaches(e.src, elementId, exclude)), ...(ranges ? { ranges } : {}), last: f.last && reaches(f.last.src, elementId, exclude) ? f.last : undefined };
+}
+/** True when something in `f` is held back from this element, so it needs rows of its own. */
+export const isScoped = (f: Filters, elementId: string, exclude: Exclude): boolean =>
+  !!exclude && (f.equals.some((e) => !reaches(e.src, elementId, exclude)) || (f.ranges ?? []).some((r) => !reaches(r.src, elementId, exclude)) || (!!f.last && !reaches(f.last.src, elementId, exclude)));
+/** Elements a click can filter from: the ones that draw groups. */
+export const isPicker = (w: Widget): boolean => (w.type === "bar" || w.type === "pie" || w.type === "line") && !!w.field;
+/** Elements a filter can change: everything that reads records. */
+export const isFilterable = (w: Widget): boolean => !isStatic(w.type);
 
 // ---------- filters the author puts in the header ----------
 export const MAX_PAGE_FILTERS = 6;
@@ -143,6 +185,91 @@ export function facetOptions(base: Feature[], rows: Feature[], d: FieldDef, limi
   const counts = new Map<string, number>();
   for (const r of rows) for (const c of categories(r, d, null)) counts.set(c.key, (counts.get(c.key) ?? 0) + 1);
   return filterOptions(base, d, limit).map((o) => ({ ...o, count: counts.get(o.key) ?? 0 }));
+}
+
+// ---------- the filter controls in the bar under the title ----------
+export const MAX_CONTROLS = 6;
+const CONTROL_ID = /^[A-Za-z0-9_-]{1,40}$/;
+/** Fields a category selector can filter by: the ones with a short list of values, plus review status. */
+export const controlFields = (d: FieldDef[]): FieldDef[] => [STATUS_DEF, ...filterableFields(d)];
+export function newControl(kind: DashControl["kind"], defs: FieldDef[], mkId: () => string = () => `c${uuid().slice(0, 8)}`): DashControl {
+  if (kind === "date") return { id: mkId(), kind, label: "Date", field: UPDATED_ID };
+  const f = controlFields(defs).find((d) => d.type === "choice") ?? controlFields(defs)[0];
+  return { id: mkId(), kind, label: f?.label ?? "Category", field: f?.id, multi: true };
+}
+export const controlLabel = (c: DashControl, defs: FieldDef[]): string => c.label.trim() || (c.kind === "date" ? "Date" : findField(defs, c.field)?.label ?? "Category");
+/** Why a control can't work yet, or null. The author sees this; viewers just don't see the control. */
+export function controlProblem(c: DashControl, defs: FieldDef[], forms: Form[]): string | null {
+  if (c.kind === "date") return dateFields(defs).some((d) => d.id === (c.field ?? UPDATED_ID)) ? null : "The date field this uses is no longer in the form.";
+  if (!c.field || !controlFields(defs).some((d) => d.id === c.field)) return "Pick the field this filters.";
+  const s = c.source;
+  if (s?.type === "form") {
+    const f = forms.find((x) => x.id === s.form_id);
+    if (!f) return "Pick the form the values come from.";
+    if (!controlFields(dashboardFields(f)).some((d) => d.id === s.field)) return "Pick the field of that form that holds the values.";
+  }
+  if (s?.type === "url" && !safeHttpsUrl(s.url)) return "Enter a web address that starts with https://.";
+  return null;
+}
+/** An https address for a list of values, or null. No other schemes, no embedded passwords. */
+export function safeHttpsUrl(raw?: string): string | null { return safeEmbedUrl(raw); }
+
+/** The values of a lookup field in another form: every distinct non-blank value, in alphabetical order. */
+export function formValues(features: Feature[], form: Form | undefined, fieldId: string): string[] {
+  const d = findField(dashboardFields(form), fieldId);
+  if (!form || !d) return [];
+  const seen = new Set<string>();
+  for (const r of features) if (r.form_id === form.id && !r.deleted) for (const c of categories(r, d, null)) if (c.key !== "") seen.add(c.label);
+  return [...seen].sort((a, b) => a.localeCompare(b)).slice(0, 500);
+}
+/** A list of values out of what a web address returned: a JSON list, a GeoJSON collection, or a CSV with a header row. */
+export function parseExternalValues(text: string, column?: string): string[] {
+  const clean = (xs: unknown[]) => [...new Set(xs.map((x) => (typeof x === "string" || typeof x === "number" ? String(x).trim() : "")).filter(Boolean))].slice(0, 500);
+  const pick = (o: unknown): unknown => {
+    if (typeof o !== "object" || o === null) return o;
+    const rec = o as Record<string, unknown>;
+    if (column) return rec[column];
+    return Object.values(rec).find((v) => typeof v === "string" || typeof v === "number");
+  };
+  let json: unknown;
+  try { json = JSON.parse(text); } catch { json = undefined; }
+  if (json !== undefined) {
+    let list: unknown = json;
+    if (!Array.isArray(list) && typeof list === "object" && list !== null) {
+      const o = list as Record<string, unknown>;
+      list = Array.isArray(o.features) ? (o.features as { properties?: unknown }[]).map((f) => f?.properties) : Object.values(o).find(Array.isArray);
+    }
+    return Array.isArray(list) ? clean(list.map(pick)) : [];
+  }
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) return [];
+  const at = column ? rows[0].findIndex((h) => h.trim().toLowerCase() === column.trim().toLowerCase()) : 0;
+  return at < 0 ? [] : clean(rows.slice(1).map((r) => r[at]));
+}
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = []; let row: string[] = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); cell = ""; if (row.some((x) => x.trim() !== "")) rows.push(row); row = []; }
+    else cell += c;
+  }
+  row.push(cell); if (row.some((x) => x.trim() !== "")) rows.push(row);
+  return rows;
+}
+/**
+ * What a category selector lists. From the page's own records: every value they hold, with counts that follow the other filters.
+ * From elsewhere (another form, a web address): the values that list holds, so values with no records yet can still be picked;
+ * the count is how many of the shown records have it.
+ */
+export function controlOptions(c: DashControl, def: FieldDef, base: Feature[], rows: Feature[], listed: string[] = [], selected: string[] = []): { options: FilterOption[]; listed: boolean } {
+  if (!c.source || c.source.type === "records") return { options: facetOptions(base, rows, def), listed: false };
+  const counts = new Map<string, number>();
+  for (const r of rows) for (const k of categories(r, def, null)) counts.set(k.key, (counts.get(k.key) ?? 0) + 1);
+  // A value that is picked stays on the list even if the list no longer has it, so it can be unpicked.
+  return { options: [...new Set([...listed, ...selected])].map((v) => ({ key: v, label: v, count: counts.get(v) ?? 0 })), listed: true };
 }
 const cleanFilterIds = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((s): s is string => typeof s === "string" && s !== ""))].slice(0, MAX_PAGE_FILTERS) : []);
 
@@ -535,6 +662,51 @@ function rectOf(x: Record<string, unknown>): Partial<Rect> {
   const n = [x.col, x.row, x.cols, x.rows];
   return n.every((v) => typeof v === "number" && Number.isFinite(v)) ? clampRect({ col: x.col as number, row: x.row as number, cols: x.cols as number, rows: x.rows as number }) : {};
 }
+const isId = (v: unknown): v is string => typeof v === "string" && CONTROL_ID.test(v);
+function cleanSource(raw: unknown): OptionSource | undefined {
+  const s = raw as Record<string, unknown> | null | undefined;
+  if (!s || typeof s !== "object") return undefined;
+  if (s.type === "form") return typeof s.form_id === "string" && typeof s.field === "string" ? { type: "form", form_id: s.form_id, field: s.field.slice(0, 80) } : undefined;
+  if (s.type === "url") {
+    const url = typeof s.url === "string" ? s.url.trim().slice(0, 500) : "";
+    return { type: "url", url, ...(typeof s.column === "string" && s.column.trim() ? { column: s.column.trim().slice(0, 80) } : {}) };
+  }
+  return undefined;   // "records" is the normal case and is stored as nothing
+}
+/** The bar's filters as saved. Pages saved with the older field-id list get one category selector per field. */
+export function cleanControls(raw: unknown, legacy?: unknown): DashControl[] {
+  const out: DashControl[] = [], seen = new Set<string>();
+  for (const x of Array.isArray(raw) ? raw : []) {
+    const c = x as Record<string, unknown> | null;
+    if (!c || out.length >= MAX_CONTROLS || !isId(c.id) || seen.has(c.id)) continue;
+    const label = typeof c.label === "string" ? c.label.slice(0, 60) : "";
+    const field = typeof c.field === "string" && c.field ? c.field.slice(0, 80) : undefined;
+    if (c.kind === "date") {
+      if (out.some((o) => o.kind === "date")) continue;
+      out.push({ id: c.id, kind: "date", label, ...(field ? { field } : {}) });
+    } else if (c.kind === "category") {
+      const source = cleanSource(c.source);
+      out.push({ id: c.id, kind: "category", label, ...(field ? { field } : {}), ...(source ? { source } : {}), ...(c.multi === false ? { multi: false } : {}) });
+    } else continue;
+    seen.add(c.id);
+  }
+  for (const field of cleanFilterIds(legacy)) {
+    let id = `fc_${field.replace(/[^A-Za-z0-9_-]/g, "_")}`.slice(0, 40);
+    for (let n = 2; seen.has(id); n++) id = `${id.slice(0, 36)}_${n}`;
+    if (out.length >= MAX_CONTROLS || out.some((o) => o.kind === "category" && o.field === field && !o.source)) continue;
+    seen.add(id); out.push({ id, kind: "category", label: "", field });
+  }
+  return out;
+}
+export function cleanExclude(raw: unknown): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [src, ids] of Object.entries(raw as Record<string, unknown>).slice(0, 40)) {
+    const list = Array.isArray(ids) ? [...new Set(ids.filter(isId))].slice(0, 60) : [];
+    if (isId(src) && list.length) out[src] = list;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 export function normalizeConfig(raw: unknown): DashboardConfig {
   const c = (raw ?? {}) as Record<string, unknown>;
   const widget = (x: Record<string, unknown>): Widget => ({
@@ -558,7 +730,8 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
   const pageOf = (x: Record<string, unknown>): DashPage => ({
     id: String(x.id), title: String(x.title ?? ""), form_id: (x.form_id as string | null | undefined) ?? undefined,
     widgets: ((x.widgets as Record<string, unknown>[] | undefined) ?? []).map(widget),
-    ...(cleanFilterIds(x.filters).length ? { filters: cleanFilterIds(x.filters) } : {}),
+    ...(cleanControls(x.controls, x.filters).length ? { controls: cleanControls(x.controls, x.filters) } : {}),
+    ...(cleanExclude(x.exclude) ? { exclude: cleanExclude(x.exclude) } : {}),
   });
   const pages = Array.isArray(c.pages)
     ? (c.pages as Record<string, unknown>[]).map(pageOf)
@@ -570,15 +743,16 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
 // ---------- filters in the address ----------
 // Filters sit in the page address, so a view can be sent as a link, survives a refresh, and carries from page to page.
 const STATUSES = ["draft", "submitted", "approved", "rejected"];
-const FILTER_KEYS = ["status", "from", "to", "eq", "rg"];
+const FILTER_KEYS = ["status", "from", "to", "eq", "rg", "last"];
 export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearchParams()): URLSearchParams {
   const out = new URLSearchParams(into);
   FILTER_KEYS.forEach((k) => out.delete(k));
   if (f.status !== "all") out.set("status", f.status);
   if (f.from) out.set("from", f.from);
   if (f.to) out.set("to", f.to);
-  for (const e of f.equals) out.append("eq", [e.field, e.value, e.label].map(encodeURIComponent).join("|"));
-  for (const r of f.ranges ?? []) out.append("rg", [r.field, r.from, r.to, r.label].map(encodeURIComponent).join("|"));
+  for (const e of f.equals) out.append("eq", [e.field, e.value, e.label, ...(e.src ? [e.src] : [])].map(encodeURIComponent).join("|"));
+  for (const r of f.ranges ?? []) out.append("rg", [r.field, r.from, r.to, r.label, ...(r.src ? [r.src] : [])].map(encodeURIComponent).join("|"));
+  if (f.last) out.set("last", [f.last.days === 0 ? "today" : String(f.last.days), ...(f.last.src || f.last.field ? [f.last.src ?? "", ...(f.last.field ? [f.last.field] : [])] : [])].map(encodeURIComponent).join("|"));
   return out;
 }
 export function filtersFromParams(p: URLSearchParams): Filters {
@@ -586,31 +760,38 @@ export function filtersFromParams(p: URLSearchParams): Filters {
   const day = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
   const equals = p.getAll("eq").flatMap((x) => {
     try {
-      const [field, value, label] = x.split("|").map(decodeURIComponent);
-      return field && value !== undefined ? [{ field, value, label: label ?? value }] : [];
+      const [field, value, label, src] = x.split("|").map(decodeURIComponent);
+      return field && value !== undefined ? [{ field, value, label: label ?? value, ...(src ? { src } : {}) }] : [];
     } catch { return []; }
   });
   const ranges = p.getAll("rg").flatMap((x): RangeFilter[] => {
     try {
-      const [field, from, to, label] = x.split("|").map(decodeURIComponent);
-      return field && day(from ?? null) && day(to ?? null) ? [{ field, from, to, label: label ?? `${from} to ${to}` }] : [];
+      const [field, from, to, label, src] = x.split("|").map(decodeURIComponent);
+      return field && day(from ?? null) && day(to ?? null) ? [{ field, from, to, label: label ?? `${from} to ${to}`, ...(src ? { src } : {}) }] : [];
     } catch { return []; }
   });
-  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals, ...(ranges.length ? { ranges } : {}) };
+  const last = ((): LastFilter | undefined => {
+    try {
+      const [d, src, field] = (p.get("last") ?? "").split("|").map(decodeURIComponent);
+      const days = d === "today" ? 0 : cleanDays(d);
+      return days == null ? undefined : { days, ...(src ? { src } : {}), ...(field ? { field } : {}) };
+    } catch { return undefined; }
+  })();
+  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals, ...(ranges.length ? { ranges } : {}), ...(last ? { last } : {}) };
 }
 
 // ---------- the records a page draws on, and what each element shows ----------
 /** The records one element draws: a form, its fields, every record of it, and the ones that pass the filters. */
 export interface Source { form: Form; defs: FieldDef[]; base: Feature[]; rows: Feature[] }
 
-export function buildSources(formIds: string[], forms: Form[], features: Feature[], filters: Filters): Map<string, Source> {
+export function buildSources(formIds: string[], forms: Form[], features: Feature[], filters: Filters, now: Date = new Date()): Map<string, Source> {
   const m = new Map<string, Source>();
   for (const id of formIds) {
     const form = forms.find((f) => f.id === id);
     if (!form) continue;
     const defs = dashboardFields(form);
     const base = features.filter((f) => f.form_id === id && !f.deleted);
-    m.set(id, { form, defs, base, rows: filterFeatures(base, filters, defs) });
+    m.set(id, { form, defs, base, rows: filterFeatures(base, filters, defs, now) });
   }
   return m;
 }

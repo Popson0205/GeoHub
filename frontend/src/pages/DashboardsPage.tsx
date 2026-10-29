@@ -20,7 +20,7 @@ export default function DashboardsPage() {
   const [description, setDescription] = useState("");
   const [picked, setPicked] = useState<string[] | null>(null);          // forms that become pages; null = all of them
   const [overview, setOverview] = useState(true);
-  const [template, setTemplate] = useState<TemplateId>("standard");
+  const [template, setTemplate] = useState<TemplateId>("monitor");
   const [busy, setBusy] = useState(false);
 
   if (project.loading || forms.loading || list.loading) return <div className="container"><Loading /></div>;

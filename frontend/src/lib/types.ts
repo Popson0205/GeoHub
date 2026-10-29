@@ -299,9 +299,32 @@ export interface Widget {
   map_style?: ViewerStyle;
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
+/** Where a category selector gets the values it lists. */
+export type OptionSource =
+  | { type: "records" }                                        // the values the page's own records hold (counts included)
+  | { type: "form"; form_id: string; field: string }           // a field of another form in the project, used as a lookup list
+  | { type: "url"; url: string; column?: string };             // an https address that returns a JSON list or a CSV
+/**
+ * A filter the viewer uses from the bar under the title.
+ *  - category: pick one or several values; records whose `field` equals a picked value stay.
+ *  - date: "Today" or "Last N days", on `field` (default: when the record changed). A page has at most one.
+ */
+export interface DashControl {
+  id: string; kind: "category" | "date"; label: string;
+  field?: string;
+  source?: OptionSource;     // category only. Missing = records
+  multi?: boolean;           // category only. false = one value at a time. Missing = several
+}
 export interface DashPage {
   id: string; title: string; form_id?: string; widgets: Widget[];
-  /** Field ids the author offers as dropdown filters in the header of this page (at most 6, from the page's form). */
+  /** The filters in the bar under the title (at most 6). */
+  controls?: DashControl[];
+  /**
+   * Which elements each filter leaves alone: filter id (a control, or a bar / pie / line element that is clicked) to element ids.
+   * Missing = the filter changes every element on the page, including ones added later.
+   */
+  exclude?: Record<string, string[]>;
+  /** Older saved dashboards: field ids offered as dropdowns. Read once and turned into `controls`; never written back. */
   filters?: string[];
 }
 /** Colours of a dashboard's look. A preset (see lib/dashboardThemes.ts) plus any colours the author changed. */

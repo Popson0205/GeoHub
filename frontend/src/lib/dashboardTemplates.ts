@@ -3,16 +3,17 @@
 // charts from that, so the same template works on any form. Every template except "standard" places its charts on the 12-column
 // grid, so after choosing one the person can drag, resize and change any chart like normal.
 import {
-  STATUS_ID, UPDATED_ID, dashboardFields, newPage, newWidget, numberFields, overviewWidgets, MAX_PAGES, layoutRects,
+  STATUS_ID, UPDATED_ID, controlFields, dashboardFields, newControl, newPage, newWidget, numberFields, overviewWidgets, MAX_PAGES, layoutRects, inBody,
   type FieldDef,
 } from "./dashboard";
 import { uuid } from "./forms";
-import type { DashPage, Form, Widget, WidgetType } from "./types";
+import type { DashControl, DashPage, Form, Widget, WidgetType } from "./types";
 
-export type TemplateId = "standard" | "executive" | "map" | "review" | "trends" | "blank";
+export type TemplateId = "monitor" | "standard" | "executive" | "map" | "review" | "trends" | "blank";
 export interface TemplateInfo { id: TemplateId; name: string; description: string }
 
 export const TEMPLATES: TemplateInfo[] = [
+  { id: "monitor", name: "Monitoring board", description: "A filter bar on top, key numbers, a records list down the left, a map with charts beside it, and a table below." },
   { id: "standard", name: "Standard overview", description: "Numbers, charts, a map and a table, arranged automatically." },
   { id: "executive", name: "Executive summary", description: "Headline numbers on top, breakdowns in the middle, activity over time at the bottom." },
   { id: "map", name: "Map focus", description: "A large map with the key numbers beside it and the records underneath. Forms with no locations get a time chart instead." },
@@ -57,6 +58,28 @@ function build(id: TemplateId, c: Ctx): Widget[] {
 
   if (id === "blank") return [];
   if (id === "standard") return standard(c, picks, nums);
+
+  if (id === "monitor") {
+    // Reads top to bottom, the way an operations screen does: numbers, then where and what, then the detail. The side column holds the list.
+    const kpis = some<Widget>([
+      total(),
+      nums[0] && mk("kpi", { metric: "sum", metric_field: nums[0].id }),
+      nums[0] && mk("kpi", { metric: "avg", metric_field: nums[0].id }),
+      nums[1] && mk("kpi", { metric: "sum", metric_field: nums[1].id }),
+    ]);
+    const main = c.geo ? mk("map") : activity();
+    const top = picks[0] ? mk("bar", { field: picks[0].id }) : statusPie();
+    const low = picks[1] ? mk("pie", { field: picks[1].id }) : picks[0] ? statusPie() : null;
+    const right = low ? [at(top, 8, 2, 4, 3), at(low, 8, 5, 4, 3)] : [at(top, 8, 2, 4, 6)];
+    const body = [...strip(kpis, 0, 2), at(main, 0, 2, 8, 6), ...right];
+    const withTime = c.geo ? [...body, at(activity(), 0, 8, GRID, 4)] : body;
+    const rows = bottom(withTime) + 5;
+    const table = at(mk("table", { columns: tableColumns(defs), limit: 12 }), 0, bottom(withTime), GRID, 5);
+    const sub = defs.find((f) => (f.type === "choice" || f.type === "text") && f.id !== mk("list").title_field);
+    // A side element has no place on the grid; its saved height is how tall the column is, so the list runs the whole length.
+    const side: Widget = { ...mk("list", { limit: 14, title: "Latest records", subtitle_fields: sub ? [sub.id] : [] }), region: "sidebar", col: 0, row: 0, cols: GRID, rows };
+    return [...withTime, table, side];
+  }
 
   if (id === "executive") {
     const kpis = some<Widget>([
@@ -121,7 +144,10 @@ export function templateWidgets(id: TemplateId, form: Form, mkId: () => string =
 /** One page per form, as the New dashboard screen builds them, plus a joint overview when there are several. */
 export function templatePages(id: TemplateId, forms: Form[], overview: boolean, mkId: () => string = () => uuid().slice(0, 8)): DashPage[] {
   const list = forms.slice(0, MAX_PAGES - 1);
-  const pages = list.map((f): DashPage => ({ id: mkId(), title: f.name.slice(0, 60), form_id: f.id, widgets: templateWidgets(id, f, mkId) }));
+  const pages = list.map((f): DashPage => {
+    const controls = templateControls(id, f, () => `c${mkId()}`.slice(0, 40));
+    return { id: mkId(), title: f.name.slice(0, 60), form_id: f.id, widgets: templateWidgets(id, f, mkId), ...(controls.length ? { controls } : {}) };
+  });
   if (overview && id !== "blank" && forms.length > 1) pages.unshift({ id: mkId(), title: "Overview", widgets: overviewWidgets(forms, mkId) });
   return pages.length ? pages : [newPage("Overview", undefined, mkId)];
 }
@@ -135,6 +161,18 @@ export interface Sketch { type: WidgetType; col: number; row: number; cols: numb
 export function templateSketch(id: TemplateId): Sketch[] {
   let k = 0;
   const ws = build(id, ctxOf(SAMPLE, true, () => `s${k++}`));
-  const rects = layoutRects(ws);
-  return ws.flatMap((w) => { const r = rects.get(w.id); return r ? [{ type: w.type, ...r }] : []; });
+  const rects = layoutRects(ws), side = ws.filter((w) => !inBody(w));
+  // With a side column, the grid shares the thumbnail's width: the column takes 3 of 12, the grid the other 9.
+  const k9 = side.length ? 9 / GRID : 1, off = side.length ? 3 : 0;
+  const body = ws.flatMap((w) => { const r = rects.get(w.id); return r ? [{ type: w.type, col: off + Math.round(r.col * k9), row: r.row, cols: Math.max(1, Math.round((r.col + r.cols) * k9) - Math.round(r.col * k9)), rows: r.rows }] : []; });
+  return [...side.map((w): Sketch => ({ type: w.type, col: 0, row: 0, cols: off, rows: w.rows ?? 4 })), ...body];
+}
+
+/** The filters a template sets up with its layout: a selector on the form's first choice field (or review status) and a date filter. */
+export function templateControls(id: TemplateId, form: Form, mkId: () => string = () => `c${uuid().slice(0, 8)}`): DashControl[] {
+  if (id !== "monitor") return [];
+  const defs = dashboardFields(form);
+  const fields = controlFields(defs), picks = fields.filter((f) => f.type === "choice").slice(0, 2);
+  if (!picks.length && fields[0]) picks.push(fields[0]);
+  return [...picks.map((f): DashControl => ({ ...newControl("category", defs, mkId), field: f.id, label: f.label })), newControl("date", defs, mkId)];
 }

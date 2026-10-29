@@ -2,15 +2,15 @@ import { useState, type ReactNode } from "react";
 import { Button } from "../ui";
 import TemplatePicker from "../TemplatePicker";
 import { DASHBOARD_THEMES, DASH_FONTS, DEFAULT_THEME_PRESET, FONT_KEYS, STYLE_LIMITS, THEME_COLOR_FIELDS, cleanStyle, resolveThemeColors } from "../../lib/dashboardThemes";
-import { MAX_PAGE_FILTERS, TIME_PRESETS, WIDGET_LABEL, timeLabel, type FieldDef } from "../../lib/dashboard";
+import { TIME_PRESETS, WIDGET_LABEL, timeLabel } from "../../lib/dashboard";
 import type { TemplateId } from "../../lib/dashboardTemplates";
 import type { DashPage, DashStyle, DashTheme, Feature, Form, ThemeColorKey, TimeFilter, TimePreset, Widget, WidgetType } from "../../lib/types";
 import { ELEMENT_TYPES, ElementIcon } from "./Elements";
 import SharingTab from "./SharingPanel";
 
-export type PanelKey = "add" | "view" | "data" | "theme" | "time";
+export type PanelKey = "add" | "view" | "filters" | "data" | "theme" | "time";
 
-function PanelShell({ title, onClose, onBack, children }: { title: string; onClose: () => void; onBack?: () => void; children: ReactNode }) {
+export function PanelShell({ title, onClose, onBack, children }: { title: string; onClose: () => void; onBack?: () => void; children: ReactNode }) {
   return (
     <section className="dashboard-side-panel" aria-label={title}>
       <div className="dashboard-side-panel-head">
@@ -27,6 +27,7 @@ function PanelShell({ title, onClose, onBack, children }: { title: string; onClo
 const SIDE_ICONS: Record<PanelKey | "save" | "discard", JSX.Element> = {
   add: <path d="M12 5v14M5 12h14" />,
   view: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>,
+  filters: <path d="M4 5h16l-6 8v5l-4 2v-7z" />,
   data: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></>,
   theme: <><circle cx="12" cy="12" r="9" /><path d="M12 3v18" /><path d="M12 3a9 9 0 010 18z" fill="currentColor" /></>,
   time: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
@@ -36,7 +37,7 @@ const SIDE_ICONS: Record<PanelKey | "save" | "discard", JSX.Element> = {
 const SideIcon = ({ k }: { k: keyof typeof SIDE_ICONS }) => <svg className="dashboard-sidebar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{SIDE_ICONS[k]}</svg>;
 
 const ITEMS: { key: PanelKey; label: string }[] = [
-  { key: "add", label: "Add element" }, { key: "view", label: "View" }, { key: "data", label: "Data sources" },
+  { key: "add", label: "Add element" }, { key: "view", label: "View" }, { key: "filters", label: "Filters" }, { key: "data", label: "Data sources" },
   { key: "theme", label: "Theme" }, { key: "time", label: "Time and region" },
 ];
 
@@ -99,8 +100,6 @@ export interface ViewPanelProps {
   name: string; description: string; onName: (v: string) => void; onDescription: (v: string) => void;
   pages: DashPage[]; page: DashPage; forms: Form[]; selectedId: string | null;
   onSelect: (id: string) => void; onRemove: (id: string) => void; onRegion: (id: string, r: "body" | "sidebar") => void;
-  /** The fields of this page's form that can be a dropdown filter, and a way to change which ones the page offers. */
-  filterFields: FieldDef[]; onPageFilters: (ids: string[]) => void;
   onPageTitle: (v: string) => void; onPageForm: (formId: string) => void; onApplyTemplate: (id: TemplateId) => void;
   onMovePage: (by: -1 | 1) => void; onRemovePage: () => void; onAddPage: () => void;
   /** Given for a saved dashboard that an administrator is looking at: adds the Sharing tab. */
@@ -110,7 +109,7 @@ const elementName = (w: Widget) => w.title.trim() || WIDGET_LABEL[w.type];
 
 export function ViewPanel(p: ViewPanelProps) {
   const [tab, setTab] = useState<ViewTab>(p.initialTab ?? "body");
-  const [tpl, setTpl] = useState<TemplateId>("standard");
+  const [tpl, setTpl] = useState<TemplateId>("monitor");
   const idx = p.pages.findIndex((x) => x.id === p.page.id);
   const widgets = p.page.widgets;
   return (
@@ -135,19 +134,7 @@ export function ViewPanel(p: ViewPanelProps) {
         <div className="stacked-form">
           <div className="field"><label htmlFor="vhn">Dashboard title</label><input id="vhn" value={p.name} maxLength={120} onChange={(e) => p.onName(e.target.value)} /></div>
           <div className="field"><label htmlFor="vhd">Description</label><input id="vhd" value={p.description} maxLength={300} placeholder="What it reports, and for whom" onChange={(e) => p.onDescription(e.target.value)} /></div>
-          <fieldset className="field filter-picker">
-            <legend>Filters on this page</legend>
-            <small className="meta">Tick the fields viewers can filter by. They appear as dropdowns in the header, next to review status and the dates.</small>
-            {!p.page.form_id ? <small className="meta">Choose the form for this page first (Pages tab).</small>
-              : p.filterFields.length === 0 ? <small className="meta">This form has no choice, yes/no or text fields to filter by.</small>
-              : p.filterFields.map((f) => {
-                const on = (p.page.filters ?? []).includes(f.id), full = !on && (p.page.filters ?? []).length >= MAX_PAGE_FILTERS;
-                return (
-                  <label key={f.id} className="check-row"><input type="checkbox" checked={on} disabled={full}
-                    onChange={() => p.onPageFilters(on ? (p.page.filters ?? []).filter((x) => x !== f.id) : [...(p.page.filters ?? []), f.id])} /> {f.label}</label>);
-              })}
-            {(p.page.filters ?? []).length >= MAX_PAGE_FILTERS && <small className="meta">A page can have up to {MAX_PAGE_FILTERS} filters.</small>}
-          </fieldset>
+          <p className="builder-hint">Filters have their own tool now: use Filters in the toolbar to add category selectors and a date filter.</p>
           <small className="meta">Changes are kept when you press Save.</small>
         </div>) : <p className="meta">Read-only for your role.</p>)}
 

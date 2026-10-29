@@ -25,6 +25,13 @@ export function usedFields(config: DashboardConfig): Map<string, Set<string> | n
   const out = new Map<string, Set<string> | null>();
   for (const p of config.pages) {
     if (p.form_id && !out.has(p.form_id)) out.set(p.form_id, new Set());
+    // A filter in the bar reads the field it filters; a selector fed by another form sends that one field of that form.
+    const need = (p.controls ?? []).flatMap((c) => (c.field ? [c.field] : []));
+    if (p.form_id && need.length && out.get(p.form_id) !== null) out.set(p.form_id, new Set([...(out.get(p.form_id) ?? []), ...need]));
+    for (const c of p.controls ?? []) {
+      const s = c.source;
+      if (s?.type === "form" && s.form_id && s.field && out.get(s.form_id) !== null) out.set(s.form_id, new Set([...(out.get(s.form_id) ?? []), s.field]));
+    }
     for (const w of p.widgets) {
       const fid = w.form_id ?? p.form_id;
       if (!fid || STATIC.has(w.type)) continue;

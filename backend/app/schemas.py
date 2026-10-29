@@ -591,6 +591,35 @@ class DashboardWidget(BaseModel):
         return data
 
 
+class DashboardControlSource(BaseModel):
+    """Where a category selector gets its values when not from the page's own records: a field of another form, or an https list."""
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["form", "url"]
+    form_id: UUID | None = None
+    field: str | None = Field(None, max_length=80)
+    url: str | None = Field(None, max_length=500)
+    column: str | None = Field(None, max_length=80)
+
+    @model_validator(mode="after")
+    def _complete(self):
+        if self.type == "form" and (self.form_id is None or not self.field):
+            raise ValueError("a form source needs a form and a field")
+        if self.type == "url" and not (self.url or "").startswith("https://"):
+            raise ValueError("a web address must start with https://")
+        return self
+
+
+class DashboardControl(BaseModel):
+    """A filter in the bar under the title: a category selector, or the date filter (Today / Last N days)."""
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    kind: Literal["category", "date"]
+    label: str = Field("", max_length=60)
+    field: str | None = Field(None, max_length=80)
+    source: DashboardControlSource | None = None
+    multi: bool = True
+
+
 class DashboardPage(BaseModel):
     """One page of a dashboard, for example "Army". Its records come from `form_id` unless a chart picks another form."""
     model_config = ConfigDict(extra="forbid")
@@ -598,12 +627,22 @@ class DashboardPage(BaseModel):
     title: str = Field(min_length=1, max_length=60)
     form_id: UUID | None = Field(None, description="The form whose records this page shows")
     widgets: list[DashboardWidget] = Field(default_factory=list, max_length=MAX_WIDGETS_PER_PAGE)
-    filters: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=MAX_PAGE_FILTERS, description="Field ids offered as dropdown filters in the page header")
+    filters: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=MAX_PAGE_FILTERS, description="Older dashboards: field ids offered as dropdowns. The app turns them into `controls`")
+    controls: list[DashboardControl] = Field(default_factory=list, max_length=MAX_PAGE_FILTERS, description="The filters in the bar under the title")
+    exclude: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")], list[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,40}$")]]] = Field(
+        default_factory=dict, max_length=40, description="Per filter (a control, or a clicked chart): the element ids it leaves alone. Missing = it changes every element")
 
     @model_validator(mode="after")
     def _unique_ids(self):
         if len(self.filters) != len(set(self.filters)):
             raise ValueError("filters must be unique")
+        cids = [c.id for c in self.controls]
+        if len(cids) != len(set(cids)):
+            raise ValueError("filter ids must be unique")
+        if sum(c.kind == "date" for c in self.controls) > 1:
+            raise ValueError("a page can have one date filter")
+        if any(len(v) > 60 for v in self.exclude.values()):
+            raise ValueError("too many elements listed for one filter")
         ids = [w.id for w in self.widgets]
         if len(ids) != len(set(ids)):
             raise ValueError("widget ids must be unique")
@@ -694,7 +733,8 @@ class DashboardConfig(BaseModel):
 
     def form_ids(self) -> set[UUID]:
         """Every form the dashboard draws on, on any page."""
-        return {f for p in self.pages for f in [p.form_id, *(w.form_id for w in p.widgets)] if f is not None}
+        lookups = (c.source.form_id for p in self.pages for c in p.controls if c.source is not None and c.source.type == "form")
+        return {f for p in self.pages for f in [p.form_id, *(w.form_id for w in p.widgets)] if f is not None} | {f for f in lookups if f is not None}
 
 
 class DashboardIn(BaseModel):

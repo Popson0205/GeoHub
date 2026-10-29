@@ -45,6 +45,15 @@ def used_fields(config: DashboardConfig) -> dict[UUID, set[str] | None]:
             # A header filter lists the values of its field, so that field has to be sent for the dropdown to work.
             if p.filters and out[p.form_id] is not None:
                 out[p.form_id] = out[p.form_id] | set(p.filters)
+            # A filter in the bar reads the field it filters (a category selector, or the date a date filter looks at).
+            need = {c.field for c in p.controls if c.field}
+            if need and out[p.form_id] is not None:
+                out[p.form_id] = out[p.form_id] | need
+        # A selector whose values come from another form sends that one field of that form, so the list works without a sign-in.
+        for c in p.controls:
+            s = c.source
+            if s is not None and s.type == "form" and s.form_id is not None and s.field and out.get(s.form_id, set()) is not None:
+                out[s.form_id] = (out.get(s.form_id) or set()) | {s.field}
         for w in p.widgets:
             fid = w.form_id or p.form_id
             if fid is None or w.type in STATIC_ELEMENTS:

@@ -227,7 +227,7 @@ tf = toggleEquals(tf, eq("type", "Tap"));
 ok(selectedValues(tf, "type").join() === "Well,Tap" && selectedValues(withoutField(tf, "type"), "type").length === 0, "toggle adds values; withoutField drops one field's filters");
 ok(toggleEquals(tf, eq("type", "Well")).equals.length === 1, "toggling a picked value removes it");
 const np = normalizeConfig({ pages: [{ id: "a", title: "A", filters: ["type", "type", "", 5, "working"], widgets: [] }, { id: "b", title: "B", widgets: [] }] });
-ok(np.pages[0].filters?.join() === "type,working" && np.pages[1].filters === undefined, "page filters are cleaned and optional");
+ok(np.pages[0].filters === undefined && np.pages[0].controls?.map((c) => c.field).join() === "type,working" && np.pages[0].controls.every((c) => c.kind === "category") && np.pages[1].controls === undefined, "an older page's filter list becomes category selectors, cleaned and optional");
 const srcOf = (rows: Feature[], base = rows) => ({ form, defs, base, rows });
 const W = (type: Parameters<typeof newWidget>[0], patch = {}) => ({ ...newWidget(type, defs), ...patch });
 let e = widgetData(W("bar", { field: "type" }), srcOf([], []), true);
