@@ -165,3 +165,15 @@ def test_generated_id_rules_are_checked():
     assert bad2
     bad3 = check_field_defs([{"id": "a", "label": "A", "type": "calculation", "calc": {"fn": "uuid", "args": [{"const": 1}]}}])
     assert bad3
+
+
+def test_questions_the_file_has_no_column_for_are_skipped():
+    fields = [{"id": "name", "label": "Name", "type": "text", "required": True},
+              {"id": "kind", "label": "Kind", "type": "choice", "choices": ["A", "B"], "required": True},
+              {"id": "rooms", "label": "Rooms", "type": "repeat", "required": True, "min_items": 1,
+               "children": [{"id": "r", "label": "R", "type": "text"}]}]
+    props = {"name": "Well 1"}
+    assert set(check_properties(fields, props)) == {"kind", "rooms"}                         # normally both are required
+    assert check_properties(fields, props, skip_required={"kind", "rooms"}) == {}             # no column for them in the file
+    assert set(check_properties(fields, {"kind": "A"}, skip_required={"kind", "rooms"})) == {"name"}   # others still count
+    assert check_properties(fields, {"name": "x", "kind": "C"}, skip_required={"rooms"}) != {}         # a bad value is still a bad value

@@ -451,6 +451,14 @@ def import_features(conn, job) -> dict:
 
     seen_cols, dropped, errors, ok = set(), set(), [], 0
     pending: list[tuple[int, str, dict, dict]] = []
+    # Questions on the form that the file has no column for are skipped: being required does not apply to them,
+    # so the rows are still imported with those questions left empty. (A column that is in the file but blank in a row
+    # is a different thing: that still counts as a missing answer.)
+    columns: set[str] = set()
+    for _, raw in records:
+        columns.update(raw)
+    in_file = {mapping.get(c, c) for c in columns}
+    not_in_file = {f["id"] for f in top_level_fields(form["fields"])} - in_file
 
     def flush():
         nonlocal ok, pending
@@ -502,7 +510,7 @@ def import_features(conn, job) -> dict:
             if v is not None:
                 props[target] = v
         err = check_geometry(form["geometry_type"], geom) if geom else "missing or unreadable geometry"
-        ferrs = check_properties(form["fields"], props, enforce_required=status != "draft")
+        ferrs = check_properties(form["fields"], props, enforce_required=status != "draft", skip_required=not_in_file)
         msgs = bad + ([f"geometry: {err}"] if err else []) + [f"{k}: {', '.join(v)}" for k, v in ferrs.items()]
         if msgs:
             errors.append({"row": rowno, "message": "; ".join(msgs)})

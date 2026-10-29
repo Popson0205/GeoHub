@@ -617,9 +617,13 @@ def check_system_value(key: str, v: Any) -> str | None:
     return None if 0 <= v <= 100000 else "must be zero or more"
 
 
-def check_properties(fields: list[dict], props: dict, *, enforce_required: bool = True) -> dict[str, list[str]]:
+def check_properties(fields: list[dict], props: dict, *, enforce_required: bool = True,
+                     skip_required: "set[str] | frozenset[str] | None" = None) -> dict[str, list[str]]:
     """Validate feature properties against a form version. Unknown keys are rejected; hidden fields are skipped
-    (their answers are ignored, not an error, so an old client that still sends them keeps working)."""
+    (their answers are ignored, not an error, so an old client that still sends them keeps working).
+    skip_required: top-level field ids that are not asked for at all (a data import whose file has no column for them).
+    Being required does not apply to them, so the rest of the row can still be imported."""
+    skip = skip_required or ()
     errors: dict[str, list[str]] = {}
     _, hidden, required = resolve(fields, props)
 
@@ -645,9 +649,9 @@ def check_properties(fields: list[dict], props: dict, *, enforce_required: bool 
                     errors.setdefault(key, []).append("must be a list of rows")
                     continue
                 rows = rows or []
-                if key in required and not rows and enforce_required:
+                if key in required and not rows and enforce_required and key not in skip:
                     errors.setdefault(key, []).append("required")
-                if f.get("min_items") and len(rows) < f["min_items"] and enforce_required:
+                if f.get("min_items") and len(rows) < f["min_items"] and enforce_required and key not in skip:
                     errors.setdefault(key, []).append(f"at least {f['min_items']} entries")
                 if f.get("max_items") and len(rows) > f["max_items"]:
                     errors.setdefault(key, []).append(f"at most {f['max_items']} entries")
@@ -655,7 +659,7 @@ def check_properties(fields: list[dict], props: dict, *, enforce_required: bool 
                     level(f.get("children") or [], row, f"{fid}.{i}.")
                 continue
             if _empty(v):
-                if key in required and enforce_required and t != "calculation":
+                if key in required and enforce_required and t != "calculation" and key not in skip:
                     errors.setdefault(key, []).append("required")
                 continue
             err = check_value(f, v)

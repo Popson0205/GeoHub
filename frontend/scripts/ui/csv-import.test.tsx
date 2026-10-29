@@ -70,7 +70,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
 
   // ---- changing a match changes the verdict ----
   pick("Field for column Name", "");
-  ok(/required on the form but no column goes into it/.test(document.body.textContent ?? "") && /0 rows of 5/.test(document.body.textContent ?? "") && (screen.getByRole("button", { name: /Nothing to import yet/ }) as HTMLButtonElement).disabled, "un-matching a required field is flagged and nothing can be imported");
+  ok(/“Name” is on the form but not in your file, so it is left empty/.test(document.body.textContent ?? "") && /2 rows of 5/.test(document.body.textContent ?? "") && !screen.queryByRole("button", { name: /Nothing to import yet/ }), "a required question with no column is skipped: the note says so and the other rows can still be imported");
   pick("Field for column Name", "name");
   pick("Field for column Remarks", "name");
   ok((screen.getByLabelText("Field for column Name") as HTMLSelectElement).value === "", "giving a field to another column takes it from the first one");

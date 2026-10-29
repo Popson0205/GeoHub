@@ -97,7 +97,19 @@ ok(r.valid.length === 2 && r.valid[0].props.visited === "2026-04-03", "month-fir
 r = prepare(parsed, setup({ status: "draft" }));
 ok(r.valid.some((v) => v.rowNo === 3) && !r.problems.some((x) => x.rowNo === 3), "a draft import does not insist on required fields");
 r = prepare(parsed, setup({ mapping: { ...setup().mapping, Name: "" } }));
-ok(r.missingRequired.map((f) => f.id).join() === "name" && r.valid.length === 0, "a required field with no column is flagged, and nothing passes");
+ok(r.missingRequired.map((f) => f.id).join() === "name" && r.valid.length === 3 && !r.problems.some((x) => /Name is required/.test(x.messages.join(" "))), "a required question with no column is mentioned but skipped: the rows that were held back only for it now pass");
+{
+  const left = Object.fromEntries(Object.entries(setup().mapping).map(([h, id]) => [h, id === "name" || id === "kind" ? "" : id]));
+  r = prepare(parsed, setup({ mapping: left }));
+  ok(r.valid.length >= 3 && r.valid.every((v) => v.props.name === undefined && v.props.kind === undefined) && r.valid.some((v) => v.props.depth !== undefined), "several questions can be left out of the file at once; the others are still imported");
+}
+{
+  // a column that IS in the file but blank in a row is still a missing answer
+  const small = prepare(parseCsv("Name,Longitude,Latitude\nA,6.5,6.2\n,3.5,6.2"), setup({ mapping: { Name: "name", Longitude: "", Latitude: "" }, location: { kind: "lonlat", lon: "Longitude", lat: "Latitude" } }));
+  ok(small.valid.length === 1 && small.problems.length === 1 && /Name is required/.test(small.problems[0].messages.join(" ")), "a blank cell in a column that exists still counts as missing");
+  const onlyWhere = prepare(parseCsv("Longitude,Latitude\n6.5,6.2\n3.5,6.2"), { ...setup(), mapping: { Longitude: "", Latitude: "" }, location: { kind: "lonlat", lon: "Longitude", lat: "Latitude" } });
+  ok(onlyWhere.valid.length === 2 && onlyWhere.missingRequired.map((f) => f.id).join() === "name", "a file with only coordinates imports, leaving every question empty");
+}
 r = prepare(parsed, setup({ location: { kind: "none" } }));
 ok(r.locationMissing && r.valid.length === 0, "no location column means nothing is importable");
 r = prepare(parseCsv("Name,Longitude,Latitude\nA,6.5,200\nB,3.5,6.2"), setup({ mapping: { Name: "name", Longitude: "", Latitude: "" }, location: { kind: "lonlat", lon: "Longitude", lat: "Latitude" } }));

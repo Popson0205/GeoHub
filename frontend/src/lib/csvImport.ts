@@ -300,7 +300,7 @@ export interface Prepared {
   total: number;
   valid: PreparedRow[];
   problems: RowProblem[];
-  missingRequired: FormField[];         // required fields with no column
+  missingRequired: FormField[];         // required fields with no column: they are left empty, the rows are still imported
   ignoredColumns: string[];             // columns that go nowhere
   locationMissing: boolean;             // there is nothing to say where the records are
 }
@@ -349,7 +349,10 @@ export function prepare(parsed: Parsed, setup: ImportSetup): Prepared {
     if (shape && gtype && shape.type !== gtype) { msgs.push(`This form collects ${GEOMETRY_LABEL[gtype]}s, not ${GEOMETRY_LABEL[shape.type]}s.`); shape = undefined; }
     if (!msgs.length) {
       const errs = validateProperties(form as Pick<Form, "fields">, props);
-      for (const m of Object.values(errs)) if (!(status === "draft" && /(is required|needs at least one entry)\.$/.test(m))) msgs.push(m);
+      for (const [key, m] of Object.entries(errs)) {
+        if (!mappedIds.has(key.split(".")[0])) continue;       // a question the file has no column for is skipped, even if it is required
+        if (!(status === "draft" && /(is required|needs at least one entry)\.$/.test(m))) msgs.push(m);
+      }
     }
     if (msgs.length || !shape) out.problems.push({ rowNo, messages: msgs.length ? msgs : ["The row could not be read."] });
     else out.valid.push({ rowNo, props, shape });

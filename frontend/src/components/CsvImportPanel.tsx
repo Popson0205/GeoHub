@@ -241,7 +241,7 @@ export default function CsvImportPanel({ projectId, form, onClose, onImported }:
           : <p><strong>{plural(valid.length, "row")} of {parsed.rows.length.toLocaleString()} {valid.length === 1 ? "is" : "are"} ready to import.</strong>
             {problems.length > 0 && <> {plural(problems.length, "row")} {problems.length === 1 ? "has a problem and will be" : "have problems and will be"} left out.</>}</p>}
         {prepared.missingRequired.length > 0 && (
-          <p className="csv-warn">{prepared.missingRequired.map((f) => `“${f.label || f.id}”`).join(", ")} {prepared.missingRequired.length === 1 ? "is" : "are"} required on the form but no column goes into {prepared.missingRequired.length === 1 ? "it" : "them"}. Match a column in step 2, or every row will be held back.</p>)}
+          <p className="meta" role="status">{prepared.missingRequired.map((f) => `“${f.label || f.id}”`).join(", ")} {prepared.missingRequired.length === 1 ? "is" : "are"} on the form but not in your file, so {prepared.missingRequired.length === 1 ? "it is" : "they are"} left empty. The rows are still imported. To fill {prepared.missingRequired.length === 1 ? "it" : "them"}, match a column in step 2.</p>)}
         {prepared.ignoredColumns.length > 0 && <p className="meta">Not imported: {prepared.ignoredColumns.join(", ")}.</p>}
         {problems.length > 0 && !prepared.locationMissing && (
           <>

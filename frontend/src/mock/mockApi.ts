@@ -337,6 +337,7 @@ export class MockApi implements Api {
       const parsed = parseCsv(await file.text(), ",");
       const fields = new Map(importableFields(form).map((f) => [f.id, f]));
       const col = (h?: string) => (h ? parsed.headers.indexOf(h) : -1);
+      const inFile = new Set(parsed.headers.map((h) => opts.mapping?.[h] ?? h));        // questions with no column in the file are skipped, like on the server
       parsed.rows.forEach((row, n) => {
         const rowNo = n + 2, msgs: string[] = [], props: Props = {};
         parsed.headers.forEach((h, i) => {
@@ -349,7 +350,7 @@ export class MockApi implements Api {
         if (opts.wkt) { const s = parseShape(row[col(opts.wkt)] ?? ""); if ("error" in s) msgs.push(`geometry: ${s.error}`); else geometry = s.shape as Geometry; }
         else { const x = parseNumber(row[col(opts.lon)] ?? ""), y = parseNumber(row[col(opts.lat)] ?? ""); if (x === null || y === null) msgs.push("geometry: missing or unreadable geometry"); else geometry = { type: "Point", coordinates: [x, y] }; }
         if (geometry && geometry.type !== form.geometry_type) { msgs.push(`geometry: this form collects ${form.geometry_type} geometry, not ${geometry.type}`); geometry = undefined; }
-        if (!msgs.length) for (const m of Object.values(validateProperties(form, props))) if (!(status === "draft" && /is required\.$/.test(m))) msgs.push(m);
+        if (!msgs.length) for (const [k, m] of Object.entries(validateProperties(form, props))) if (inFile.has(k.split(".")[0]) && !(status === "draft" && /is required\.$/.test(m))) msgs.push(m);
         if (msgs.length || !geometry) errors.push({ row: rowNo, message: msgs.join("; ") }); else add(geometry, props);
       });
     } else {
