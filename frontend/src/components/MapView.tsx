@@ -14,7 +14,9 @@ function queryHandles(map: maplibregl.Map, point: maplibregl.PointLike) {
   return layers.length ? map.queryRenderedFeatures(point, { layers }) : [];
 }
 
-export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected" }
+/** How one feature is drawn when its layer has its own symbology. Without it the feature is coloured by `state`. */
+export interface FeatureLook { color: string; outline?: string; size?: number; width?: number; opacity?: number }
+export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected"; /** Own symbology: wins over `state`. */ look?: FeatureLook }
 export interface MapImagery { id: string; url: string; maxzoom?: number; opacity?: number; attribution?: string }
 export type Bbox = [number, number, number, number];
 
@@ -74,6 +76,8 @@ interface Props_ {
   imagery?: MapImagery[];
   /** Show the OpenStreetMap base layer under imagery (default true). */
   showBase?: boolean;
+  /** Which basemap to show. "none" hides every basemap (same as showBase=false). Default "streets". */
+  basemap?: "streets" | "light" | "none";
   /** When set, shows draggable vertices for this geometry. Drag to move, drag a midpoint to add, right-click or double-click a vertex to remove. */
   editGeometry?: Geometry | null;
   onGeometryChange?: (g: Geometry) => void;
@@ -92,8 +96,11 @@ interface Props_ {
 const DEFAULT_CENTER: [number, number] = [4.5418, 7.7827];
 const STYLE: StyleSpecification = {
   version: 8,
-  sources: { base: { type: "raster", tiles: [config.basemapUrl], tileSize: 256, attribution: "© OpenStreetMap contributors", maxzoom: 19 } },
-  layers: [{ id: "base", type: "raster", source: "base" }],
+  sources: {
+    base: { type: "raster", tiles: [config.basemapUrl], tileSize: 256, attribution: "© OpenStreetMap contributors", maxzoom: 19 },
+    "base-light": { type: "raster", tiles: [config.basemapLightUrl], tileSize: 256, attribution: "© OpenStreetMap contributors © CARTO", maxzoom: 19 },
+  },
+  layers: [{ id: "base", type: "raster", source: "base" }, { id: "base-light", type: "raster", source: "base-light", layout: { visibility: "none" } }],
 };
 const FEATURE_LAYERS = ["features-fill", "features-line", "features-point"];
 const empty = { type: "FeatureCollection", features: [] };
@@ -108,14 +115,21 @@ const SNAP_PX = 12;
 /** Colour by state: new = amber, changed = blue, saved = green; on shared maps also waiting for review = purple, rejected = red. */
 const byState = (): maplibregl.ExpressionSpecification => ["match", ["get", "state"], "new", AMBER, "mod", BLUE, "review", PURPLE, "rejected", RED, GREEN];
 
+/** Symbology travels with the feature as private properties (leading underscore) so one set of paint rules can read it. */
+function lookProps(l?: FeatureLook): Record<string, string | number> {
+  if (!l) return {};
+  const a = l.opacity ?? 1;
+  return { _c: l.color, _o: l.outline ?? "#ffffff", _s: l.size ?? 8, _w: l.width ?? 3, _a: a, _fa: a * 0.4 };
+}
+const own = (name: string, fallback: unknown) => ["coalesce", ["get", name], fallback] as unknown as maplibregl.ExpressionSpecification;
 function asFC(features: MapFeature[]) {
   return {
     type: "FeatureCollection",
-    features: features.map((f) => ({ type: "Feature", geometry: f.geometry, properties: { ...(f.properties ?? {}), fid: f.id, state: f.state ?? (f.pending ? "new" : "clean") } })),
+    features: features.map((f) => ({ type: "Feature", geometry: f.geometry, properties: { ...(f.properties ?? {}), ...lookProps(f.look), fid: f.id, state: f.state ?? (f.pending ? "new" : "clean") } })),
   };
 }
 
-export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", preview = false, children }: Props_) {
+export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, basemap = "streets", editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", preview = false, children }: Props_) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -173,12 +187,12 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       map.addSource("draft", { type: "geojson", data: empty as never });
       map.addSource("handles", { type: "geojson", data: empty as never });
       map.addSource("snap", { type: "geojson", data: empty as never });
-      map.addLayer({ id: "features-fill", type: "fill", source: "features", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": byState(), "fill-opacity": 0.28 } });
+      map.addLayer({ id: "features-fill", type: "fill", source: "features", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": own("_c", byState()), "fill-opacity": own("_fa", 0.28) } });
       map.addLayer({ id: "features-casing", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 5.5, "line-opacity": 0.75 } });
-      map.addLayer({ id: "features-line", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": byState(), "line-width": 3 } });
+      map.addLayer({ id: "features-line", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": own("_c", byState()), "line-width": own("_w", 3), "line-opacity": own("_a", 1) } });
       map.addLayer({
         id: "features-point", type: "circle", source: "features", filter: ["==", ["geometry-type"], "Point"],
-        paint: { "circle-radius": 8, "circle-color": byState(), "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
+        paint: { "circle-radius": own("_s", 8), "circle-color": own("_c", byState()), "circle-stroke-color": own("_o", "#fff"), "circle-stroke-width": 2.5, "circle-opacity": own("_a", 1) },
       });
       map.addLayer({ id: "sel-fill", type: "fill", source: "selected", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ORANGE, "fill-opacity": 0.3 } });
       map.addLayer({ id: "sel-line", type: "line", source: "selected", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": ORANGE, "line-width": 4 } });
@@ -438,8 +452,10 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
   }, [imagery.map((i) => i.opacity ?? 1).join(","), ready]);
   useEffect(() => {
     const map = mapRef.current;
-    if (ready && map) map.setLayoutProperty("base", "visibility", showBase ? "visible" : "none");
-  }, [showBase, ready]);
+    if (!ready || !map) return;
+    map.setLayoutProperty("base", "visibility", showBase && basemap === "streets" ? "visible" : "none");
+    map.setLayoutProperty("base-light", "visibility", showBase && basemap === "light" ? "visible" : "none");
+  }, [showBase, basemap, ready]);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !flyTo) return;

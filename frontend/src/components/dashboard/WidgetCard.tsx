@@ -1,10 +1,11 @@
 import { useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { BarList, Donut, LineChart } from "../charts";
-import MapView, { type MapFeature } from "../MapView";
+import MapViewer, { type ViewerLayer } from "../MapViewer";
 import { Button } from "../ui";
 import { download } from "../../lib/csv";
 import { METRIC_LABEL, activeBuckets, defaultTitle, findField, fmt, isStatic, slicesCsv, widgetData, type Filters, type Slice, type Source } from "../../lib/dashboard";
 import { widgetStyleToProps } from "../../lib/dashboardThemes";
+import { cleanViewerStyle, emptyViewerStyle, statusLayer, type ViewerStyle } from "../../lib/symbology";
 import type { Widget } from "../../lib/types";
 import { DetailsList, EmbedFrame, EmptyNote, Gauge, ItemList, RichText } from "./Elements";
 
@@ -45,9 +46,14 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
     : filters.equals.filter((e) => e.field === w.field).map((e) => e.value);
   const grab = editing && !side ? onGrab : undefined;
 
-  const mapFeatures = useMemo<MapFeature[]>(
-    () => (w.type === "map" && source ? source.rows.slice(0, 5000).map((r) => ({ id: r.id, geometry: r.geometry, state: r.status === "rejected" ? "rejected" as const : r.status === "submitted" ? "review" as const : "clean" as const })) : []),
+  // A map element is the same map viewer as the project's map, small: its layer is the records this element draws on (filters applied).
+  const mapLayers = useMemo<ViewerLayer[]>(
+    () => (w.type === "map" && source ? [{ id: source.form.id, name: source.form.name, form: source.form, features: source.rows.slice(0, 5000) }] : []),
     [w.type, source]);
+  const mapStyle = useMemo<ViewerStyle>(() => {
+    const s = w.map_style ? cleanViewerStyle(w.map_style) : emptyViewerStyle();
+    return source && !s.layers[source.form.id] ? { ...s, layers: { ...s.layers, [source.form.id]: statusLayer() } } : s;
+  }, [w.map_style, source]);
 
   function csv() {
     if (d.kind !== "slices") return;
@@ -68,7 +74,7 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
     case "details": body = <DetailsList items={d.items} />; break;
     case "text": body = <RichText content={d.content} />; break;
     case "embed": body = <EmbedFrame url={d.url} title={title} />; break;
-    case "map": body = <div className="dash-map"><MapView features={mapFeatures} fitKey={`dash:${w.id}:${mapFeatures.length}`} label={title} /></div>; break;
+    case "map": body = <div className="dash-map"><MapViewer compact layers={mapLayers} style={mapStyle} fitKey={`dash:${w.id}:${mapLayers[0]?.features.length ?? 0}`} label={title} /></div>; break;
   }
 
   const placed = col != null && row != null && !side;

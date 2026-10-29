@@ -1,3 +1,4 @@
+import type { ViewerStyle } from "./symbology";
 // Domain types. They mirror the API contract ("Mapping Hub: Backend API Contract and Data Model").
 
 export type Position = [number, number]; // [longitude, latitude], EPSG:4326
@@ -294,6 +295,8 @@ export interface Widget {
   url?: string;              // embedded: an https:// address shown in a frame
   /** Font and style for this element only. Anything set here wins over the dashboard-wide Theme → Fonts and styling. */
   style?: WidgetStyle;
+  /** map: how its layer is drawn (colours, symbols, basemap). Missing = coloured by review status. */
+  map_style?: ViewerStyle;
 }
 /** One page of a dashboard, for example "Army". Its records come from one form unless a chart picks another. */
 export interface DashPage {

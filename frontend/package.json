@@ -14,6 +14,7 @@
     "test:digitize": "vite-node scripts/digitize-test.ts",
     "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/builder.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/csv-import.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-app.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-share.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-gear.test.tsx",
     "test:forms": "vite-node scripts/forms-test.ts",
+    "test:symbology": "vite-node scripts/symbology-test.ts",
     "test:dnd": "vite-node scripts/dnd-test.ts",
     "test:form-import": "vite-node scripts/form-import-test.ts",
     "test:csv": "vite-node scripts/csv-import-test.ts",
