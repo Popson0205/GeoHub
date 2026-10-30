@@ -107,3 +107,36 @@ ok(tc.length === 2 && tc[0].kind === "category" && tc[0].field === "zone" && tc[
 ok(templatePages("monitor", [form], false)[0].controls?.length === 2 && new Set(templatePages("monitor", [form], false)[0].controls!.map((c) => c.id)).size === 2, "new dashboards from it get those filters");
 ok(templateSketch("monitor").some((s) => s.col === 0 && s.cols === 3) && templateSketch("monitor").every((s) => s.col + s.cols <= 12), "its thumbnail shows the side column");
 ok(newControl("category", defs).field === "zone" && newControl("date", defs).field === UPDATED_ID && newWidget("list", defs).type === "list", "new controls start on a sensible field");
+
+// ---- click actions ----
+import { actionsOf, cleanActions, clickKind, filtersOthers, recordsOfSlice, toggleRecord, widgetData, tableRows } from "../src/lib/dashboard";
+const W = (type: Parameters<typeof newWidget>[0], p: Record<string, unknown> = {}) => ({ ...newWidget(type, defs, () => `w${type}`), ...p });
+ok(clickKind(W("list")) === "record" && clickKind(W("table")) === "record" && clickKind(W("map")) === "record" && clickKind(W("details")) === "record" && clickKind(W("bar")) === "group" && clickKind(W("kpi")) === "all" && clickKind(W("rich_text")) === null && clickKind(W("embedded")) === null, "every element that shows records, groups or a number can be clicked; text and embeds cannot");
+ok(actionsOf(W("bar")).filter === true && actionsOf(W("list")).filter === false && actionsOf(W("bar", { actions: { filter: false } })).filter === false && actionsOf(W("list", { actions: { filter: true, zoom: ["m"] } })).zoom[0] === "m", "charts filter by default; lists, tables and maps only when set");
+ok(actionsOf(W("kpi", { actions: { filter: true } })).filter === false && actionsOf(W("rich_text", { actions: { zoom: ["m"] } })).zoom.length === 0, "a number cannot filter, and text has no actions");
+ok(filtersOthers(W("list", { actions: { filter: true } })) && !filtersOthers(W("list")) && filtersOthers(W("bar", { field: "zone" })) && !filtersOthers(W("bar", { field: undefined })), "the Filters panel lists an element as a source when its click filters");
+ok(JSON.stringify(cleanActions({ filter: false, zoom: ["a", "a", "b c", 5, "m1"], junk: 1 })) === JSON.stringify({ filter: false, zoom: ["a", "m1"] }) && cleanActions({}) === undefined && cleanActions("x") === undefined, "saved actions are cleaned");
+ok(normalizeConfig({ pages: [{ id: "p", title: "P", widgets: [{ id: "l1", type: "list", title: "", metric: "count", bucket: "month", limit: 3, columns: [], show_labels: true, actions: { zoom: ["m1"] }, subtitle_fields: Array.from({ length: 70 }, (_, i) => `f${i}`) }] }] }).pages[0].widgets[0].subtitle_fields?.length === 60, "a list can keep up to 60 fields");
+
+// the record filter
+const one = { ids: ["r1"], label: "Generator 31", src: "list1" };
+ok(toggleRecord(noFilters(), one).record?.ids[0] === "r1" && toggleRecord(toggleRecord(noFilters(), one), one).record === undefined, "clicking a record again lets go of it");
+ok(toggleRecord(toggleRecord(noFilters(), one), { ids: ["r2"], label: "x", src: "table1" }).record?.ids[0] === "r2", "clicking another record replaces the pick");
+const picked = data.slice(0, 2).map((x) => x.id);
+ok(filterFeatures(data, { ...noFilters(), record: { ids: [picked[1]], label: "x" } }, defs, NOW).length === 1 && filterFeatures(data, { ...noFilters(), record: { ids: picked, label: "x" }, ...{ equals: [{ field: "zone", value: "Sports", label: "" }] } }, defs, NOW).length === 0, "a record filter keeps only that record, together with the other filters");
+ok(scopeFilters({ ...noFilters(), record: one }, "kpi", { list1: ["kpi"] }).record === undefined && scopeFilters({ ...noFilters(), record: one }, "other", { list1: ["kpi"] }).record !== undefined && isScoped({ ...noFilters(), record: one }, "kpi", { list1: ["kpi"] }), "an element can be left out of a record pick");
+const rt2 = filtersFromParams(filtersToParams({ ...noFilters(), record: { ids: ["a1", "b-2"], label: "Pole, 7 | north", src: "l1" } }));
+ok(rt2.record?.ids.join() === "a1,b-2" && rt2.record?.label === "Pole, 7 | north" && rt2.record?.src === "l1" && filtersFromParams(new URLSearchParams("rec=%3Cscript%3E")).record === undefined, "a picked record survives the address; odd ids are refused");
+ok(recordsOfSlice(data, defs.find((d) => d.id === "zone"), "Academic").length === 2 && recordsOfSlice(data, undefined, "x").length === 0, "the records of a clicked bar or slice");
+
+// list and table show everything
+const big = Array.from({ length: 500 }, (_, i) => rec({ zone: "Academic", name: `n${i}`, kva: i }, "2026-10-01T00:00:00Z"));
+const bigSrc = buildSources(["f"], [form], big, noFilters(), NOW).get("f")!;
+const lw = widgetData(W("list", { title_field: "name", subtitle_fields: ["zone", "kva", "__status", "name", "kva"], limit: 5 }) as never, bigSrc, true);
+ok(lw.kind === "list" && lw.rows.length === 500 && lw.rows[0].lines.length >= 4 && lw.rows[0].lines[0].label === "Zone", "a list shows all 500 records and a line for every field chosen");
+const tw = widgetData(W("table", { columns: ["zone", "kva"], limit: 5, all_rows: true }) as never, bigSrc, true), tl = widgetData(W("table", { columns: ["zone", "kva"], limit: 5 }) as never, bigSrc, true);
+ok(tw.kind === "table" && tw.rows.length === 500 && tl.kind === "table" && tl.rows.length === 5 && tableRows(big, [], Infinity).length === 500, "a table shows every record when asked, and keeps its row limit otherwise");
+const dw = widgetData(W("details", { columns: [] }) as never, src, true);
+ok(dw.kind === "details" && typeof dw.id === "string" && dw.id.length > 0, "the details card knows which record it shows");
+let tk = 0; const mon = templateWidgets("monitor", form, () => `t${tk++}`), mapW = mon.find((x) => x.type === "map"), listW = mon.find((x) => x.type === "list");
+ok(!!listW && listW.actions?.zoom?.[0] === mapW?.id && listW.show_labels === true && (listW.subtitle_fields?.length ?? 0) >= 1 && mon.find((x) => x.type === "table")?.actions?.zoom?.[0] === mapW?.id, "on the Monitoring board a click in the list or table zooms the map");

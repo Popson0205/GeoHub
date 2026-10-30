@@ -75,10 +75,13 @@ function build(id: TemplateId, c: Ctx): Widget[] {
     const withTime = c.geo ? [...body, at(activity(), 0, 8, GRID, 4)] : body;
     const rows = bottom(withTime) + 5;
     const table = at(mk("table", { columns: tableColumns(defs), limit: 12 }), 0, bottom(withTime), GRID, 5);
-    const sub = defs.find((f) => (f.type === "choice" || f.type === "text") && f.id !== mk("list").title_field);
+    const head = mk("list").title_field;
+    const subs = defs.filter((f) => f.id !== head && f.type !== "calculation" && (f.type === "choice" || f.type === "text" || f.type === "number")).slice(0, 3).map((f) => f.id);
+    // Clicking a record in the list or the table sends the map to it and opens its pop-up.
+    const mapId = c.geo ? main.id : undefined, go = mapId ? { actions: { zoom: [mapId] } } : {};
     // A side element has no place on the grid; its saved height is how tall the column is, so the list runs the whole length.
-    const side: Widget = { ...mk("list", { limit: 14, title: "Latest records", subtitle_fields: sub ? [sub.id] : [] }), region: "sidebar", col: 0, row: 0, cols: GRID, rows };
-    return [...withTime, table, side];
+    const side: Widget = { ...mk("list", { title: "Latest records", subtitle_fields: subs, show_labels: true, ...go }), region: "sidebar", col: 0, row: 0, cols: GRID, rows };
+    return [...withTime, { ...table, ...go }, side];
   }
 
   if (id === "executive") {

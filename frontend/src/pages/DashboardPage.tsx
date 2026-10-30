@@ -10,6 +10,7 @@ import { WidgetSettings } from "../components/dashboard/WidgetSettings";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import {
+  actionsOf, clickKind, display, isFilterable, recordsOfSlice, toggleRecord,
   MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, controlLabel, controlProblem, dashboardFields, defaultTitle, filterFeatures, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isPicker, isScoped, isStatic,
   layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, scopeFilters, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, toggleEquals, toggleRange, bucketRange, withRects, withTimeRange, withoutField,
   type Filters, type Rect, type Slice, type Source,
@@ -124,7 +125,9 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     for (const w of page.widgets) {
       const s = sources.get(w.form_id ?? page.form_id ?? "");
       if (!s || isStatic(w.type)) { m.set(w.id, s); continue; }
-      const mine = isScoped(effective, w.id, exclude) ? scopeFilters(effective, w.id, exclude) : effective;
+      let mine = isScoped(effective, w.id, exclude) ? scopeFilters(effective, w.id, exclude) : effective;
+      // A list, table or map you clicked in keeps showing every record (the picked one highlighted), so you can click another.
+      if (mine.record?.src === w.id) mine = { ...mine, record: undefined };
       const own = isPicker(w) && (mine.equals.some((e) => e.field === w.field) || (mine.ranges ?? []).some((r) => r.field === w.field));
       m.set(w.id, mine === effective && !own ? s : { ...s, rows: filterFeatures(s.base, own ? withoutField(mine, w.field) : mine, s.defs, now) });
     }
@@ -158,7 +161,7 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     patchPage((pg) => {
       // Whatever a removed element filtered, or was kept out of, goes with it.
       const ex = Object.fromEntries(Object.entries(pg.exclude ?? {}).filter(([src]) => src !== id).map(([src, ids]) => [src, ids.filter((x) => x !== id)] as const).filter(([, ids]) => ids.length));
-      return { ...pg, widgets: settle(pg.widgets.filter((w) => w.id !== id)), exclude: Object.keys(ex).length ? ex : undefined };
+      return { ...pg, widgets: settle(pg.widgets.filter((w) => w.id !== id)).map((w) => (w.actions?.zoom?.includes(id) ? { ...w, actions: { ...w.actions, zoom: w.actions.zoom.filter((z) => z !== id) } } : w)), exclude: Object.keys(ex).length ? ex : undefined };
     });
     if (selected === id) setSelected(null); if (settingsId === id) setSettingsId(null);
   }
@@ -228,9 +231,35 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     setCfg((c) => ({ ...c, pages: left })); goPage(left[Math.min(i, left.length - 1)].id);
   }
   /** Click a bar, slice or point: filter every other element to it (click again to undo; click another to add it). */
+  // ---- click actions ----
+  const [focus, setFocus] = useState<{ ids: string[]; key: number; popup: boolean; maps: string[] } | null>(null);
+  const [activeRec, setActiveRec] = useState<string | null>(null);
+  const mapsOf = (w: Widget) => actionsOf(w).zoom.filter((id) => page.widgets.some((m) => m.id === id && m.type === "map"));
+  const recordTitle = (w: Widget, id: string) => {
+    const s = sourceOf(w), r = s?.base.find((x) => x.id === id);
+    const d = s && (findField(s.defs, w.title_field) ?? s.defs.find((x) => x.type === "text" || x.type === "choice") ?? s.defs[0]);
+    return (r && d && display(r, d)) || "Record";
+  };
+  /** A click on a record (or on a number / gauge: "all"). Does what the element's Actions say: filter the others, zoom a map. */
+  function act(w: Widget, ids: string[] | "all", label?: string) {
+    const a = actionsOf(w), s = sourceOf(w);
+    const hit = ids === "all" ? (s?.rows.map((r) => r.id) ?? []) : ids;
+    if (!hit.length) return;
+    if (ids !== "all") setActiveRec(hit.length === 1 ? hit[0] : null);
+    if (a.filter && ids !== "all" && clickKind(w) === "record") setFilters((f) => toggleRecord(f, { ids: hit, label: `${label || recordTitle(w, hit[0])}`, src: w.id }));
+    const maps = mapsOf(w);
+    if (maps.length) setFocus({ ids: hit, key: Date.now(), popup: ids !== "all" && hit.length === 1, maps });
+  }
+  const clickable = (w: Widget) => { const a = actionsOf(w); return (a.filter && clickKind(w) === "record") || mapsOf(w).length > 0; };
   function pick(w: Widget, s: Slice) {
     const field = w.field;
     if (!field) return;
+    const a = actionsOf(w);
+    if (mapsOf(w).length && w.type !== "line") {
+      const ids = recordsOfSlice(sourceOf(w)?.rows ?? [], findField(sourceOf(w)?.defs ?? [], field), s.key);
+      if (ids.length) setFocus({ ids, key: Date.now(), popup: false, maps: mapsOf(w) });
+    }
+    if (!a.filter) return;
     const label = findField(sourceOf(w)?.defs ?? [], field)?.label ?? field;
     // A line is over time: a point filters to exactly the day, week or month it stands for.
     if (w.type === "line") {
@@ -282,6 +311,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     <WidgetCard key={w.id} w={w} span={extra.span} height={extra.rows} col={extra.col} row={extra.row} side={side} dragging={drag?.id === w.id} onGrab={(m, e) => grab(w, m, e)}
       source={sourceOf(w)} hasForm={!!(w.form_id ?? page.form_id)} showSource={!!w.form_id && w.form_id !== page.form_id}
       filters={filters} editing={editing} selected={selected === w.id} onSelect={() => editing && select(w.id)} onSettings={editing ? () => openSettings(w.id) : undefined} settingsOpen={settingsId === w.id} onPick={(s) => pick(w, s)}
+      onItem={clickable(w) ? (ids, label) => act(w, ids, label) : undefined}
+      activeId={activeRec ?? (filters.record?.ids.length === 1 ? filters.record.ids[0] : null)} mapFocus={focus && w.type === "map" && focus.maps.includes(w.id) ? focus : null}
       onClear={isFiltered(filters) ? () => setFilters(noFilters()) : undefined} />
   );
 
@@ -354,6 +385,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
             {editing && sel && (
               <WidgetSettings w={sel} source={sourceOf(sel)} projectId={projectId} rect={rectOfSel} manual={manual} onRect={(r) => setRect(sel.id, r)} defs={(sourceOf(sel)?.defs) ?? []} index={page.widgets.findIndex((w) => w.id === sel.id)} count={page.widgets.length}
                 forms={forms} pageFormId={page.form_id} onForm={(id) => setWidgetForm(sel, id)} onRegion={(r) => moveRegion(sel.id, r)}
+                targets={page.widgets.filter((x) => x.id !== sel.id && isFilterable(x)).map((x) => ({ id: x.id, title: titleOf(x) }))} maps={page.widgets.filter((x) => x.type === "map" && x.id !== sel.id).map((x) => ({ id: x.id, title: titleOf(x) }))}
+                excluded={page.exclude?.[sel.id] ?? []} onExcluded={(ids) => patchPage((pg) => { const ex = { ...(pg.exclude ?? {}) }; if (ids.length) ex[sel.id] = ids; else delete ex[sel.id]; return { ...pg, exclude: Object.keys(ex).length ? ex : undefined }; })}
                 onChange={(p) => patch(sel.id, p)} onMove={(by) => move(sel.id, by)} onRemove={() => remove(sel.id)} onClose={closeSettings} />
             )}
           </div>}

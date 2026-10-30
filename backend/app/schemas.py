@@ -520,6 +520,13 @@ class WidgetStyle(BaseModel):
     borderColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
 
 
+class WidgetActions(BaseModel):
+    """What clicking a record or a chart group does: filter the other elements, and/or zoom map elements to it."""
+    model_config = ConfigDict(extra="forbid")
+    filter: bool | None = None
+    zoom: list[Annotated[str, Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")]] = Field(default_factory=list, max_length=20)
+
+
 class DashboardWidget(BaseModel):
     """One chart, number, table or map on a dashboard page. Mirrors `Widget` in frontend/src/lib/types.ts.
     Size and position are optional: without col/row/cols/rows the layout is worked out from the chart types (see autoLayout in lib/dashboard.ts)."""
@@ -539,7 +546,10 @@ class DashboardWidget(BaseModel):
     target: float | None = Field(None, gt=0, description="Gauge: the full-scale value")
     target_field: str | None = Field(None, max_length=80, description="Gauge: use the total of this number field as the full-scale value")
     title_field: str | None = Field(None, max_length=80, description="List: the field used as each row's heading")
-    subtitle_fields: list[str] = Field(default_factory=list, max_length=6, description="List: fields shown under the heading")
+    subtitle_fields: list[str] = Field(default_factory=list, max_length=60, description="List: every field shown under the heading, in order")
+    show_labels: bool = Field(False, description="List: write the field name before each value")
+    all_rows: bool = Field(False, description="Table: show every record instead of `limit`")
+    actions: WidgetActions | None = Field(None, description="What a click on a record or a chart group does")
     content: str | None = Field(None, max_length=4000, description="Rich text: **bold**, *italic* and line breaks. Never treated as HTML")
     url: str | None = Field(None, max_length=500, description="Embedded content: an https:// address shown in a sandboxed frame")
     style: WidgetStyle | None = Field(None, description="Font and style for this element only; overrides the dashboard-wide style")

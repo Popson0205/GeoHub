@@ -432,3 +432,40 @@
   .dash-asof { display: none; }
 }
 @media print { .dash-menu, .dash-active .btn { display: none !important; } .dashboard-canvas-header .dash-controls .fdrop { border: 0; } }
+
+/* ---- clickable elements: list rows, table rows, details, numbers ---- */
+.widget-body.is-list, .widget-body.is-table { overflow: hidden; }
+.item-list { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.item-list li { padding: 0; }
+.item-list li > strong, .item-list li > small, .item-btn > strong, .item-btn > small { padding: 0 6px; }
+.item-list li > strong, .item-btn > strong { padding-top: 6px; }
+.item-list li:not(.item-more) { padding-bottom: 0; }
+.item-list li > :last-child, .item-btn > :last-child { padding-bottom: 7px; }
+.item-list small { line-height: 1.35; overflow-wrap: anywhere; }
+.il-label { font-weight: 600; }
+.item-btn { display: flex; flex-direction: column; width: 100%; padding: 0; border: 0; border-left: 3px solid transparent; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.item-btn:hover { background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 10%, transparent); }
+.item-btn:focus-visible, .data-table tr.is-clickable:focus-visible, .kpi-value.is-clickable:focus-visible, .details-list.is-clickable:focus-visible { outline: 2px solid var(--dash-accent, var(--green-600)); outline-offset: -2px; }
+.item-list li.is-active > .item-btn, .item-list li.is-active { border-left-color: var(--dash-accent, var(--green-600)); background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 16%, transparent); }
+.item-more { border-bottom: 0; }
+.item-more button { width: 100%; padding: 8px; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--fs-sm); opacity: .75; cursor: pointer; }
+.dash-table { max-height: 100%; overflow: auto; overscroll-behavior: contain; }
+.data-table tr.is-clickable { cursor: pointer; }
+.data-table tr.is-clickable:hover td { background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 10%, transparent); }
+.data-table tr.is-active td { background: color-mix(in srgb, var(--dash-accent, var(--green-600)) 18%, transparent); font-weight: 600; }
+.kpi-value.is-clickable, .details-list.is-clickable, .t-gauge .is-clickable { cursor: pointer; }
+.kpi-value.is-clickable:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
+
+/* ---- Actions and list fields in the element settings ---- */
+.act-targets { display: flex; flex-direction: column; gap: 4px; padding-left: 4px; }
+.act-targets label { display: flex; align-items: center; gap: 8px; }
+.ordered { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.ordered li { display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.ordered li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ordered button { width: 28px; height: 28px; border: 0; border-radius: var(--r-sm, 6px); background: transparent; color: inherit; cursor: pointer; font-size: 11px; }
+.ordered button:hover:not(:disabled) { background: var(--n-100, rgb(0 0 0 / .08)); }
+.ordered button:disabled { opacity: .25; cursor: default; }
+@media print { .item-list, .dash-table { max-height: none; overflow: visible; } .item-more { display: none; } }
+.dset-sec .field.act-targets label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-weight: 400; }
+.dset-sec .field.act-targets input[type="checkbox"] { width: 16px; height: 16px; flex: none; margin: 0; padding: 0; accent-color: var(--green-600); }
+.dset-sec .field.act-targets > .label { font-weight: 600; margin-bottom: 2px; }

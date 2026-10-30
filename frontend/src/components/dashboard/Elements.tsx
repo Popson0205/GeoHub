@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type UIEvent } from "react";
 import { parseRich, fmt, type WidgetData } from "../../lib/dashboard";
 import type { WidgetType } from "../../lib/types";
 
@@ -56,17 +57,80 @@ export function EmptyNote({ d, canFix, onFix, onClear }: { d: Data<"empty">; can
   );
 }
 
-export function ItemList({ rows }: { rows: Data<"list">["rows"] }) {
+const STEP = 100;
+/**
+ * How many rows of a long list are drawn. It starts with a screenful and grows as the viewer scrolls near the end, so a list of every
+ * record stays quick. Printing draws all of them. `ref` goes on the scrolling element.
+ */
+function useWindowed(total: number, resetKey: string) {
+  const [n, setN] = useState(STEP);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => { setN(STEP); }, [resetKey]);
+  useEffect(() => {
+    const on = () => setPrinting(true), off = () => setPrinting(false);
+    window.addEventListener("beforeprint", on); window.addEventListener("afterprint", off);
+    return () => { window.removeEventListener("beforeprint", on); window.removeEventListener("afterprint", off); };
+  }, []);
+  const onScroll = (e: UIEvent<HTMLElement>) => {
+    const el = e.currentTarget;
+    if (n < total && el.scrollHeight - el.scrollTop - el.clientHeight < 240) setN((x) => Math.min(total, x + STEP));
+  };
+  return { shown: printing ? total : Math.min(n, total), onScroll, more: () => setN((x) => Math.min(total, x + STEP)) };
+}
+
+/**
+ * Every record, one block each: the heading, then every field the author chose (one per line, with its name if asked).
+ * With `onPick` a row is a button: clicking it does whatever the element's actions say. `activeId` is the record that was last clicked
+ * here or in another element.
+ */
+export function ItemList({ rows, labels = false, activeId, onPick }: { rows: Data<"list">["rows"]; labels?: boolean; activeId?: string | null; onPick?: (id: string, title: string) => void }) {
+  const { shown, onScroll, more } = useWindowed(rows.length, rows.length ? `${rows[0].id}|${rows.length}` : "");
+  const active = useRef<HTMLLIElement>(null);
+  // A record picked in another element (a map point, a table row) is brought into view here.
+  useEffect(() => { active.current?.scrollIntoView?.({ block: "nearest" }); }, [activeId]);
+  const body = (r: Data<"list">["rows"][number]) => (<>
+    <strong>{r.title}</strong>
+    {r.lines.map((l, i) => <small key={i}>{labels && <span className="il-label">{l.label}: </span>}{l.value}</small>)}
+  </>);
   return (
-    <ul className="item-list">
-      {rows.map((r) => <li key={r.id}><strong>{r.title}</strong>{r.subtitle && <small>{r.subtitle}</small>}</li>)}
+    <ul className="item-list" onScroll={onScroll} aria-label={`${rows.length} records`}>
+      {rows.slice(0, shown).map((r) => {
+        const on = r.id === activeId;
+        return (
+          <li key={r.id} ref={on ? active : undefined} className={on ? "is-active" : undefined}>
+            {onPick ? <button type="button" className="item-btn" aria-pressed={on} onClick={() => onPick(r.id, r.title)}>{body(r)}</button> : body(r)}
+          </li>);
+      })}
+      {shown < rows.length && <li className="item-more"><button type="button" onClick={more}>Show more ({rows.length - shown} left)</button></li>}
     </ul>
   );
 }
 
-export function DetailsList({ items }: { items: Data<"details">["items"] }) {
+/** The table element: every row it was given, loaded as you scroll. A row is clickable when the element has actions. */
+export function DataTable({ columns, rows, activeId, onPick }: { columns: { id: string; label: string }[]; rows: Data<"table">["rows"]; activeId?: string | null; onPick?: (id: string, label: string) => void }) {
+  const { shown, onScroll } = useWindowed(rows.length, rows.length ? `${rows[0].id}|${rows.length}` : "");
+  const active = useRef<HTMLTableRowElement>(null);
+  useEffect(() => { active.current?.scrollIntoView?.({ block: "nearest" }); }, [activeId]);
   return (
-    <dl className="details-list">
+    <div className="dash-table" onScroll={onScroll}>
+      <table className="data-table"><thead><tr>{columns.map((c) => <th key={c.id} scope="col">{c.label}</th>)}</tr></thead>
+        <tbody>{rows.slice(0, shown).map((r) => {
+          const on = r.id === activeId;
+          return (
+            <tr key={r.id} ref={on ? active : undefined} className={`${onPick ? "is-clickable" : ""}${on ? " is-active" : ""}`} aria-selected={onPick ? on : undefined}
+              tabIndex={onPick ? 0 : undefined} onClick={onPick ? () => onPick(r.id, r.cells[0] ?? "") : undefined}
+              onKeyDown={onPick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r.id, r.cells[0] ?? ""); } } : undefined}>
+              {r.cells.map((c, i) => <td key={i}>{c}</td>)}
+            </tr>);
+        })}</tbody></table>
+    </div>
+  );
+}
+
+export function DetailsList({ items, onPick }: { items: Data<"details">["items"]; onPick?: () => void }) {
+  return (
+    <dl className={`details-list${onPick ? " is-clickable" : ""}`} onClick={onPick} tabIndex={onPick ? 0 : undefined}
+      onKeyDown={onPick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(); } } : undefined}>
       {items.map((it, i) => <div key={it.label + i}><dt>{it.label}</dt><dd>{it.value}</dd></div>)}
     </dl>
   );

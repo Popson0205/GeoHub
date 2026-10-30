@@ -2,7 +2,7 @@ import { useId } from "react";
 import { Button } from "../ui";
 import { PanelShell } from "./Panels";
 import {
-  MAX_CONTROLS, UPDATED_ID, controlFields, controlLabel, controlProblem, dashboardFields, dateFields, isFilterable, isPicker, newControl,
+  MAX_CONTROLS, UPDATED_ID, controlFields, controlLabel, controlProblem, dashboardFields, dateFields, filtersOthers, isFilterable, newControl,
   type Exclude, type FieldDef,
 } from "../../lib/dashboard";
 import type { DashControl, DashPage, Form, OptionSource, Widget } from "../../lib/types";
@@ -99,7 +99,7 @@ export function FiltersPanel({ page, defs, forms, canEdit, titleOf, onControls, 
   const targets = page.widgets.filter(isFilterable);
   const sources: { id: string; name: string; hint: string }[] = [
     ...controls.map((c) => ({ id: c.id, name: controlLabel(c, defs), hint: c.kind === "date" ? "Date filter" : "Category selector" })),
-    ...page.widgets.filter(isPicker).map((w) => ({ id: w.id, name: titleOf(w), hint: "When someone clicks it" })),
+    ...page.widgets.filter(filtersOthers).map((w) => ({ id: w.id, name: titleOf(w), hint: "When someone clicks in it" })),
   ];
   const skipped = (src: string) => exclude?.[src] ?? [];
   const setSkipped = (src: string, ids: string[]) => {

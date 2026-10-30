@@ -270,6 +270,13 @@ export interface PublicForm { token: string; form: Form; project_name: string; a
 export type WidgetType = "kpi" | "bar" | "pie" | "line" | "table" | "map" | "gauge" | "list" | "details" | "rich_text" | "embedded";
 export type Metric = "count" | "sum" | "avg" | "min" | "max";
 export type Bucket = "day" | "week" | "month";
+/** What clicking something in an element does. Which other elements a filter changes is kept per page (DashPage.exclude). */
+export interface ClickActions {
+  /** Filter the other elements to what was clicked: a record (list, table, map, details) or a group (bar, pie, line). Charts do this unless it is false. */
+  filter?: boolean;
+  /** Map elements that zoom to what was clicked and, for one record, open its pop-up. */
+  zoom?: string[];
+}
 export interface Widget {
   id: string;
   type: WidgetType;
@@ -290,7 +297,10 @@ export interface Widget {
   target?: number;           // gauge: the full-scale value ...
   target_field?: string;     // ... or the total of this number field
   title_field?: string;      // list: the field used as each row's heading
-  subtitle_fields?: string[];// list: fields shown under the heading
+  subtitle_fields?: string[];// list: every field shown under the heading, in order (no limit)
+  show_labels?: boolean;     // list: write "Field name: value" instead of the value alone
+  all_rows?: boolean;        // table: every record, not just `limit`
+  actions?: ClickActions;
   content?: string;          // rich_text: **bold**, *italic* and line breaks
   url?: string;              // embedded: an https:// address shown in a frame
   /** Font and style for this element only. Anything set here wins over the dashboard-wide Theme → Fonts and styling. */

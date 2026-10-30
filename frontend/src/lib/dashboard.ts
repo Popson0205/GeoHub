@@ -5,7 +5,7 @@ import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
 import { cleanTheme, cleanWidgetStyle } from "./dashboardThemes";
 import { cleanViewerStyle } from "./symbology";
-import type { Bucket, DashControl, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, OptionSource, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
+import type { Bucket, ClickActions, DashControl, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, OptionSource, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
 
@@ -65,11 +65,14 @@ export interface Filters {
   ranges?: RangeFilter[];
   /** Set by the date filter: records from the last `days` days, or from today only when `days` is 0. */
   last?: LastFilter;
+  /** Set by clicking a record (list, table, map, details): only that record is kept. One at a time. */
+  record?: RecordFilter;
 }
+export interface RecordFilter { ids: string[]; label: string; src?: string }
 export interface RangeFilter { field: string; from: string; to: string; label: string; src?: string }
 export interface LastFilter { days: number; src?: string; field?: string }
 export const noFilters = (): Filters => ({ status: "all", equals: [] });
-export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0 || (f.ranges ?? []).length > 0 || !!f.last;
+export const isFiltered = (f: Filters) => f.status !== "all" || !!f.from || !!f.to || f.equals.length > 0 || (f.ranges ?? []).length > 0 || !!f.last || !!f.record;
 
 // ---------- the date filter: Today, or the last N days ----------
 export const MAX_LAST_DAYS = 3650;
@@ -84,6 +87,7 @@ export function cleanDays(v: unknown): number | null {
 export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[], now: Date = new Date()): Feature[] {
   const lastFrom = f.last ? dayKey(now.getTime() - f.last.days * 86400000) : "";
   const lastDef = f.last ? (findField(defs, f.last.field ?? UPDATED_ID) ?? UPDATED_DEF) : undefined;
+  const only = f.record ? new Set(f.record.ids) : undefined;
   const bins = new Map<string, Binner | null>();
   const wanted = new Map<string, Set<string>>();
   for (const e of f.equals) { const s = wanted.get(e.field) ?? new Set<string>(); s.add(e.value); wanted.set(e.field, s); }
@@ -94,6 +98,7 @@ export function filterFeatures(features: Feature[], f: Filters, defs: FieldDef[]
     const day = r.updated_at.slice(0, 10);
     if (f.from && day < f.from) return false;
     if (f.to && day > f.to) return false;
+    if (only && !only.has(r.id)) return false;
     if (lastFrom && lastDef) {
       const v = raw(r, lastDef), d = typeof v === "string" ? v.slice(0, 10) : "";
       if (!d || d < lastFrom) return false;
@@ -154,13 +159,45 @@ export const reaches = (src: string | undefined, elementId: string, exclude: Exc
 export function scopeFilters(f: Filters, elementId: string, exclude: Exclude): Filters {
   if (!exclude) return f;
   const ranges = f.ranges?.filter((r) => reaches(r.src, elementId, exclude));
-  return { ...f, equals: f.equals.filter((e) => reaches(e.src, elementId, exclude)), ...(ranges ? { ranges } : {}), last: f.last && reaches(f.last.src, elementId, exclude) ? f.last : undefined };
+  return { ...f, equals: f.equals.filter((e) => reaches(e.src, elementId, exclude)), ...(ranges ? { ranges } : {}), last: f.last && reaches(f.last.src, elementId, exclude) ? f.last : undefined,
+    record: f.record && reaches(f.record.src, elementId, exclude) ? f.record : undefined };
 }
 /** True when something in `f` is held back from this element, so it needs rows of its own. */
 export const isScoped = (f: Filters, elementId: string, exclude: Exclude): boolean =>
-  !!exclude && (f.equals.some((e) => !reaches(e.src, elementId, exclude)) || (f.ranges ?? []).some((r) => !reaches(r.src, elementId, exclude)) || (!!f.last && !reaches(f.last.src, elementId, exclude)));
-/** Elements a click can filter from: the ones that draw groups. */
+  !!exclude && (f.equals.some((e) => !reaches(e.src, elementId, exclude)) || (f.ranges ?? []).some((r) => !reaches(r.src, elementId, exclude)) || (!!f.last && !reaches(f.last.src, elementId, exclude)) || (!!f.record && !reaches(f.record.src, elementId, exclude)));
+/** Charts that draw groups, so a click can pick one. */
 export const isPicker = (w: Widget): boolean => (w.type === "bar" || w.type === "pie" || w.type === "line") && !!w.field;
+/**
+ * What a click in an element means: a record (list, table, map, details), a group (bar, pie, line), everything the element counts
+ * (number, gauge), or nothing (text, embedded content).
+ */
+export type ClickKind = "record" | "group" | "all" | null;
+export const clickKind = (w: Widget): ClickKind =>
+  w.type === "list" || w.type === "table" || w.type === "map" || w.type === "details" ? "record"
+    : w.type === "bar" || w.type === "pie" || w.type === "line" ? "group" : w.type === "kpi" || w.type === "gauge" ? "all" : null;
+/** What this element does when clicked. A chart filters the others unless the author turned that off; everything else does what was set. */
+export function actionsOf(w: Widget): { filter: boolean; zoom: string[] } {
+  const k = clickKind(w);
+  return { filter: k === "record" || k === "group" ? w.actions?.filter ?? k === "group" : false, zoom: k ? w.actions?.zoom ?? [] : [] };
+}
+/** True when clicking this element filters the other elements. */
+export const filtersOthers = (w: Widget): boolean => actionsOf(w).filter && (clickKind(w) === "record" || isPicker(w));
+/** Record filter after a click: the clicked record(s) replace any earlier pick; the same click again lets go. */
+export function toggleRecord(f: Filters, r: RecordFilter): Filters {
+  const same = f.record && f.record.src === r.src && f.record.ids.join() === r.ids.join();
+  return { ...f, record: same ? undefined : r };
+}
+/** The records of one clicked bar or slice, so a map can zoom to them. */
+export function recordsOfSlice(rows: Feature[], def: FieldDef | undefined, key: string): string[] {
+  return def ? rows.filter((r) => categories(r, def, null).some((c) => c.key === key)).map((r) => r.id) : [];
+}
+export function cleanActions(raw: unknown): ClickActions | undefined {
+  const a = raw as Record<string, unknown> | null;
+  if (!a || typeof a !== "object") return undefined;
+  const zoom = Array.isArray(a.zoom) ? [...new Set(a.zoom.filter((x): x is string => typeof x === "string" && CONTROL_ID.test(x)))].slice(0, 20) : [];
+  const out: ClickActions = { ...(typeof a.filter === "boolean" ? { filter: a.filter } : {}), ...(zoom.length ? { zoom } : {}) };
+  return Object.keys(out).length ? out : undefined;
+}
 /** Elements a filter can change: everything that reads records. */
 export const isFilterable = (w: Widget): boolean => !isStatic(w.type);
 
@@ -721,7 +758,10 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
     ...(typeof x.target === "number" && Number.isFinite(x.target) ? { target: x.target } : {}),
     ...(typeof x.target_field === "string" && x.target_field ? { target_field: x.target_field } : {}),
     ...(typeof x.title_field === "string" && x.title_field ? { title_field: x.title_field } : {}),
-    ...(Array.isArray(x.subtitle_fields) ? { subtitle_fields: (x.subtitle_fields as unknown[]).filter((s): s is string => typeof s === "string") } : {}),
+    ...(Array.isArray(x.subtitle_fields) ? { subtitle_fields: (x.subtitle_fields as unknown[]).filter((s): s is string => typeof s === "string").slice(0, 60) } : {}),
+    ...(x.show_labels === true ? { show_labels: true } : {}),
+    ...(x.all_rows === true ? { all_rows: true } : {}),
+    ...(cleanActions(x.actions) ? { actions: cleanActions(x.actions) } : {}),
     ...(typeof x.content === "string" ? { content: x.content } : {}),
     ...(typeof x.url === "string" ? { url: x.url } : {}),
     ...(cleanWidgetStyle(x.style) ? { style: cleanWidgetStyle(x.style) } : {}),
@@ -743,7 +783,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
 // ---------- filters in the address ----------
 // Filters sit in the page address, so a view can be sent as a link, survives a refresh, and carries from page to page.
 const STATUSES = ["draft", "submitted", "approved", "rejected"];
-const FILTER_KEYS = ["status", "from", "to", "eq", "rg", "last"];
+const FILTER_KEYS = ["status", "from", "to", "eq", "rg", "last", "rec"];
 export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearchParams()): URLSearchParams {
   const out = new URLSearchParams(into);
   FILTER_KEYS.forEach((k) => out.delete(k));
@@ -752,6 +792,7 @@ export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearc
   if (f.to) out.set("to", f.to);
   for (const e of f.equals) out.append("eq", [e.field, e.value, e.label, ...(e.src ? [e.src] : [])].map(encodeURIComponent).join("|"));
   for (const r of f.ranges ?? []) out.append("rg", [r.field, r.from, r.to, r.label, ...(r.src ? [r.src] : [])].map(encodeURIComponent).join("|"));
+  if (f.record) out.set("rec", [f.record.ids.join(","), f.record.label, ...(f.record.src ? [f.record.src] : [])].map(encodeURIComponent).join("|"));
   if (f.last) out.set("last", [f.last.days === 0 ? "today" : String(f.last.days), ...(f.last.src || f.last.field ? [f.last.src ?? "", ...(f.last.field ? [f.last.field] : [])] : [])].map(encodeURIComponent).join("|"));
   return out;
 }
@@ -777,7 +818,14 @@ export function filtersFromParams(p: URLSearchParams): Filters {
       return days == null ? undefined : { days, ...(src ? { src } : {}), ...(field ? { field } : {}) };
     } catch { return undefined; }
   })();
-  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals, ...(ranges.length ? { ranges } : {}), ...(last ? { last } : {}) };
+  const record = ((): RecordFilter | undefined => {
+    try {
+      const [ids, label, src] = (p.get("rec") ?? "").split("|").map(decodeURIComponent);
+      const list = (ids ?? "").split(",").filter((x) => /^[A-Za-z0-9_-]{1,64}$/.test(x)).slice(0, 5000);
+      return list.length ? { ids: list, label: label || "Selected record", ...(src ? { src } : {}) } : undefined;
+    } catch { return undefined; }
+  })();
+  return { status: STATUSES.includes(s) ? (s as FeatureStatus) : "all", from: day(p.get("from")), to: day(p.get("to")), equals, ...(ranges.length ? { ranges } : {}), ...(last ? { last } : {}), ...(record ? { record } : {}) };
 }
 
 // ---------- the records a page draws on, and what each element shows ----------
@@ -830,8 +878,8 @@ export type WidgetData =
   | { kind: "gauge"; value: number | null; max: number | null; percent: number | null; unit?: string }
   | { kind: "slices"; chart: "bar" | "pie" | "line"; slices: Slice[]; unit: string }
   | { kind: "table"; columns: FieldDef[]; rows: { id: string; cells: string[] }[] }
-  | { kind: "list"; rows: { id: string; title: string; subtitle: string }[] }
-  | { kind: "details"; items: { label: string; value: string }[] }
+  | { kind: "list"; rows: { id: string; title: string; subtitle: string; lines: { label: string; value: string }[] }[] }
+  | { kind: "details"; id: string; items: { label: string; value: string }[] }
   | { kind: "text"; content: string }
   | { kind: "embed"; url: string }
   | { kind: "map"; count: number };
@@ -869,19 +917,23 @@ export function widgetData(w: Widget, source: Source | undefined, hasForm: boole
     case "line": { const s = timeSeries(rows, f!, w.bucket, w.metric, mf); return s.length ? { kind: "slices", chart: "line", slices: s, unit: unit ?? "" } : rows.length ? noData(f) : none; }
     case "table": {
       const columns = w.columns.map((c) => findField(defs, c)).filter((c): c is FieldDef => !!c);
-      const t = tableRows(rows, columns, w.limit);
+      const t = tableRows(rows, columns, w.all_rows ? Infinity : w.limit);
       return t.length ? { kind: "table", columns, rows: t } : none;
     }
     case "list": {
       const head = findField(defs, w.title_field), subs = (w.subtitle_fields ?? []).map((id) => findField(defs, id)).filter((d): d is FieldDef => !!d);
-      const out = newestFirst(rows).slice(0, w.limit).map((r) => ({ id: r.id, title: (head && display(r, head)) || "(blank)", subtitle: subs.map((d) => display(r, d)).filter(Boolean).join(" · ") }));
+      // Every record that passes the filters, and every field the author ticked: nothing is cut off. The element scrolls and loads as you go.
+      const out = newestFirst(rows).map((r) => {
+        const lines = subs.map((d) => ({ label: d.label, value: display(r, d) })).filter((l) => l.value !== "" && l.value !== "–");
+        return { id: r.id, title: (head && display(r, head)) || "(blank)", subtitle: lines.map((l) => l.value).join(" · "), lines };
+      });
       return out.length ? { kind: "list", rows: out } : none;
     }
     case "details": {
       const r = newestFirst(rows)[0];
       if (!r) return none;
       const shown = w.columns.length ? w.columns.map((c) => findField(defs, c)).filter((d): d is FieldDef => !!d) : defs;
-      return { kind: "details", items: shown.map((d) => ({ label: d.label, value: display(r, d) || "–" })) };
+      return { kind: "details", id: r.id, items: shown.map((d) => ({ label: d.label, value: display(r, d) || "–" })) };
     }
     case "map": return rows.length ? { kind: "map", count: rows.length } : none;
   }

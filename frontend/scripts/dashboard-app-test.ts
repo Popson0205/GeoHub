@@ -37,7 +37,7 @@ ok(d(W("gauge", { target_field: "gone" })).kind === "problem", "a gauge on a rem
 
 // ---- list and details ----
 const l = d(W("list", { title_field: "village", subtitle_fields: ["type", "depth"], limit: 2 }));
-ok(l.kind === "list" && l.rows.length === 2 && l.rows[0].title === "Ife" && l.rows[0].subtitle === "Well · 60", "a list shows the latest records first, heading and subtitle");
+ok(l.kind === "list" && l.rows.length > 2 && l.rows[0].title === "Ife" && l.rows[0].subtitle === "Well · 60" && l.rows[0].lines.map((x) => x.label).join() === "Type,Depth", "a list shows every record, newest first, with a line for each field chosen (the old row limit no longer cuts it off)");
 ok(d(W("list", { title_field: undefined })).kind === "problem" && d(W("list", { title_field: "gone" })).kind === "problem", "a list needs a heading field that still exists");
 const dt = d(W("details", { columns: ["village", "depth"] }));
 ok(dt.kind === "details" && dt.items.length === 2 && dt.items[0].value === "Ife", "details shows the most recent record");

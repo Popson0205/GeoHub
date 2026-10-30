@@ -3,12 +3,12 @@ import { Button } from "../ui";
 import SymbologyPanel from "../SymbologyPanel";
 import { ElementIcon } from "./Elements";
 import {
-  GRID_COLUMNS, MAX_ROWS, METRIC_LABEL, MIN_COLS, MIN_ROWS, WIDGET_LABEL, dateFields, defaultTitle, groupFields, isStatic, numberFields, safeEmbedUrl, usesMetric,
+  GRID_COLUMNS, MAX_ROWS, METRIC_LABEL, actionsOf, clickKind, MIN_COLS, MIN_ROWS, WIDGET_LABEL, dateFields, defaultTitle, groupFields, isStatic, numberFields, safeEmbedUrl, usesMetric,
   type FieldDef, type Rect, type Source,
 } from "../../lib/dashboard";
 import { BASEMAPS, cleanViewerStyle, emptyViewerStyle, loadViewerStyle, statusLayer, type BasemapId } from "../../lib/symbology";
 import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib/dashboardThemes";
-import type { Form, Metric, Widget, WidgetStyle } from "../../lib/types";
+import type { ClickActions, Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
 const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -23,8 +23,9 @@ function Section({ title, open = true, children }: { title: string; open?: boole
 }
 
 /** Settings of the selected element: what it shows, where it gets its records, and where it sits. */
-export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose, onRegion, source, projectId }:
-  { /** map elements: the records the element draws on, so its colours can be set from real values. */ source?: Source; projectId?: string; w: Widget; rect?: Rect; manual?: boolean; onRect?: (p: Partial<Rect>) => void; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
+export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, count, forms = [], pageFormId, onForm, onChange, onMove, onRemove, onClose, onRegion, source, projectId, targets = [], maps = [], excluded = [], onExcluded }:
+  { /** The other elements a click can filter, the map elements it can zoom, and which of the first this element leaves alone. */ targets?: { id: string; title: string }[]; maps?: { id: string; title: string }[]; excluded?: string[]; onExcluded?: (ids: string[]) => void;
+    /** map elements: the records the element draws on, so its colours can be set from real values. */ source?: Source; projectId?: string; w: Widget; rect?: Rect; manual?: boolean; onRect?: (p: Partial<Rect>) => void; defs: FieldDef[]; index: number; count: number; forms?: Form[]; pageFormId?: string; onForm?: (formId: string) => void;
     onChange: (p: Partial<Widget>) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; onClose: () => void; onRegion?: (r: "body" | "sidebar") => void }) {
   const nums = numberFields(defs);
   const side = w.region === "sidebar";
@@ -39,6 +40,32 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         {extra.map(([id, text]) => <label key={id}><input type="checkbox" checked={ids.includes(id)} onChange={() => set(toggle(ids, id))} />{text}</label>)}
       </div></div>
   );
+  // Any number of fields, in the order they are shown. The ticked ones are listed first with arrows to reorder.
+  const orderedFields = (label: string, ids: string[], set: (ids: string[]) => void, extra: [string, string][] = []) => {
+    const all: [string, string][] = [...defs.map((d): [string, string] => [d.id, d.label]), ...extra];
+    const name = (id: string) => all.find((x) => x[0] === id)?.[1] ?? id;
+    const mv = (i: number, by: -1 | 1) => { const n = [...ids], j = i + by; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; set(n); };
+    const rest = all.filter((x) => !ids.includes(x[0]));
+    return (
+      <div className="field"><span id="wol" className="label">{label}</span>
+        {ids.length > 0 && <ol className="ordered" aria-label="Fields shown, in order">{ids.map((id, i) => (
+          <li key={id}><span>{name(id)}</span>
+            <button type="button" aria-label={`Move ${name(id)} up`} disabled={i === 0} onClick={() => mv(i, -1)}>▲</button>
+            <button type="button" aria-label={`Move ${name(id)} down`} disabled={i === ids.length - 1} onClick={() => mv(i, 1)}>▼</button>
+            <button type="button" aria-label={`Remove ${name(id)}`} onClick={() => set(ids.filter((x) => x !== id))}>✕</button></li>))}</ol>}
+        {rest.length > 0 && <div className="cols" role="group" aria-labelledby="wol">{rest.map(([id, text]) => <label key={id}><input type="checkbox" checked={false} onChange={() => set([...ids, id])} />{text}</label>)}</div>}
+        <div className="row" style={{ gap: 12 }}>
+          {rest.length > 0 && <button type="button" className="link-btn" onClick={() => set([...ids, ...rest.map((x) => x[0])])}>Add all fields</button>}
+          {ids.length > 0 && <button type="button" className="link-btn" onClick={() => set([])}>Clear</button>}
+        </div></div>
+    );
+  };
+  const kind = clickKind(w), act = actionsOf(w);
+  const setActions = (p: Partial<ClickActions>) => {
+    const n = { ...(w.actions ?? {}), ...p };
+    if (n.zoom && !n.zoom.length) delete n.zoom;
+    onChange({ actions: Object.keys(n).length ? n : undefined });
+  };
   // This element's own font and style. It wins over the dashboard-wide Theme → Fonts and styling; cleared choices fall back to it.
   const own: WidgetStyle = cleanWidgetStyle(w.style) ?? {};
   const setOwn = <K extends keyof WidgetStyle>(key: K, value: WidgetStyle[K] | undefined) => onChange({ style: cleanWidgetStyle({ ...own, [key]: value }) });
@@ -120,7 +147,8 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         )}
         {w.type === "table" && (<>
           {fieldBoxes("Columns (up to 12)", w.columns, (columns) => onChange({ columns }), [["__status", "Review status"], ["__updated", "Date record changed"]])}
-          <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
+          <label className="dset-check"><input type="checkbox" checked={!!w.all_rows} onChange={(e) => onChange({ all_rows: e.target.checked || undefined })} />Show every record (it scrolls)</label>
+          {!w.all_rows && <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>}
         </>)}
         {w.type === "list" && (<>
           <div className="field"><label htmlFor="wlt">Heading of each row</label>
@@ -128,8 +156,9 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
               <option value="" disabled>Choose a field…</option>
               {defs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
             </select></div>
-          {fieldBoxes("Shown under it (up to 6)", w.subtitle_fields ?? [], (subtitle_fields) => onChange({ subtitle_fields }), [], 6)}
-          <div className="field"><label htmlFor="wl">Rows shown</label><input id="wl" type="number" min={1} max={50} value={w.limit} onChange={(e) => onChange({ limit: Math.min(50, Math.max(1, Number(e.target.value) || 10)) })} /></div>
+          {orderedFields("Fields shown under it", w.subtitle_fields ?? [], (subtitle_fields) => onChange({ subtitle_fields }), [["__status", "Review status"], ["__updated", "Date record changed"]])}
+          <label className="dset-check"><input type="checkbox" checked={!!w.show_labels} onChange={(e) => onChange({ show_labels: e.target.checked || undefined })} />Show the field name before each value</label>
+          <small className="meta">Every record is listed, and any number of fields. The list scrolls and loads more as you go.</small>
         </>)}
         {w.type === "details" && (<>
           {fieldBoxes("Fields to show (none ticked = all)", w.columns, (columns) => onChange({ columns }), [], 12)}
@@ -168,6 +197,30 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         })()}
 
         </Section>
+
+        {kind && (
+          <Section title="Actions">
+            <p className="meta">{kind === "record" ? "When someone clicks a record here:" : kind === "group" ? "When someone clicks a bar, slice or point here:" : "When someone clicks the number here:"}</p>
+            {(kind === "record" || kind === "group") && (<>
+              <label className="dset-check"><input type="checkbox" checked={act.filter} onChange={(e) => setActions({ filter: e.target.checked })} />Filter other elements</label>
+              {act.filter && (targets.length === 0 ? <small className="meta">There are no other elements to filter yet.</small> : (
+                <div className="field act-targets" role="group" aria-label="Elements this filters">
+                  {targets.map((t) => (
+                    <label key={t.id}><input type="checkbox" checked={!excluded.includes(t.id)} onChange={(e) => onExcluded?.(e.target.checked ? excluded.filter((x) => x !== t.id) : [...excluded, t.id])} />{t.title}</label>))}
+                  <div className="row" style={{ gap: 12 }}>
+                    <button type="button" className="link-btn" onClick={() => onExcluded?.([])}>All</button>
+                    <button type="button" className="link-btn" onClick={() => onExcluded?.(targets.map((t) => t.id))}>None</button>
+                  </div>
+                </div>))}
+            </>)}
+            {w.type !== "line" && (
+              <div className="field act-targets" role="group" aria-label="Maps to zoom">
+                <span className="label">Zoom a map to {kind === "record" ? "it" : "them"}</span>
+                {maps.length === 0 ? <small className="meta">Add a map element to zoom it from here.</small>
+                  : maps.map((m) => <label key={m.id}><input type="checkbox" checked={act.zoom.includes(m.id)} onChange={() => setActions({ zoom: toggle(act.zoom, m.id) })} />{m.title}</label>)}
+                {act.zoom.length > 0 && kind === "record" && <small className="meta">The map zooms to the record and opens its pop-up.</small>}
+              </div>)}
+          </Section>)}
 
         <Section title="Layout">
           {onRegion && (

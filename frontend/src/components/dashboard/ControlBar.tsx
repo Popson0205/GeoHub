@@ -59,6 +59,7 @@ export function ActiveFilters({ filters, setFilters, shown, total }: Common & { 
   const chips: { key: string; text: string; remove: () => void }[] = [];
   for (const e of filters.equals) chips.push({ key: `e${e.field}|${e.value}`, text: e.label, remove: () => setFilters((f) => ({ ...f, equals: f.equals.filter((x) => x !== e) })) });
   for (const r of filters.ranges ?? []) chips.push({ key: `r${r.field}${r.from}${r.to}`, text: r.label, remove: () => setFilters((f) => ({ ...f, ranges: (f.ranges ?? []).filter((x) => x !== r) })) });
+  if (filters.record) chips.push({ key: "record", text: `Selected: ${filters.record.label}`, remove: () => setFilters((f) => ({ ...f, record: undefined })) });
   if (filters.last) chips.push({ key: "last", text: lastLabel(filters.last.days), remove: () => setFilters((f) => ({ ...f, last: undefined })) });
   // An older shared address can still carry a review status or dates. They have no box any more, so they show here and can be removed.
   if (filters.status !== "all") chips.push({ key: "status", text: `Review status: ${STATUS_LABEL[filters.status]}`, remove: () => setFilters((f) => ({ ...f, status: "all" })) });
