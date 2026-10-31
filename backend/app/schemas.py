@@ -520,6 +520,17 @@ class WidgetStyle(BaseModel):
     borderColor: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
 
 
+class SymbolSpec(BaseModel):
+    """A symbol: a library icon or the author's own SVG, with colour, shape and animation. The SVG is stored as written and rebuilt from
+    an allow-list by every client before it is drawn, so what is stored is never trusted as markup."""
+    model_config = ConfigDict(extra="forbid")
+    icon: str | None = Field(None, max_length=40, pattern=r"^[a-z0-9-]+$")
+    svg: str | None = Field(None, max_length=6000)
+    color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    shape: Literal["plain", "circle", "ring", "square"] | None = None
+    motion: Literal["none", "pulse", "spin", "bounce", "float", "glow", "shake", "ripple", "blink"] | None = None
+
+
 class WidgetActions(BaseModel):
     """What clicking a record or a chart group does: filter the other elements, and/or zoom map elements to it."""
     model_config = ConfigDict(extra="forbid")
@@ -600,17 +611,6 @@ class DashboardWidget(BaseModel):
                 raise ValueError("width must be 1, 2 or 3")
             data.setdefault("wide", width == 3)
         return data
-
-
-class SymbolSpec(BaseModel):
-    """A symbol: a library icon or the author's own SVG, with colour, shape and animation. The SVG is stored as written and rebuilt from
-    an allow-list by every client before it is drawn, so what is stored is never trusted as markup."""
-    model_config = ConfigDict(extra="forbid")
-    icon: str | None = Field(None, max_length=40, pattern=r"^[a-z0-9-]+$")
-    svg: str | None = Field(None, max_length=6000)
-    color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
-    shape: Literal["plain", "circle", "ring", "square"] | None = None
-    motion: Literal["none", "pulse", "spin", "bounce", "float", "glow", "shake", "ripple", "blink"] | None = None
 
 
 class DashboardControlSource(BaseModel):
