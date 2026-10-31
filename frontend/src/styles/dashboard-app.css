@@ -560,3 +560,47 @@
 .sympick-big { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2); margin-bottom: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-md);
   background: repeating-conic-gradient(#0000000d 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
 .sympick-big .sym { flex: none; }
+
+/* ======================================================================================================================================
+   One element style. Every element (number, gauge, list, table, map, charts, details, text) has the same card and the same title bar:
+   padding from --wpx / --wpy, a title bar of the same height with the title at the left, a divider under it, the symbol, the CSV button
+   and (while editing) the grip and the gear always in the same places. Earlier rules gave numbers a centred upper-case title with no
+   divider and a colour stripe, and the map its own padding; those are gone. What each element does inside its body is its own business.
+   The author's dashboard style options (heading size, weight, capitals) still apply, to every element alike, through the variables below.
+   ====================================================================================================================================== */
+.dash-app .widget { --wpx: var(--s-3); --wpy: var(--s-3); padding: var(--wpy) var(--wpx); gap: var(--s-2); text-align: left; }
+.is-fit .widget { --wpx: 10px; --wpy: 8px; }
+.dash-app[data-s-caps], .dash-app .widget[data-w-caps] { --dash-caps: uppercase; --dash-caps-ls: .06em; }
+
+.dash-app .widget .widget-head, .dash-app .widget.t-kpi .widget-head, .dash-app .widget.t-map .widget-head, .is-fit .widget .widget-head, .is-fit .widget.t-kpi .widget-head {
+  flex: none; min-height: 30px; margin: 0; padding: 0 0 var(--s-2); gap: var(--s-2); justify-content: flex-start; text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.dash-app .widget .widget-head h3, .dash-app .widget.t-kpi .widget-head h3 {
+  flex: 1; min-width: 0; margin: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--dash-heading-size, var(--fs-sm)); font-weight: var(--dash-heading-weight, 600); text-transform: var(--dash-caps, none); letter-spacing: var(--dash-caps-ls, .01em);
+}
+.dash-app .widget.is-editable .widget-head, .dash-app .widget.is-editable.t-kpi .widget-head, .dash-app .widget.is-editable.t-map .widget-head { padding-right: 32px; justify-content: flex-start; }
+.dash-app .widget .widget-head > .btn, .dash-app .widget .widget-head > small { flex: none; }
+.dash-app .widget .head-sym { align-self: center; margin: 0; }
+
+/* numbers: no stripe, same padding as everything else */
+.dash-app .widget.t-kpi, .is-fit .widget.t-kpi { padding: var(--wpy) var(--wpx); gap: var(--s-2); justify-content: flex-start; text-align: left; }
+.dash-app .widget.t-kpi::before { content: none; }
+.is-fit .widget-body.is-kpi { flex: 1; }
+
+/* the map: the same card and title bar as the rest; only its body runs to the card's edges */
+.dash-app .widget.t-map { padding: var(--wpy) var(--wpx); }
+.dash-app .widget.t-map .widget-body { margin: 0 calc(var(--wpx) * -1) calc(var(--wpy) * -1); }
+.dash-app .widget.t-map .dash-map { border-radius: 0; }
+
+/* the gear sits level with the title in every element */
+.widget-gear, .widget.is-editable.t-map > .widget-gear { top: calc(var(--wpy) + 1px); right: var(--wpx); }
+.widget-head .grip { flex: none; }
+
+/* indicators: the symbol and the value are one row, the same for numbers and gauges */
+.kpi-row, .kpi-row.is-gauge { gap: 14px; justify-content: center; }
+
+/* the title bar is one fixed height, so a button or a symbol in it never makes one element's bar taller than another's */
+.dash-app .widget .widget-head, .dash-app .widget.t-kpi .widget-head, .dash-app .widget.t-map .widget-head, .is-fit .widget .widget-head, .is-fit .widget.t-kpi .widget-head { box-sizing: border-box; height: 32px; min-height: 32px; }
+.dash-app .widget .widget-head .btn, .is-fit .widget .widget-head .btn { height: 24px; min-height: 24px; padding: 0 8px; font-size: var(--fs-xs); line-height: 1; }

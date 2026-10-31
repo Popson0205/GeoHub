@@ -7,8 +7,8 @@ import type { SymbolMotion, SymbolShape, SymbolSpec } from "../lib/types";
  * Choose a symbol: from the library, or paste / upload your own SVG code. Then its colour, the shape behind it and (where the place can
  * show it) an animation. `onChange(undefined)` removes the symbol. Used for indicators, lists, selectors and map points.
  */
-export function SymbolPicker({ value, onChange, motion = true, forMap = false, autoColor = "Automatic", defaultShape = "plain", defaultSize }:
-  { value?: SymbolSpec; onChange: (s: SymbolSpec | undefined) => void; motion?: boolean; forMap?: boolean; autoColor?: string; defaultShape?: SymbolShape;
+export function SymbolPicker({ value, onChange, motion = true, forMap = false, autoColor = "Automatic", defaultShape = "plain", defaultSize, placeable, contentLabel = "Beside the value" }:
+  { /** Offer the choice between the title bar and the element's content, and what to call the content spot. */ placeable?: boolean; contentLabel?: string; value?: SymbolSpec; onChange: (s: SymbolSpec | undefined) => void; motion?: boolean; forMap?: boolean; autoColor?: string; defaultShape?: SymbolShape;
     /** The size (px) used when the author sets none, shown as the starting point of the size control. */ defaultSize?: number }) {
   const id = useId();
   const [tab, setTab] = useState<"library" | "svg">(value?.svg ? "svg" : "library");
@@ -66,6 +66,9 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
         </div>
       )}
       {value && (<div className="sympick-opts">
+        {placeable && <div className="field"><label htmlFor={`${id}-pl`}>Position</label>
+          <select id={`${id}-pl`} value={value.place ?? "content"} onChange={(e) => set({ place: e.target.value === "title" ? "title" : undefined })}>
+            <option value="content">{contentLabel}</option><option value="title">In the title bar (like other elements)</option></select></div>}
         <div className="field"><label htmlFor={`${id}-sz`}>Size{value.size ? `: ${value.size} px` : defaultSize ? ` (automatic: ${defaultSize} px)` : " (automatic)"}</label>
           <div className="row" style={{ gap: 8 }}>
             <input id={`${id}-sz`} type="range" min={MIN_SIZE} max={MAX_SIZE} step={2} value={value.size ?? defaultSize ?? 32} onChange={(e) => set({ size: Number(e.target.value) })} aria-valuetext={`${value.size ?? defaultSize ?? 32} pixels`} style={{ flex: 1 }} />

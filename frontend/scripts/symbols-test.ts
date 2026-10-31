@@ -172,3 +172,9 @@ ok(!!esc2 && esc2.inner.includes("a &amp;&lt; b") && !esc2.inner.includes("<b"),
 
 // ---- size ----
 ok(cleanSymbolSpec({ icon: "bolt", size: 64.4 })?.size === 64 && cleanSymbolSpec({ icon: "bolt", size: 11 }) !== undefined && !("size" in cleanSymbolSpec({ icon: "bolt", size: 11 })!) && !("size" in cleanSymbolSpec({ icon: "bolt", size: 999 })!) && !("size" in cleanSymbolSpec({ icon: "bolt", size: "big" })!), "a size from 12 to 160 is kept; anything else is dropped");
+
+// ---- one rule for where a symbol goes ----
+import { SYMBOL_PX, hasContentSlot } from "../src/lib/symbols";
+ok(hasContentSlot("kpi") && hasContentSlot("gauge") && hasContentSlot("list") && !hasContentSlot("bar") && !hasContentSlot("table") && !hasContentSlot("map") && !hasContentSlot("details") && !hasContentSlot("rich_text"), "only numbers, gauges and lists can keep a symbol with their content; every other element uses the title bar");
+ok(cleanSymbolSpec({ icon: "bolt", place: "title" })?.place === "title" && !("place" in cleanSymbolSpec({ icon: "bolt", place: "content" })!) && !("place" in cleanSymbolSpec({ icon: "bolt", place: "sideways" })!), "a symbol's position is kept only when it is the title bar (content is the default)");
+ok(SYMBOL_PX.title < SYMBOL_PX.selector && SYMBOL_PX.selector < SYMBOL_PX.row && SYMBOL_PX.row < SYMBOL_PX.indicator && Object.values(SYMBOL_PX).every((n) => n >= 12 && n <= 160), "one size table: title bar < selector < list row < indicator");

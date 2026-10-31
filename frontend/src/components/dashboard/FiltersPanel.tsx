@@ -2,6 +2,7 @@ import { useId } from "react";
 import { Button } from "../ui";
 import { PanelShell } from "./Panels";
 import { SymbolPicker } from "../SymbolPicker";
+import { SYMBOL_PX } from "../../lib/symbols";
 import {
   MAX_CONTROLS, UPDATED_ID, controlFields, controlLabel, controlProblem, dashboardFields, dateFields, filtersOthers, isFilterable, newControl,
   type Exclude, type FieldDef,
@@ -78,7 +79,7 @@ function ControlEditor({ c, defs, forms, onChange, onRemove }: { c: DashControl;
       </>)}
       <details className="sym-marker" open={!!c.symbol}>
         <summary>Symbol{c.symbol ? " (set)" : ""}</summary>
-        <SymbolPicker value={c.symbol} onChange={(symbol) => onChange({ ...c, symbol })} defaultSize={28} />
+        <SymbolPicker value={c.symbol} onChange={(symbol) => onChange({ ...c, symbol })} defaultSize={SYMBOL_PX.selector} />
       </details>
       {problem && <p className="hint" role="status">{problem}</p>}
     </div>

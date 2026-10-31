@@ -12,6 +12,10 @@ export const MOTIONS: { id: SymbolMotion; label: string }[] = [
   { id: "glow", label: "Glow" }, { id: "shake", label: "Shake" }, { id: "ripple", label: "Ripple" }, { id: "blink", label: "Blink" },
 ];
 export const MAX_SVG = 6000, MAX_SVG_MAP = 3000, MIN_SIZE = 12, MAX_SIZE = 160;
+/** The size a symbol has, in pixels, where the author sets none. One table, so the same kind of place always gets the same size. */
+export const SYMBOL_PX = { title: 22, indicator: 48, row: 34, selector: 28 } as const;
+/** True for the elements whose symbol can sit with their content (beside the value, before each row) instead of in the title bar. */
+export const hasContentSlot = (type: string): boolean => type === "kpi" || type === "gauge" || type === "list";
 
 export interface SymbolIconDef { id: string; label: string; tags: string; body: string }
 const I = (id: string, label: string, tags: string, body: string): SymbolIconDef => ({ id, label, tags, body });
@@ -274,6 +278,7 @@ export function cleanSymbolSpec(raw: unknown): SymbolSpec | undefined {
   return {
     ...(icon ? { icon } : {}), ...(svg ? { svg } : {}),
     ...(size && size >= MIN_SIZE && size <= MAX_SIZE ? { size } : {}),
+    ...(r.place === "title" ? { place: "title" as const } : {}),
     ...(isHex(r.color) ? { color: r.color } : {}),
     ...(SHAPES.some((s) => s.id === r.shape) ? { shape: r.shape as SymbolShape } : {}),
     ...(MOTIONS.some((m) => m.id === r.motion) && r.motion !== "none" ? { motion: r.motion as SymbolMotion } : {}),

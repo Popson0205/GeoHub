@@ -9,6 +9,7 @@ import {
 import { BASEMAPS, cleanViewerStyle, emptyViewerStyle, loadViewerStyle, statusLayer, type BasemapId } from "../../lib/symbology";
 import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib/dashboardThemes";
 import { SymbolPicker } from "../SymbolPicker";
+import { SYMBOL_PX, hasContentSlot } from "../../lib/symbols";
 import type { ClickActions, Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
 const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
@@ -201,8 +202,9 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
 
         {w.type !== "rich_text" && w.type !== "embedded" && (
           <Section title="Symbol">
-            <p className="meta">{w.type === "kpi" || w.type === "gauge" ? "Shown beside the number." : w.type === "list" ? "Shown before each row." : "Shown next to the title. Optional."}</p>
-            <SymbolPicker value={w.symbol} onChange={(symbol) => onChange({ symbol })} defaultShape={w.type === "kpi" || w.type === "gauge" ? "ring" : "plain"} defaultSize={w.type === "kpi" ? 52 : w.type === "gauge" ? 44 : w.type === "list" ? 34 : 20} />
+            <p className="meta">{hasContentSlot(w.type) ? (w.symbol?.place === "title" ? "Shown in the title bar." : w.type === "list" ? "Shown before each row." : "Shown beside the value.") : "Shown at the start of the title bar."} Optional.</p>
+            <SymbolPicker value={w.symbol} onChange={(symbol) => onChange({ symbol })} defaultShape={w.type === "kpi" || w.type === "gauge" ? "ring" : "plain"} defaultSize={w.type === "list" ? SYMBOL_PX.row : hasContentSlot(w.type) && w.symbol?.place !== "title" ? SYMBOL_PX.indicator : SYMBOL_PX.title}
+              placeable={hasContentSlot(w.type)} contentLabel={w.type === "list" ? "Before each row" : "Beside the value"} />
           </Section>)}
 
         {kind && (

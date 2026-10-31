@@ -529,6 +529,7 @@ class SymbolSpec(BaseModel):
     color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     shape: Literal["plain", "circle", "ring", "square"] | None = None
     size: int | None = Field(None, ge=12, le=160)
+    place: Literal["title", "content"] | None = None
     motion: Literal["none", "pulse", "spin", "bounce", "float", "glow", "shake", "ripple", "blink"] | None = None
 
 
