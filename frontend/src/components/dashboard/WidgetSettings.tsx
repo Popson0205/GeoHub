@@ -8,6 +8,7 @@ import {
 } from "../../lib/dashboard";
 import { BASEMAPS, cleanViewerStyle, emptyViewerStyle, loadViewerStyle, statusLayer, type BasemapId } from "../../lib/symbology";
 import { DASH_FONTS, FONT_KEYS, STYLE_LIMITS, cleanWidgetStyle } from "../../lib/dashboardThemes";
+import { SymbolPicker } from "../SymbolPicker";
 import type { ClickActions, Form, Metric, Widget, WidgetStyle } from "../../lib/types";
 
 const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
@@ -197,6 +198,12 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         })()}
 
         </Section>
+
+        {w.type !== "rich_text" && w.type !== "embedded" && (
+          <Section title="Symbol">
+            <p className="meta">{w.type === "kpi" || w.type === "gauge" ? "Shown beside the number." : w.type === "list" ? "Shown before each row." : "Shown next to the title. Optional."}</p>
+            <SymbolPicker value={w.symbol} onChange={(symbol) => onChange({ symbol })} defaultShape={w.type === "kpi" || w.type === "gauge" ? "ring" : "plain"} />
+          </Section>)}
 
         {kind && (
           <Section title="Actions">

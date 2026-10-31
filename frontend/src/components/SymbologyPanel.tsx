@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { SymbolIcon } from "./SymbolIcon";
+import { SymbolPicker } from "./SymbolPicker";
 import { STATUS_ID, dashboardFields, groupFields, numberFields } from "../lib/dashboard";
 import { RAMPS, classLabel, graduatedClasses, uniqueClasses, type LayerStyle, type Renderer, type SymbolStyle } from "../lib/symbology";
 import type { Feature, Form } from "../lib/types";
@@ -30,8 +32,15 @@ export default function SymbologyPanel({ form, features, value, onChange }: {
     onChange({ ...value, renderer: n ? graduatedClasses(features, n.id, "green") : { kind: "single" } });
   }
 
+  const points = form.geometry_type === "Point";
   return (
     <div className="stack sym-panel" style={{ gap: 14 }}>
+      {points && (
+        <details className="field sym-marker" open={!!value.icon}>
+          <summary>Marker symbol{value.icon ? " (set)" : ""}</summary>
+          <p className="field-hint">Draw points as a picture instead of a dot. It takes each record's colour unless you pick one. Animations are for indicators and selectors; map points stay still.</p>
+          <SymbolPicker value={value.icon} onChange={(icon) => onChange({ ...value, icon })} motion={false} forMap defaultShape="circle" autoColor="Each record's colour" />
+        </details>)}
       <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend>Draw this layer by</legend>
         <div role="radiogroup" aria-label="Draw this layer by" className="stack" style={{ gap: 6 }}>
@@ -63,6 +72,12 @@ export default function SymbologyPanel({ form, features, value, onChange }: {
               <li key={c.value} className="row" style={{ gap: 8 }}>
                 <input type="color" aria-label={`Colour for ${classLabel(r.field, c.value)}`} value={c.color} onChange={(e) => onChange({ ...value, renderer: { ...r, classes: r.classes.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)) } })} />
                 <span className="grow">{classLabel(r.field, c.value)}</span>
+                {points && (
+                  <details className="sym-class">
+                    <summary aria-label={`Symbol for ${classLabel(r.field, c.value)}`}>{c.icon ? <SymbolIcon spec={{ ...c.icon, shape: c.icon.shape ?? "circle" }} size={24} color={c.color} /> : <span className="meta">Symbol</span>}</summary>
+                    <SymbolPicker value={c.icon} motion={false} forMap defaultShape="circle" autoColor="This value's colour"
+                      onChange={(icon) => onChange({ ...value, renderer: { ...r, classes: r.classes.map((x, j) => (j === i ? { ...x, icon } : x)) } })} />
+                  </details>)}
               </li>
             ))}
             <li className="row" style={{ gap: 8 }}>

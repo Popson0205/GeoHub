@@ -550,6 +550,7 @@ class DashboardWidget(BaseModel):
     show_labels: bool = Field(False, description="List: write the field name before each value")
     all_rows: bool = Field(False, description="Table: show every record instead of `limit`")
     actions: WidgetActions | None = Field(None, description="What a click on a record or a chart group does")
+    symbol: SymbolSpec | None = Field(None, description="Beside the number (kpi, gauge), before each row (list), or in the title bar")
     content: str | None = Field(None, max_length=4000, description="Rich text: **bold**, *italic* and line breaks. Never treated as HTML")
     url: str | None = Field(None, max_length=500, description="Embedded content: an https:// address shown in a sandboxed frame")
     style: WidgetStyle | None = Field(None, description="Font and style for this element only; overrides the dashboard-wide style")
@@ -601,6 +602,17 @@ class DashboardWidget(BaseModel):
         return data
 
 
+class SymbolSpec(BaseModel):
+    """A symbol: a library icon or the author's own SVG, with colour, shape and animation. The SVG is stored as written and rebuilt from
+    an allow-list by every client before it is drawn, so what is stored is never trusted as markup."""
+    model_config = ConfigDict(extra="forbid")
+    icon: str | None = Field(None, max_length=40, pattern=r"^[a-z0-9-]+$")
+    svg: str | None = Field(None, max_length=6000)
+    color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    shape: Literal["plain", "circle", "ring", "square"] | None = None
+    motion: Literal["none", "pulse", "spin", "bounce", "float", "glow", "shake", "ripple", "blink"] | None = None
+
+
 class DashboardControlSource(BaseModel):
     """Where a category selector gets its values when not from the page's own records: a field of another form, or an https list."""
     model_config = ConfigDict(extra="forbid")
@@ -628,6 +640,7 @@ class DashboardControl(BaseModel):
     field: str | None = Field(None, max_length=80)
     source: DashboardControlSource | None = None
     multi: bool = True
+    symbol: SymbolSpec | None = None
 
 
 class DashboardPage(BaseModel):

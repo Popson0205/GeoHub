@@ -7,7 +7,7 @@ import {
   type FieldDef,
 } from "./dashboard";
 import { uuid } from "./forms";
-import type { DashControl, DashPage, Form, Widget, WidgetType } from "./types";
+import type { DashControl, DashPage, Form, SymbolSpec, Widget, WidgetType } from "./types";
 
 export type TemplateId = "monitor" | "standard" | "executive" | "map" | "review" | "trends" | "blank";
 export interface TemplateInfo { id: TemplateId; name: string; description: string }
@@ -61,11 +61,13 @@ function build(id: TemplateId, c: Ctx): Widget[] {
 
   if (id === "monitor") {
     // Reads top to bottom, the way an operations screen does: numbers, then where and what, then the detail. The side column holds the list.
+    // Each key number gets a ring symbol, like the icon on an Esri indicator. They are still; an author can animate one.
+    const ring = (icon: string): { symbol: SymbolSpec } => ({ symbol: { icon, shape: "ring" } });
     const kpis = some<Widget>([
-      total(),
-      nums[0] && mk("kpi", { metric: "sum", metric_field: nums[0].id }),
-      nums[0] && mk("kpi", { metric: "avg", metric_field: nums[0].id }),
-      nums[1] && mk("kpi", { metric: "sum", metric_field: nums[1].id }),
+      { ...total(), ...ring("database") },
+      nums[0] && { ...mk("kpi", { metric: "sum", metric_field: nums[0].id }), ...ring("bolt") },
+      nums[0] && { ...mk("kpi", { metric: "avg", metric_field: nums[0].id }), ...ring("gauge") },
+      nums[1] && { ...mk("kpi", { metric: "sum", metric_field: nums[1].id }), ...ring("tool") },
     ]);
     const main = c.geo ? mk("map") : activity();
     const top = picks[0] ? mk("bar", { field: picks[0].id }) : statusPie();

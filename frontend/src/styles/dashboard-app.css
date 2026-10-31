@@ -469,3 +469,61 @@
 .dset-sec .field.act-targets label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-weight: 400; }
 .dset-sec .field.act-targets input[type="checkbox"] { width: 16px; height: 16px; flex: none; margin: 0; padding: 0; accent-color: var(--green-600); }
 .dset-sec .field.act-targets > .label { font-weight: 600; margin-bottom: 2px; }
+
+/* ---- symbols ------------------------------------------------------------------------------------------------------------------
+   A symbol is a picture (an <img> of checked SVG) inside a wrapper. The wrapper carries the animation, so the picture is never
+   touched. --sym-c is the symbol's colour, used by the ripple and the glow. */
+.sym { position: relative; display: inline-grid; place-items: center; flex: none; line-height: 0; --sym-c: currentColor; }
+.sym img { display: block; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+.sym-m-pulse { animation: sym-pulse 1.8s ease-in-out infinite; }
+.sym-m-spin { animation: sym-spin 6s linear infinite; }
+.sym-m-bounce { animation: sym-bounce 1.1s ease-in-out infinite; }
+.sym-m-float { animation: sym-float 3.4s ease-in-out infinite; }
+.sym-m-glow { animation: sym-glow 2.2s ease-in-out infinite; }
+.sym-m-shake { animation: sym-shake 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.sym-m-blink { animation: sym-blink 1.4s ease-in-out infinite; }
+.sym-m-ripple::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--sym-c); opacity: 0; animation: sym-ripple 2s ease-out infinite; pointer-events: none; }
+@keyframes sym-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+@keyframes sym-spin { to { transform: rotate(360deg); } }
+@keyframes sym-bounce { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-16%); } }
+@keyframes sym-float { 0%, 100% { transform: translateY(-6%); } 50% { transform: translateY(6%); } }
+@keyframes sym-glow { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 50% { filter: drop-shadow(0 0 7px var(--sym-c)); } }
+@keyframes sym-shake { 0%, 55%, 100% { transform: rotate(0); } 62% { transform: rotate(-12deg); } 70% { transform: rotate(10deg); } 78% { transform: rotate(-7deg); } 86% { transform: rotate(4deg); } }
+@keyframes sym-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes sym-ripple { 0% { transform: scale(.85); opacity: .75; } 100% { transform: scale(1.7); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sym, .sym::after { animation: none !important; } }
+
+.kpi-row { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; height: 100%; min-width: 0; }
+.kpi-row.is-gauge { gap: 10px; }
+.head-sym { margin-right: 6px; }
+.il-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 7px 6px; box-sizing: border-box; }
+.il-row .sym { margin-top: 2px; }
+.il-text { display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: left; }
+.il-text > strong, .il-text > small { padding: 0 2px; }
+
+.fdrop.has-icon, .dashboard-canvas-header .fdrop.has-icon { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: center; }
+.fdrop-icon { grid-row: 1 / span 2; align-self: center; }
+.fdrop.has-icon > .fdrop-label, .fdrop.has-icon > details { grid-column: 2; }
+.dashboard-canvas-header .fdrop.has-icon .fdrop-panel { left: 0; }
+
+/* ---- the symbol picker ---- */
+.sympick { display: flex; flex-direction: column; gap: var(--s-2); }
+.sympick-now { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; }
+.sympick-preview { display: grid; place-items: center; min-width: 48px; min-height: 48px; border: 1px dashed var(--line); border-radius: var(--r-md); }
+.sympick-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.sympick-tabs button { padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.sympick-tabs button.is-on { border-bottom-color: var(--green-600); font-weight: 600; }
+.sympick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; max-height: 190px; overflow-y: auto; padding: 2px; }
+.sympick-grid button { display: grid; place-items: center; height: 42px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); color: var(--ink); cursor: pointer; }
+.sympick-grid button:hover { border-color: var(--green-600); }
+.sympick-grid button[aria-pressed="true"] { border-color: var(--green-600); box-shadow: 0 0 0 2px color-mix(in srgb, var(--green-600) 30%, transparent); }
+.sympick-code { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.sympick-file { cursor: pointer; }
+.sympick-opts { display: grid; gap: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--line); }
+.sympick-opts .field { margin: 0; }
+.sym-marker { padding: var(--s-2) 0; border-top: 1px solid var(--line); }
+.sym-marker > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--s-2); }
+.sym-class { margin-left: auto; }
+.sym-class > summary { cursor: pointer; list-style: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-md); display: grid; place-items: center; min-height: 30px; }
+.sym-class > summary::-webkit-details-marker { display: none; }
+.sym-class[open] { flex-basis: 100%; margin: 6px 0; }

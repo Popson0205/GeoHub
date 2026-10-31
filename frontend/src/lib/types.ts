@@ -270,6 +270,13 @@ export interface PublicForm { token: string; form: Form; project_name: string; a
 export type WidgetType = "kpi" | "bar" | "pie" | "line" | "table" | "map" | "gauge" | "list" | "details" | "rich_text" | "embedded";
 export type Metric = "count" | "sum" | "avg" | "min" | "max";
 export type Bucket = "day" | "week" | "month";
+export type SymbolShape = "plain" | "circle" | "ring" | "square";
+export type SymbolMotion = "none" | "pulse" | "spin" | "bounce" | "float" | "glow" | "shake" | "ripple" | "blink";
+/**
+ * A symbol: a picture from the built-in library (`icon`) or the author's own SVG code (`svg`, which wins), with a colour, a shape behind it
+ * and an optional animation. Custom SVG is rebuilt from an allow-list every time it is drawn (see lib/symbols.ts), never used as stored.
+ */
+export interface SymbolSpec { icon?: string; svg?: string; color?: string; shape?: SymbolShape; motion?: SymbolMotion }
 /** What clicking something in an element does. Which other elements a filter changes is kept per page (DashPage.exclude). */
 export interface ClickActions {
   /** Filter the other elements to what was clicked: a record (list, table, map, details) or a group (bar, pie, line). Charts do this unless it is false. */
@@ -301,6 +308,8 @@ export interface Widget {
   show_labels?: boolean;     // list: write "Field name: value" instead of the value alone
   all_rows?: boolean;        // table: every record, not just `limit`
   actions?: ClickActions;
+  /** kpi, gauge: beside the number. list: before each row. Any other element: in its title bar. Missing = none. */
+  symbol?: SymbolSpec;
   content?: string;          // rich_text: **bold**, *italic* and line breaks
   url?: string;              // embedded: an https:// address shown in a frame
   /** Font and style for this element only. Anything set here wins over the dashboard-wide Theme → Fonts and styling. */
@@ -324,6 +333,7 @@ export interface DashControl {
   field?: string;
   source?: OptionSource;     // category only. Missing = records
   multi?: boolean;           // category only. false = one value at a time. Missing = several
+  symbol?: SymbolSpec;       // shown beside the selector's name in the bar
 }
 export interface DashPage {
   id: string; title: string; form_id?: string; widgets: Widget[];

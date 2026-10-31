@@ -7,6 +7,7 @@ import { METRIC_LABEL, activeBuckets, defaultTitle, findField, fmt, isStatic, sl
 import { widgetStyleToProps } from "../../lib/dashboardThemes";
 import { cleanViewerStyle, emptyViewerStyle, statusLayer, type ViewerStyle } from "../../lib/symbology";
 import type { Widget } from "../../lib/types";
+import { SymbolIcon } from "../SymbolIcon";
 import { DataTable, DetailsList, EmbedFrame, EmptyNote, Gauge, ItemList, RichText } from "./Elements";
 
 /** The cog on an element's top corner. */
@@ -73,13 +74,20 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
   switch (d.kind) {
     case "problem": body = <div className="widget-note is-problem" role="status"><p>{d.message}</p>{editing && <button type="button" className="note-action" onClick={onSettings}>Open settings to fix</button>}</div>; break;
     case "empty": body = <EmptyNote d={d} canFix={editing} onFix={onSettings} onClear={onClear} />; break;
-    case "number": body = (
-      <div className={`kpi-value${onItem ? " is-clickable" : ""}`} {...(onItem ? { role: "button", tabIndex: 0, onClick: () => onItem("all"), onKeyDown: (e: { key: string }) => { if (e.key === "Enter" || e.key === " ") onItem("all"); } } : {})}>
-        {d.value == null ? "–" : fmt(d.value)}{d.unit && d.value != null && <span className="kpi-unit">{d.unit}</span>}</div>); break;
-    case "gauge": body = onItem ? <div className="is-clickable" role="button" tabIndex={0} onClick={() => onItem("all")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onItem("all"); }}><Gauge d={d} /></div> : <Gauge d={d} />; break;
+    case "number": {
+      const num = (
+        <div className={`kpi-value${onItem ? " is-clickable" : ""}`} {...(onItem ? { role: "button", tabIndex: 0, onClick: () => onItem("all"), onKeyDown: (e: { key: string }) => { if (e.key === "Enter" || e.key === " ") onItem("all"); } } : {})}>
+          {d.value == null ? "–" : fmt(d.value)}{d.unit && d.value != null && <span className="kpi-unit">{d.unit}</span>}</div>);
+      // A symbol sits beside the number, like the icon on an Esri indicator.
+      body = w.symbol ? <div className="kpi-row"><SymbolIcon spec={w.symbol} size={52} />{num}</div> : num; break;
+    }
+    case "gauge": {
+      const g = onItem ? <div className="is-clickable" role="button" tabIndex={0} onClick={() => onItem("all")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onItem("all"); }}><Gauge d={d} /></div> : <Gauge d={d} />;
+      body = w.symbol ? <div className="kpi-row is-gauge"><SymbolIcon spec={w.symbol} size={44} />{g}</div> : g; break;
+    }
     case "slices": body = d.chart === "bar" ? <BarList data={d.slices} active={active} onPick={onPick} unit={d.unit} /> : d.chart === "pie" ? <Donut data={d.slices} active={active} onPick={onPick} /> : <LineChart data={d.slices} active={active} bucket={w.bucket} onPick={w.field ? onPick : undefined} />; break;
     case "table": body = <DataTable columns={d.columns} rows={d.rows} activeId={activeId} onPick={onItem && ((id, label) => onItem([id], label))} />; break;
-    case "list": body = <ItemList rows={d.rows} labels={w.show_labels} activeId={activeId} onPick={onItem && ((id, label) => onItem([id], label))} />; break;
+    case "list": body = <ItemList rows={d.rows} symbol={w.symbol} labels={w.show_labels} activeId={activeId} onPick={onItem && ((id, label) => onItem([id], label))} />; break;
     case "details": body = <DetailsList items={d.items} onPick={onItem && (() => onItem([d.id]))} />; break;
     case "text": body = <RichText content={d.content} />; break;
     case "embed": body = <EmbedFrame url={d.url} title={title} />; break;
@@ -94,6 +102,7 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
       style={style} {...own.attrs} aria-label={title} onClick={editing ? onSelect : undefined}>
       <div className={`widget-head${grab ? " is-grab" : ""}`} onPointerDown={grab ? (e) => grab("move", e) : undefined}>
         {grab && <span className="grip" aria-hidden="true">⋮⋮</span>}
+        {w.symbol && w.type !== "kpi" && w.type !== "gauge" && w.type !== "list" && <SymbolIcon spec={w.symbol} size={20} className="head-sym" />}
         <h3>{title}</h3>
         {showSource && source && !isStatic(w.type) && !title.startsWith(source.form.name) && <small className="meta">{source.form.name}</small>}
         {!editing && d.kind === "slices" && <Button small variant="ghost" onClick={csv} aria-label={`Download ${title} as CSV`}>CSV</Button>}

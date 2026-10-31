@@ -1,6 +1,7 @@
 // How a layer is drawn on the map viewer (and on a dashboard's map): one colour for everything, a colour per value of a
 // field, or a colour ramp over a number. Pure functions, so the viewer, the dashboard and the tests all agree.
-import type { Feature } from "./types";
+import type { Feature, SymbolSpec } from "./types";
+import { cleanSymbolSpec } from "./symbols";
 
 export const PALETTE = ["#1f6b52", "#2f6fb0", "#d98a0b", "#7b5ea7", "#c0392b", "#0f8b8d", "#b8431a", "#6b7a1f", "#d1478c", "#555f6b"];
 export const RAMPS: { id: string; label: string; colors: string[] }[] = [
@@ -19,10 +20,11 @@ export interface SymbolStyle {
 }
 export type Renderer =
   | { kind: "single" }
-  | { kind: "unique"; field: string; classes: { value: string; color: string }[]; other: string }
+  | { kind: "unique"; field: string; classes: { value: string; color: string; /** A symbol for this value; wins over the layer's. */ icon?: SymbolSpec }[]; other: string }
   | { kind: "graduated"; field: string; ramp: string; classes: { min: number; max: number; color: string }[] };
 
-export interface LayerStyle { visible: boolean; symbol: SymbolStyle; renderer: Renderer }
+/** `icon`: draw points as this symbol instead of a dot (in the class colour unless the symbol has its own). */
+export interface LayerStyle { visible: boolean; symbol: SymbolStyle; renderer: Renderer; icon?: SymbolSpec }
 export const BASEMAPS = [
   { id: "streets", label: "Streets" },
   { id: "light", label: "Light" },
@@ -51,11 +53,12 @@ export function cleanLayer(raw: unknown, index = 0): LayerStyle {
   const rr = r.renderer as Renderer | undefined;
   let renderer: Renderer = { kind: "single" };
   if (rr?.kind === "unique" && typeof rr.field === "string" && Array.isArray(rr.classes)) {
-    renderer = { kind: "unique", field: rr.field, other: hex(rr.other, "#9aa3ad"), classes: rr.classes.slice(0, 30).filter((c) => c && typeof c.value === "string").map((c) => ({ value: c.value, color: hex(c.color, PALETTE[0]) })) };
+    renderer = { kind: "unique", field: rr.field, other: hex(rr.other, "#9aa3ad"), classes: rr.classes.slice(0, 30).filter((c) => c && typeof c.value === "string").map((c) => { const icon = cleanSymbolSpec(c.icon); return { value: c.value, color: hex(c.color, PALETTE[0]), ...(icon ? { icon } : {}) }; }) };
   } else if (rr?.kind === "graduated" && typeof rr.field === "string" && Array.isArray(rr.classes)) {
     renderer = { kind: "graduated", field: rr.field, ramp: typeof rr.ramp === "string" ? rr.ramp : "green", classes: rr.classes.slice(0, 10).filter((c) => c && Number.isFinite(c.min) && Number.isFinite(c.max)).map((c) => ({ min: c.min, max: c.max, color: hex(c.color, PALETTE[0]) })) };
   }
-  return { visible: r.visible !== false, symbol, renderer };
+  const icon = cleanSymbolSpec(r.icon);
+  return { visible: r.visible !== false, symbol, renderer, ...(icon ? { icon } : {}) };
 }
 export function cleanViewerStyle(raw: unknown): ViewerStyle {
   const out = emptyViewerStyle();
@@ -108,6 +111,12 @@ export function colorOf(f: Rec, ls: LayerStyle): string {
   return ls.symbol.color;
 }
 
+/** The symbol a record is drawn with: its class's own, else the layer's, else none (a dot). */
+export function iconOf(f: Rec, ls: LayerStyle): SymbolSpec | undefined {
+  const r = ls.renderer;
+  if (r.kind === "unique") for (const k of valueKeys(get(f, r.field))) { const c = r.classes.find((x) => x.value === k); if (c) return c.icon ?? ls.icon; }
+  return ls.icon;
+}
 /** Classes for "a colour per value": the most common values first, everything else falls into "Other". */
 export function uniqueClasses(features: Rec[], field: string, max = 8): Extract<Renderer, { kind: "unique" }> {
   const counts = new Map<string, number>();
@@ -129,16 +138,16 @@ export function graduatedClasses(features: Rec[], field: string, ramp = "green",
 const round = (n: number) => (Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 100) / 100);
 
 /** One row of a legend: what it means, its colour, and how many records have it. */
-export interface LegendRow { label: string; color: string; count: number }
+export interface LegendRow { label: string; color: string; count: number; icon?: SymbolSpec }
 export function legendOf(features: Rec[], ls: LayerStyle): LegendRow[] {
   const r = ls.renderer;
-  if (r.kind === "single") return [{ label: "All records", color: ls.symbol.color, count: features.length }];
+  if (r.kind === "single") return [{ label: "All records", color: ls.symbol.color, count: features.length, ...(ls.icon ? { icon: ls.icon } : {}) }];
   const rows: LegendRow[] = [];
   if (r.kind === "unique") {
-    for (const c of r.classes) rows.push({ label: classLabel(r.field, c.value), color: c.color, count: features.filter((f) => valueKeys(get(f, r.field)).includes(c.value)).length });
+    for (const c of r.classes) rows.push({ label: classLabel(r.field, c.value), color: c.color, count: features.filter((f) => valueKeys(get(f, r.field)).includes(c.value)).length, ...((c.icon ?? ls.icon) ? { icon: c.icon ?? ls.icon } : {}) });
     const known = new Set(r.classes.map((c) => c.value));
     const other = features.filter((f) => !valueKeys(get(f, r.field)).some((k) => known.has(k))).length;
-    if (other) rows.push({ label: "Other / blank", color: r.other, count: other });
+    if (other) rows.push({ label: "Other / blank", color: r.other, count: other, ...(ls.icon ? { icon: ls.icon } : {}) });
     return rows;
   }
   const last = r.classes.length - 1;

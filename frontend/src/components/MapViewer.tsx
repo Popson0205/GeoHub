@@ -4,7 +4,9 @@ import SymbologyPanel from "./SymbologyPanel";
 import { Button } from "./ui";
 import { STATUS_LABEL, dashboardFields, display } from "../lib/dashboard";
 import { bboxOf } from "../lib/forms";
-import { BASEMAPS, colorOf, layerOf, legendOf, type BasemapId, type LayerStyle, type ViewerStyle } from "../lib/symbology";
+import { SymbolIcon } from "./SymbolIcon";
+import { symbolUri } from "../lib/symbols";
+import { BASEMAPS, colorOf, iconOf, layerOf, legendOf, type BasemapId, type LayerStyle, type ViewerStyle } from "../lib/symbology";
 import type { Feature, Form } from "../lib/types";
 
 /** One layer of the viewer: everything collected with one form. */
@@ -41,10 +43,25 @@ export default function MapViewer({ layers, imagery = [], style, onStyleChange, 
   const [legendOpen, setLegendOpen] = useState(true);
 
   const rows = useMemo(() => layers.map((l, i) => ({ layer: l, ls: layerOf(style, l.id, i), live: l.features.filter((f) => !f.deleted) })), [layers, style]);
-  const mapFeatures = useMemo<MapFeature[]>(() => rows.filter((r) => r.ls.visible).flatMap(({ ls, live }) => live.map((f) => ({
-    id: f.id, geometry: f.geometry, properties: f.properties,
-    look: { color: colorOf(f, ls), outline: ls.symbol.outline, size: ls.symbol.size, width: ls.symbol.width, opacity: ls.symbol.opacity },
-  }))), [rows]);
+  const mapFeatures = useMemo<MapFeature[]>(() => {
+    // One picture per distinct symbol and colour, however many points use it.
+    const pics = new Map<string, { key: string; uri: string } | undefined>();
+    const picture = (f: Feature, ls: LayerStyle, color: string) => {
+      const spec = f.geometry.type === "Point" ? iconOf(f, ls) : undefined;
+      if (!spec) return undefined;
+      const k = JSON.stringify([spec, color]);
+      if (!pics.has(k)) {
+        const uri = symbolUri({ ...spec, motion: undefined }, { color, forMap: true });
+        let h = 5381; for (let i = 0; i < uri.length; i++) h = ((h << 5) + h + uri.charCodeAt(i)) | 0;
+        pics.set(k, uri ? { key: `ic${(h >>> 0).toString(36)}`, uri } : undefined);
+      }
+      return pics.get(k);
+    };
+    return rows.filter((r) => r.ls.visible).flatMap(({ ls, live }) => live.map((f) => {
+      const color = colorOf(f, ls), icon = picture(f, ls, color);
+      return { id: f.id, geometry: f.geometry, properties: f.properties, look: { color, outline: ls.symbol.outline, size: ls.symbol.size, width: ls.symbol.width, opacity: ls.symbol.opacity, ...(icon ? { icon } : {}) } };
+    }));
+  }, [rows]);
   const owner = useMemo(() => { const m = new Map<string, { layer: ViewerLayer; f: Feature }>(); for (const r of rows) for (const f of r.live) m.set(f.id, { layer: r.layer, f }); return m; }, [rows]);
   const sel = picked ? owner.get(picked) ?? null : null;
   const shownImagery = imagery.filter((i) => !hiddenImg.has(i.id));
@@ -100,7 +117,7 @@ export default function MapViewer({ layers, imagery = [], style, onStyleChange, 
             <div key={r.layer.id}>
               {rows.length > 1 && <strong style={{ fontSize: 13 }}>{r.layer.name}</strong>}
               <ul className="plain-list">
-                {legendOf(r.live, r.ls).map((x) => <li key={x.label} className="row" style={{ gap: 8, fontSize: 13 }}><span className="swatch" style={{ background: x.color }} aria-hidden="true" /><span className="grow">{x.label}</span><span className="mono">{x.count}</span></li>)}
+                {legendOf(r.live, r.ls).map((x) => <li key={x.label} className="row" style={{ gap: 8, fontSize: 13 }}>{x.icon ? <SymbolIcon spec={{ ...x.icon, motion: undefined, shape: x.icon.shape ?? "circle" }} size={20} color={x.color} /> : <span className="swatch" style={{ background: x.color }} aria-hidden="true" />}<span className="grow">{x.label}</span><span className="mono">{x.count}</span></li>)}
               </ul>
             </div>
           ))}

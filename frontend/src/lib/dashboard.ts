@@ -5,6 +5,7 @@ import { columnFields } from "./fieldSpec";
 import { uuid } from "./forms";
 import { cleanTheme, cleanWidgetStyle } from "./dashboardThemes";
 import { cleanViewerStyle } from "./symbology";
+import { cleanSymbolSpec } from "./symbols";
 import type { Bucket, ClickActions, DashControl, DashboardConfig, DashPage, Feature, FeatureStatus, FieldType, Form, Metric, OptionSource, TimeFilter, TimePreset, Widget, WidgetType } from "./types";
 
 export const STATUS_LABEL: Record<FeatureStatus, string> = { draft: "Draft", submitted: "Waiting", approved: "Approved", rejected: "Rejected" };
@@ -720,10 +721,12 @@ export function cleanControls(raw: unknown, legacy?: unknown): DashControl[] {
     const field = typeof c.field === "string" && c.field ? c.field.slice(0, 80) : undefined;
     if (c.kind === "date") {
       if (out.some((o) => o.kind === "date")) continue;
-      out.push({ id: c.id, kind: "date", label, ...(field ? { field } : {}) });
+      const symbol = cleanSymbolSpec(c.symbol);
+      out.push({ id: c.id, kind: "date", label, ...(field ? { field } : {}), ...(symbol ? { symbol } : {}) });
     } else if (c.kind === "category") {
       const source = cleanSource(c.source);
-      out.push({ id: c.id, kind: "category", label, ...(field ? { field } : {}), ...(source ? { source } : {}), ...(c.multi === false ? { multi: false } : {}) });
+      const symbol = cleanSymbolSpec(c.symbol);
+      out.push({ id: c.id, kind: "category", label, ...(field ? { field } : {}), ...(source ? { source } : {}), ...(c.multi === false ? { multi: false } : {}), ...(symbol ? { symbol } : {}) });
     } else continue;
     seen.add(c.id);
   }
@@ -762,6 +765,7 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
     ...(x.show_labels === true ? { show_labels: true } : {}),
     ...(x.all_rows === true ? { all_rows: true } : {}),
     ...(cleanActions(x.actions) ? { actions: cleanActions(x.actions) } : {}),
+    ...(cleanSymbolSpec(x.symbol) ? { symbol: cleanSymbolSpec(x.symbol) } : {}),
     ...(typeof x.content === "string" ? { content: x.content } : {}),
     ...(typeof x.url === "string" ? { url: x.url } : {}),
     ...(cleanWidgetStyle(x.style) ? { style: cleanWidgetStyle(x.style) } : {}),

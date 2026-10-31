@@ -226,7 +226,7 @@ function toWireConfig(c: DashboardConfig) {
     pages: c.pages.map((p) => ({
       id: p.id, title: p.title, form_id: p.form_id ?? null,
       controls: (p.controls ?? []).map((c) => ({
-        id: c.id, kind: c.kind, label: c.label, field: c.field ?? null, multi: c.multi !== false,
+        id: c.id, kind: c.kind, label: c.label, field: c.field ?? null, multi: c.multi !== false, symbol: c.symbol ?? null,
         source: c.source?.type === "form" ? { type: "form", form_id: c.source.form_id, field: c.source.field }
           : c.source?.type === "url" ? { type: "url", url: c.source.url, column: c.source.column ?? null } : null,
       })),
@@ -237,7 +237,7 @@ function toWireConfig(c: DashboardConfig) {
         col: x.col ?? null, row: x.row ?? null, cols: x.cols ?? null, rows: x.rows ?? null,
         region: x.region ?? null, target: x.target ?? null, target_field: x.target_field ?? null, title_field: x.title_field ?? null,
         subtitle_fields: x.subtitle_fields ?? [], show_labels: x.show_labels === true, all_rows: x.all_rows === true,
-        actions: x.actions ? { filter: x.actions.filter ?? null, zoom: x.actions.zoom ?? [] } : null,
+        actions: x.actions ? { filter: x.actions.filter ?? null, zoom: x.actions.zoom ?? [] } : null, symbol: x.symbol ?? null,
         content: x.content ?? null, url: x.url ?? null,
         style: x.style ?? null, map_style: x.map_style ?? null,
       })),

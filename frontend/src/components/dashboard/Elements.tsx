@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { parseRich, fmt, type WidgetData } from "../../lib/dashboard";
-import type { WidgetType } from "../../lib/types";
+import { SymbolIcon } from "../SymbolIcon";
+import type { SymbolSpec, WidgetType } from "../../lib/types";
 
 type Data<K extends WidgetData["kind"]> = Extract<WidgetData, { kind: K }>;
 
@@ -83,15 +84,17 @@ function useWindowed(total: number, resetKey: string) {
  * With `onPick` a row is a button: clicking it does whatever the element's actions say. `activeId` is the record that was last clicked
  * here or in another element.
  */
-export function ItemList({ rows, labels = false, activeId, onPick }: { rows: Data<"list">["rows"]; labels?: boolean; activeId?: string | null; onPick?: (id: string, title: string) => void }) {
+export function ItemList({ rows, labels = false, activeId, onPick, symbol }: { rows: Data<"list">["rows"]; labels?: boolean; activeId?: string | null; onPick?: (id: string, title: string) => void; symbol?: SymbolSpec }) {
   const { shown, onScroll, more } = useWindowed(rows.length, rows.length ? `${rows[0].id}|${rows.length}` : "");
   const active = useRef<HTMLLIElement>(null);
   // A record picked in another element (a map point, a table row) is brought into view here.
   useEffect(() => { active.current?.scrollIntoView?.({ block: "nearest" }); }, [activeId]);
-  const body = (r: Data<"list">["rows"][number]) => (<>
+  const text = (r: Data<"list">["rows"][number]) => (<>
     <strong>{r.title}</strong>
     {r.lines.map((l, i) => <small key={i}>{labels && <span className="il-label">{l.label}: </span>}{l.value}</small>)}
   </>);
+  // With a symbol, each row is the picture and then the text beside it.
+  const body = (r: Data<"list">["rows"][number]) => (symbol ? <span className="il-row"><SymbolIcon spec={symbol} size={34} /><span className="il-text">{text(r)}</span></span> : text(r));
   return (
     <ul className="item-list" onScroll={onScroll} aria-label={`${rows.length} records`}>
       {rows.slice(0, shown).map((r) => {

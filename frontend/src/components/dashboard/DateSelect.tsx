@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Dropdown } from "./FilterDropdown";
 import { LAST_PRESETS, MAX_LAST_DAYS, cleanDays, lastLabel } from "../../lib/dashboard";
 
 /** The date filter: All time, Today, or the last N days. Nothing else to fill in, so it is one tap for the usual choices. */
-export function DateSelect({ id, label, days, onChange }: { id: string; label: string; days: number | null; onChange: (days: number | null) => void }) {
+export function DateSelect({ id, label, days, onChange, icon }: { id: string; label: string; days: number | null; onChange: (days: number | null) => void; icon?: ReactNode }) {
   const [custom, setCustom] = useState("");
   const typed = cleanDays(custom);
   const isPreset = days != null && LAST_PRESETS.some((p) => p.days === days);
   const apply = (close: () => void) => { if (typed != null) { onChange(typed); setCustom(""); close(); } };
   return (
-    <Dropdown label={label} value={days == null ? "All time" : lastLabel(days)} active={days != null}>
+    <Dropdown label={label} value={days == null ? "All time" : lastLabel(days)} active={days != null} icon={icon}>
       {(close) => (<>
         <ul>
           {[{ days: null as number | null, label: "All time" }, ...LAST_PRESETS].map((p) => (

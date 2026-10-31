@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Button } from "../ui";
+import { SymbolIcon } from "../SymbolIcon";
 import { DateSelect } from "./DateSelect";
 import { FilterDropdown } from "./FilterDropdown";
 import { useExternalValues } from "./externalValues";
@@ -26,7 +27,7 @@ function CategoryControl({ c, source, forms, features, filters, effective, now, 
   const own = (e: Filters["equals"][number]) => e.field === def.id && (e.src === c.id || e.src === undefined);
   const toggle = (o: { key: string; label: string }) => setFilters((f) => (c.multi === false ? { ...f, equals: [...f.equals.filter((e) => !own(e)), entry(o)] } : toggleEquals(f, entry(o))));
   const status = web.status === "loading" ? { kind: "loading" as const, message: web.message } : web.status === "error" ? { kind: "error" as const, message: web.message } : undefined;
-  return <FilterDropdown id={`ctl-${c.id}`} label={label} options={options} selected={selected} multi={c.multi !== false} listed={listed} status={status}
+  return <FilterDropdown icon={c.symbol ? <SymbolIcon spec={c.symbol} size={28} /> : undefined} id={`ctl-${c.id}`} label={label} options={options} selected={selected} multi={c.multi !== false} listed={listed} status={status}
     onToggle={toggle} onClear={() => setFilters((f) => ({ ...f, equals: f.equals.filter((e) => !own(e)) }))} />;
 }
 
@@ -45,7 +46,7 @@ export function HeaderControls({ controls, source, forms, features, filters, eff
   return (
     <div className="dash-controls" role="group" aria-label="Filters">
       {controls.map((c) => c.kind === "date"
-        ? <DateSelect key={c.id} id={`ctl-${c.id}`} label={controlLabel(c, [])} days={filters.last?.days ?? null}
+        ? <DateSelect key={c.id} icon={c.symbol ? <SymbolIcon spec={c.symbol} size={28} /> : undefined} id={`ctl-${c.id}`} label={controlLabel(c, [])} days={filters.last?.days ?? null}
             onChange={(days) => setFilters((f) => ({ ...f, last: days == null ? undefined : { days, src: c.id, ...(c.field && c.field !== UPDATED_ID ? { field: c.field } : {}) } }))} />
         : source && <CategoryControl key={c.id} c={c} source={source} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters} />)}
       {editing && unfinished.map((u) => <button key={u.id} type="button" className="dash-control-todo" onClick={onEdit} title={u.message}>{u.label}: finish setting up</button>)}

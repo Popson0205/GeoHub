@@ -15,7 +15,7 @@ function queryHandles(map: maplibregl.Map, point: maplibregl.PointLike) {
 }
 
 /** How one feature is drawn when its layer has its own symbology. Without it the feature is coloured by `state`. */
-export interface FeatureLook { color: string; outline?: string; size?: number; width?: number; opacity?: number }
+export interface FeatureLook { color: string; outline?: string; size?: number; width?: number; opacity?: number; /** Draw a point as this picture instead of a dot. `key` names the image, `uri` is it as a data address. */ icon?: { key: string; uri: string } }
 export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected"; /** Own symbology: wins over `state`. */ look?: FeatureLook }
 export interface MapImagery { id: string; url: string; maxzoom?: number; opacity?: number; attribution?: string }
 export type Bbox = [number, number, number, number];
@@ -102,7 +102,7 @@ const STYLE: StyleSpecification = {
   },
   layers: [{ id: "base", type: "raster", source: "base" }, { id: "base-light", type: "raster", source: "base-light", layout: { visibility: "none" } }],
 };
-const FEATURE_LAYERS = ["features-fill", "features-line", "features-point"];
+const FEATURE_LAYERS = ["features-fill", "features-line", "features-point", "features-icon"];
 const empty = { type: "FeatureCollection", features: [] };
 const GREEN = "#1f6b52";
 const ORANGE = "#b8431a";
@@ -119,7 +119,8 @@ const byState = (): maplibregl.ExpressionSpecification => ["match", ["get", "sta
 function lookProps(l?: FeatureLook): Record<string, string | number> {
   if (!l) return {};
   const a = l.opacity ?? 1;
-  return { _c: l.color, _o: l.outline ?? "#ffffff", _s: l.size ?? 8, _w: l.width ?? 3, _a: a, _fa: a * 0.4 };
+  // _i names the picture a point is drawn with; _is scales it (the picture is 32 px at 1, and a dot of size 8 is about 26 px across).
+  return { _c: l.color, _o: l.outline ?? "#ffffff", _s: l.size ?? 8, _w: l.width ?? 3, _a: a, _fa: a * 0.4, ...(l.icon ? { _i: l.icon.key, _is: (l.size ?? 8) / 10 } : {}) };
 }
 const own = (name: string, fallback: unknown) => ["coalesce", ["get", name], fallback] as unknown as maplibregl.ExpressionSpecification;
 function asFC(features: MapFeature[]) {
@@ -192,11 +193,16 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
       map.addLayer({ id: "features-line", type: "line", source: "features", filter: ["!=", ["geometry-type"], "Point"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": own("_c", byState()), "line-width": own("_w", 3), "line-opacity": own("_a", 1) } });
       map.addLayer({
         id: "features-point", type: "circle", source: "features", filter: ["==", ["geometry-type"], "Point"],
-        paint: { "circle-radius": own("_s", 8), "circle-color": own("_c", byState()), "circle-stroke-color": own("_o", "#fff"), "circle-stroke-width": 2.5, "circle-opacity": own("_a", 1) },
+        // A point drawn as a picture (it has _i) gets no dot; the picture goes in the "features-icon" layer below.
+        paint: { "circle-radius": ["case", ["has", "_i"], 0, own("_s", 8)] as never, "circle-color": own("_c", byState()), "circle-stroke-color": own("_o", "#fff"), "circle-stroke-width": ["case", ["has", "_i"], 0, 2.5] as never, "circle-opacity": own("_a", 1) },
       });
       map.addLayer({ id: "sel-fill", type: "fill", source: "selected", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ORANGE, "fill-opacity": 0.3 } });
       map.addLayer({ id: "sel-line", type: "line", source: "selected", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": ORANGE, "line-width": 4 } });
       map.addLayer({ id: "sel-point", type: "circle", source: "selected", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 11, "circle-color": ORANGE, "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
+      map.addLayer({
+        id: "features-icon", type: "symbol", source: "features", filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "_i"]],
+        layout: { "icon-image": ["get", "_i"], "icon-size": own("_is", 0.8), "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-anchor": "center" },
+      });
       // The shape being drawn, like a sketch in a GIS: a translucent fill, a solid line with a white edge so it shows on any imagery,
       // a dashed segment that follows the pointer, and clear vertices (the first one is green: click it to close a polygon).
       map.addLayer({ id: "draft-fill", type: "fill", source: "draft", filter: ["==", ["get", "kind"], "fill"], paint: { "fill-color": SKETCH, "fill-opacity": 0.22 } });
@@ -365,6 +371,22 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
     else return;
     setVertices([]);
   }
+  // Pictures for points drawn as symbols: each is loaded once and added to the map under its key. A failure just leaves that point out
+  // of the picture layer; nothing else on the map is affected.
+  const loadingIcons = useRef(new Set<string>());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    for (const f of features) {
+      const ic = f.look?.icon;
+      if (!ic || loadingIcons.current.has(ic.key) || map.hasImage(ic.key)) continue;
+      loadingIcons.current.add(ic.key);
+      const img = new Image(64, 64);
+      img.onload = () => { try { if (!map.hasImage(ic.key)) map.addImage(ic.key, img, { pixelRatio: 2 }); map.triggerRepaint(); } catch { /* keep the dot's place empty */ } loadingIcons.current.delete(ic.key); };
+      img.onerror = () => { loadingIcons.current.delete(ic.key); };
+      img.src = ic.uri;
+    }
+  }, [features, ready]);
   useEffect(() => { setVertices([]); pointer.current = null; if (!drawMode) snapShow.current?.(null); }, [drawMode]);
 
   // Keyboard while drawing: Enter finishes, Backspace / Ctrl+Z removes the last point, Esc cancels the shape, then the tool.
