@@ -15,7 +15,7 @@ function queryHandles(map: maplibregl.Map, point: maplibregl.PointLike) {
 }
 
 /** How one feature is drawn when its layer has its own symbology. Without it the feature is coloured by `state`. */
-export interface FeatureLook { color: string; outline?: string; size?: number; width?: number; opacity?: number; /** Draw a point as this picture instead of a dot. `key` names the image, `uri` is it as a data address. */ icon?: { key: string; uri: string } }
+export interface FeatureLook { color: string; outline?: string; size?: number; width?: number; opacity?: number; /** Draw a point as this picture instead of a dot. `key` names the image, `uri` is it as a data address. */ icon?: { key: string; uri: string; /** icon-size multiplier (the picture is 32 px at 1). Missing = follows `size`. */ scale?: number } }
 export interface MapFeature { id: string; geometry: Geometry; properties?: Props; pending?: boolean; /** Colours the feature: new (amber) or changed but not saved (blue). */ state?: "new" | "mod" | "clean" | "review" | "rejected"; /** Own symbology: wins over `state`. */ look?: FeatureLook }
 export interface MapImagery { id: string; url: string; maxzoom?: number; opacity?: number; attribution?: string }
 export type Bbox = [number, number, number, number];
@@ -120,7 +120,7 @@ function lookProps(l?: FeatureLook): Record<string, string | number> {
   if (!l) return {};
   const a = l.opacity ?? 1;
   // _i names the picture a point is drawn with; _is scales it (the picture is 32 px at 1, and a dot of size 8 is about 26 px across).
-  return { _c: l.color, _o: l.outline ?? "#ffffff", _s: l.size ?? 8, _w: l.width ?? 3, _a: a, _fa: a * 0.4, ...(l.icon ? { _i: l.icon.key, _is: (l.size ?? 8) / 10 } : {}) };
+  return { _c: l.color, _o: l.outline ?? "#ffffff", _s: l.size ?? 8, _w: l.width ?? 3, _a: a, _fa: a * 0.4, ...(l.icon ? { _i: l.icon.key, _is: l.icon.scale ?? (l.size ?? 8) / 10 } : {}) };
 }
 const own = (name: string, fallback: unknown) => ["coalesce", ["get", name], fallback] as unknown as maplibregl.ExpressionSpecification;
 function asFC(features: MapFeature[]) {

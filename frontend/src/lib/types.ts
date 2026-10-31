@@ -276,7 +276,7 @@ export type SymbolMotion = "none" | "pulse" | "spin" | "bounce" | "float" | "glo
  * A symbol: a picture from the built-in library (`icon`) or the author's own SVG code (`svg`, which wins), with a colour, a shape behind it
  * and an optional animation. Custom SVG is rebuilt from an allow-list every time it is drawn (see lib/symbols.ts), never used as stored.
  */
-export interface SymbolSpec { icon?: string; svg?: string; color?: string; shape?: SymbolShape; motion?: SymbolMotion }
+export interface SymbolSpec { icon?: string; svg?: string; color?: string; shape?: SymbolShape; motion?: SymbolMotion; /** Width and height in pixels (12 to 160). Missing = what suits the place it is shown. */ size?: number }
 /** What clicking something in an element does. Which other elements a filter changes is kept per page (DashPage.exclude). */
 export interface ClickActions {
   /** Filter the other elements to what was clicked: a record (list, table, map, details) or a group (bar, pie, line). Charts do this unless it is false. */

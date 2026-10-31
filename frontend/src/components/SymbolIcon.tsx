@@ -26,11 +26,13 @@ export function SymbolIcon({ spec, size = 24, color, label, className }: { spec?
   const uri = useMemo(() => symbolUri(spec, { color: isHex(color) ? color : inherited }), [spec, color, inherited]);
   if (!spec || (!spec.icon && !spec.svg)) return null;
   const motion = spec.motion && spec.motion !== "none" ? ` sym-m-${spec.motion}` : "";
+  // The author's size wins over the size that suits the place (a title bar, a list row, an indicator).
+  const px = spec.size ?? size;
   const c = isHex(spec.color) ? spec.color : isHex(color) ? color : inherited;
   return (
-    <span ref={ref} className={`sym${motion}${className ? ` ${className}` : ""}`} style={{ width: size, height: size, ...(c ? { "--sym-c": c } : {}) } as CSSProperties}
+    <span ref={ref} className={`sym${motion}${className ? ` ${className}` : ""}`} style={{ width: px, height: px, "--sym-px": `${px}px`, ...(c ? { "--sym-c": c } : {}) } as CSSProperties}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}>
-      {uri && <img src={uri} alt="" width={size} height={size} draggable={false} />}
+      {uri && <img src={uri} alt="" width={px} height={px} draggable={false} />}
     </span>
   );
 }

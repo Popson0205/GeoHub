@@ -11,7 +11,7 @@ export const MOTIONS: { id: SymbolMotion; label: string }[] = [
   { id: "none", label: "None" }, { id: "pulse", label: "Pulse" }, { id: "spin", label: "Spin" }, { id: "bounce", label: "Bounce" }, { id: "float", label: "Float" },
   { id: "glow", label: "Glow" }, { id: "shake", label: "Shake" }, { id: "ripple", label: "Ripple" }, { id: "blink", label: "Blink" },
 ];
-export const MAX_SVG = 6000, MAX_SVG_MAP = 3000;
+export const MAX_SVG = 6000, MAX_SVG_MAP = 3000, MIN_SIZE = 12, MAX_SIZE = 160;
 
 export interface SymbolIconDef { id: string; label: string; tags: string; body: string }
 const I = (id: string, label: string, tags: string, body: string): SymbolIconDef => ({ id, label, tags, body });
@@ -61,7 +61,13 @@ export type SvgResult =
   | { ok: true; viewBox: string; /** presentation attributes of the outer <svg> (fill, stroke ...), already checked */ root: string; inner: string; notes: string[] }
   | { ok: false; error: string };
 
-const SHAPE_TAGS = new Set(["g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "defs", "linearGradient", "radialGradient", "stop"]);
+// Shapes and gradients; short text; a few cheap filter effects (blur, shadow, glow); and animation of a short list of attributes.
+// Not allowed, ever: script, style, links, images, foreignObject, <use>, and the filter effects that load or compute heavily.
+const SHAPE_TAGS = new Set([
+  "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "defs", "linearGradient", "radialGradient", "stop", "text",
+  "filter", "feGaussianBlur", "feOffset", "feColorMatrix", "feFlood", "feComposite", "feBlend", "feDropShadow", "feMerge", "feMergeNode",
+  "animate", "animateTransform",
+]);
 const NUM = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?(?:%|px)?$/;
 const COLOR = /^(?:none|currentColor|transparent|#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\([0-9\s.,%/-]{1,40}\)|[a-zA-Z]{3,20})$/;
 const URL_REF = /^url\(#[A-Za-z][A-Za-z0-9_-]{0,30}\)$/;
@@ -79,9 +85,56 @@ const ATTR: Record<string, (v: string) => boolean> = {
   "stroke-linecap": oneOf("butt", "round", "square"), "stroke-linejoin": oneOf("miter", "round", "bevel"),
   "stroke-dasharray": (v) => /^[0-9.,\s%-]{1,60}$/.test(v), gradientUnits: oneOf("userSpaceOnUse", "objectBoundingBox"),
   id: (v) => /^[A-Za-z][A-Za-z0-9_-]{0,30}$/.test(v),
+  filter: (v) => v === "none" || URL_REF.test(v),
 };
+// ---- attributes that only mean something on one kind of element (checked there instead of the general table) ----
+const num = (v: string) => NUM.test(v);
+const fontFamily = (v: string) => /^[A-Za-z0-9 ,'\-]{1,60}$/.test(v);
+const TEXT_ATTR: Record<string, (v: string) => boolean> = {
+  ...ATTR, dx: num, dy: num, "text-anchor": oneOf("start", "middle", "end"), "font-family": fontFamily, "font-size": num, "letter-spacing": num,
+  "font-weight": oneOf("normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"), "font-style": oneOf("normal", "italic"),
+  "dominant-baseline": oneOf("auto", "middle", "central", "hanging", "alphabetic", "text-top", "text-bottom"),
+};
+const FE_IN = (v: string) => /^[A-Za-z][A-Za-z0-9_-]{0,30}$/.test(v);
+const STD = (v: string) => /^\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?)?$/.test(v) && v.split(/\s+/).every((x) => parseFloat(x) <= 30);   // a bigger blur is slow for no gain
+const fe = (extra: Record<string, (v: string) => boolean> = {}): Record<string, (v: string) => boolean> => ({ in: FE_IN, in2: FE_IN, result: FE_IN, x: num, y: num, width: num, height: num, ...extra });
+// Animation. SMIL runs inside an <img>, where scripts cannot, so what it can change is limited to a few drawing attributes, with values that are plain
+// numbers, words and colours; durations are not allowed to be so short that they burn the processor.
+const seconds = (v: string): number | null => { const m = /^(\d+(?:\.\d+)?)(ms|s)?$/.exec(v); return m ? parseFloat(m[1]) * (m[2] === "ms" ? 0.001 : 1) : null; };
+const DUR = (v: string) => { const s = seconds(v); return s != null && s >= 0.2 && s <= 600; };
+const BEGIN = (v: string) => { const s = seconds(v); return s != null && s <= 60; };
+const REPEAT = (v: string) => v === "indefinite" || (/^\d+$/.test(v) && +v >= 1 && +v <= 1000);
+const VALS = (v: string) => /^[0-9A-Za-z#%.,;\s-]{1,300}$/.test(v) && !/javascript|data|url/i.test(v);
+const ANIMATABLE = ["r", "cx", "cy", "rx", "ry", "x", "y", "width", "height", "opacity", "fill-opacity", "stroke-opacity", "stroke-width", "stroke-dashoffset", "fill", "stroke", "stop-color", "offset"];
+const ANIM_COMMON: Record<string, (v: string) => boolean> = {
+  values: VALS, from: VALS, to: VALS, dur: DUR, begin: BEGIN, repeatCount: REPEAT, fill: oneOf("freeze", "remove"), additive: oneOf("replace", "sum"),
+  calcMode: oneOf("linear", "discrete", "paced", "spline"), keyTimes: (v) => /^[0-9.;\s]{1,100}$/.test(v), keySplines: (v) => /^[0-9.;\s,]{1,200}$/.test(v),
+};
+const TAG_ATTR: Record<string, Record<string, (v: string) => boolean>> = {
+  text: TEXT_ATTR,
+  filter: { id: ATTR.id, x: num, y: num, width: num, height: num, filterUnits: oneOf("userSpaceOnUse", "objectBoundingBox") },
+  feGaussianBlur: fe({ stdDeviation: STD }), feOffset: fe({ dx: num, dy: num }),
+  feColorMatrix: fe({ type: oneOf("matrix", "saturate", "hueRotate", "luminanceToAlpha"), values: (v) => /^[-0-9.eE\s,]{1,200}$/.test(v) }),
+  feFlood: fe({ "flood-color": color, "flood-opacity": num }),
+  feComposite: fe({ operator: oneOf("over", "in", "out", "atop", "xor", "arithmetic"), k1: num, k2: num, k3: num, k4: num }),
+  feBlend: fe({ mode: oneOf("normal", "multiply", "screen", "darken", "lighten") }),
+  feDropShadow: fe({ dx: num, dy: num, stdDeviation: STD, "flood-color": color, "flood-opacity": num }),
+  feMerge: {}, feMergeNode: { in: FE_IN },
+  animate: { ...ANIM_COMMON, attributeName: oneOf(...ANIMATABLE) },
+  animateTransform: { ...ANIM_COMMON, attributeName: oneOf("transform"), type: oneOf("translate", "scale", "rotate", "skewX", "skewY") },
+};
+/** Text that sits inside a <text>: plain characters only. Entities are decoded, control and direction-changing characters removed, and it is escaped again on the way out. */
+function cleanText(raw: string): string {
+  const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+  const dec = raw.replace(/&#x([0-9a-fA-F]{1,6});|&#(\d{1,7});|&(amp|lt|gt|quot|apos);|&[^;\s]{1,10};?/g, (_m, hx?: string, dc?: string, nm?: string) => {
+    if (hx || dc) { const cp = hx ? parseInt(hx, 16) : parseInt(dc!, 10); return cp >= 32 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? String.fromCodePoint(cp) : ""; }
+    return nm ? named[nm] : "";
+  });
+  return dec.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40);
+}
+const escText = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const ROOT_ATTRS = new Set(["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"]);
-const ID_TAGS = new Set(["linearGradient", "radialGradient"]);
+const ID_TAGS = new Set(["linearGradient", "radialGradient", "filter"]);
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const TAG_START = /<([A-Za-z][A-Za-z0-9:_-]*)/y, ATTR_RE = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/y;
 
@@ -93,12 +146,18 @@ export function sanitizeSvg(code: unknown, maxLen = MAX_SVG): SvgResult {
   const dropped = new Set<string>();
   const out: string[] = [];
   const stack: { name: string; kept: boolean }[] = [];
-  let skip = 0, kept = 0, i = 0, viewBox = "", w = "", h = "", root = "", sawRoot = false;
+  let skip = 0, kept = 0, i = 0, viewBox = "", w = "", h = "", root = "", sawRoot = false, texts = 0, textChars = 0;
   const bad = (msg: string): SvgResult => ({ ok: false, error: msg });
 
   while (i < s.length) {
     const lt = s.indexOf("<", i);
     if (lt < 0) break;
+    // Words between the tags matter only inside a <text> we are keeping.
+    const holder = stack[stack.length - 1], chunk = s.slice(i, lt);
+    if (holder && holder.kept && holder.name === "text" && skip === 0 && chunk.trim()) {
+      const t = cleanText(chunk);
+      if (t && (textChars += t.length) <= 80) out.push(escText(t));
+    }
     if (s.startsWith("</", lt)) {
       const gt = s.indexOf(">", lt);
       if (gt < 0) return bad("A closing tag is not finished (missing >).");
@@ -137,14 +196,14 @@ export function sanitizeSvg(code: unknown, maxLen = MAX_SVG): SvgResult {
       continue;
     }
     if (skip > 0 || !parentKept) { if (!self) { stack.push({ name, kept: false }); skip++; } continue; }
-    if (!SHAPE_TAGS.has(name) || ++kept > 150) {
+    if (!SHAPE_TAGS.has(name) || ++kept > 150 || (name === "text" && ++texts > 5)) {
       dropped.add(`<${name}>`);
       if (!self) { stack.push({ name, kept: false }); skip++; }
       continue;
     }
     let tag = `<${name}`;
     for (const [k, raw] of attrs) {
-      const v = raw.trim(), ok = ATTR[k];
+      const v = raw.trim(), ok = (TAG_ATTR[name] ?? ATTR)[k];
       if (!ok || !ok(v) || (k === "id" && !ID_TAGS.has(name))) { dropped.add(k); continue; }
       tag += ` ${k}="${esc(v)}"`;
     }
@@ -154,7 +213,7 @@ export function sanitizeSvg(code: unknown, maxLen = MAX_SVG): SvgResult {
   if (!sawRoot) return bad("The code has to start with an <svg> element.");
   if (stack.length) return bad(`The SVG is not well formed: <${stack[stack.length - 1].name}> is never closed.`);
   const inner = out.join("");
-  if (!/<(path|circle|ellipse|rect|line|polyline|polygon)\b/.test(inner)) return bad("Nothing to draw: use path, circle, rect, line, polygon or similar shapes (text, images and filters are not supported).");
+  if (!/<(path|circle|ellipse|rect|line|polyline|polygon|text)\b/.test(inner)) return bad("Nothing to draw: use path, circle, rect, line, polygon, or text. (Images, scripts and styles are not supported.)");
   const vb = /^-?\d+(?:\.\d+)?[\s,]+-?\d+(?:\.\d+)?[\s,]+\d+(?:\.\d+)?[\s,]+\d+(?:\.\d+)?$/.test(viewBox) ? viewBox.replace(/,/g, " ").split(/\s+/) : null;
   const num = (v: string) => (NUM.test(v) ? parseFloat(v) : NaN);
   const box = vb && parseFloat(vb[2]) > 0 && parseFloat(vb[3]) > 0 ? vb.join(" ") : num(w) > 0 && num(h) > 0 ? `0 0 ${num(w)} ${num(h)}` : "0 0 24 24";
@@ -190,7 +249,8 @@ export function composeSymbolSvg(spec: SymbolSpec | undefined, opts: { color?: s
       : shape === "ring" ? `<circle cx="24" cy="24" r="21.5" fill="${c}" fill-opacity="0.14" stroke="${c}" stroke-width="3"/>`
       : shape === "square" ? `<rect x="2" y="2" width="44" height="44" rx="11" fill="${c}"${edge}/>` : "";
     const fg = shape === "circle" || shape === "square" ? "#ffffff" : c;
-    const [x, size] = shape === "plain" ? [6, 36] : [11, 26];
+    // With no shape behind it the picture uses nearly the whole box; inside a shape it leaves room for the shape.
+    const [x, size] = shape === "plain" ? [2, 44] : [11, 26];
     res = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">${bg}<svg x="${x}" y="${x}" width="${size}" height="${size}" viewBox="${vb}" color="${fg}"${rootAttrs}>${inner}</svg></svg>`;
   }
   if (cache.size > 400) cache.clear();
@@ -210,8 +270,10 @@ export function cleanSymbolSpec(raw: unknown): SymbolSpec | undefined {
   const icon = typeof r.icon === "string" && /^[a-z0-9-]{1,40}$/.test(r.icon) ? r.icon : undefined;
   const svg = typeof r.svg === "string" && r.svg.trim() && r.svg.length <= MAX_SVG ? r.svg : undefined;
   if (!icon && !svg) return undefined;
+  const size = typeof r.size === "number" && Number.isFinite(r.size) ? Math.round(r.size) : undefined;
   return {
     ...(icon ? { icon } : {}), ...(svg ? { svg } : {}),
+    ...(size && size >= MIN_SIZE && size <= MAX_SIZE ? { size } : {}),
     ...(isHex(r.color) ? { color: r.color } : {}),
     ...(SHAPES.some((s) => s.id === r.shape) ? { shape: r.shape as SymbolShape } : {}),
     ...(MOTIONS.some((m) => m.id === r.motion) && r.motion !== "none" ? { motion: r.motion as SymbolMotion } : {}),

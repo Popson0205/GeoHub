@@ -45,7 +45,7 @@ export default function MapViewer({ layers, imagery = [], style, onStyleChange, 
   const rows = useMemo(() => layers.map((l, i) => ({ layer: l, ls: layerOf(style, l.id, i), live: l.features.filter((f) => !f.deleted) })), [layers, style]);
   const mapFeatures = useMemo<MapFeature[]>(() => {
     // One picture per distinct symbol and colour, however many points use it.
-    const pics = new Map<string, { key: string; uri: string } | undefined>();
+    const pics = new Map<string, { key: string; uri: string; scale?: number } | undefined>();
     const picture = (f: Feature, ls: LayerStyle, color: string) => {
       const spec = f.geometry.type === "Point" ? iconOf(f, ls) : undefined;
       if (!spec) return undefined;
@@ -53,7 +53,7 @@ export default function MapViewer({ layers, imagery = [], style, onStyleChange, 
       if (!pics.has(k)) {
         const uri = symbolUri({ ...spec, motion: undefined }, { color, forMap: true });
         let h = 5381; for (let i = 0; i < uri.length; i++) h = ((h << 5) + h + uri.charCodeAt(i)) | 0;
-        pics.set(k, uri ? { key: `ic${(h >>> 0).toString(36)}`, uri } : undefined);
+        pics.set(k, uri ? { key: `ic${(h >>> 0).toString(36)}`, uri, ...(spec.size ? { scale: spec.size / 32 } : {}) } : undefined);
       }
       return pics.get(k);
     };

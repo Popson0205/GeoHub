@@ -78,7 +78,7 @@ function ControlEditor({ c, defs, forms, onChange, onRemove }: { c: DashControl;
       </>)}
       <details className="sym-marker" open={!!c.symbol}>
         <summary>Symbol{c.symbol ? " (set)" : ""}</summary>
-        <SymbolPicker value={c.symbol} onChange={(symbol) => onChange({ ...c, symbol })} />
+        <SymbolPicker value={c.symbol} onChange={(symbol) => onChange({ ...c, symbol })} defaultSize={28} />
       </details>
       {problem && <p className="hint" role="status">{problem}</p>}
     </div>

@@ -527,3 +527,15 @@
 .sym-class > summary { cursor: pointer; list-style: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--r-md); display: grid; place-items: center; min-height: 30px; }
 .sym-class > summary::-webkit-details-marker { display: none; }
 .sym-class[open] { flex-basis: 100%; margin: 6px 0; }
+
+/* Symbol size: the author's size is kept, but a symbol never takes the number's or the text's room. The number's font size is fixed
+   (see .dash-app .kpi-value), so a bigger symbol only ever shrinks to the space that is left. */
+.kpi-row { flex-wrap: nowrap; overflow: hidden; }
+.kpi-row > .sym { flex: 0 1 auto; max-height: 100%; max-width: 48%; aspect-ratio: 1; }
+.kpi-row > .sym img { object-fit: contain; }
+.kpi-row .kpi-value, .kpi-row .gauge { flex: none; white-space: nowrap; }
+.il-row > .sym { max-width: 45%; }
+.head-sym { max-height: 40px; }
+.sympick-num { width: 64px; }
+/* Where the room is limited (an indicator's row), the symbol is as big as the author set but never taller than the space, and stays square. */
+.kpi-row > .sym { width: auto !important; height: min(var(--sym-px), 100%) !important; }

@@ -202,7 +202,7 @@ export function WidgetSettings({ w, rect, manual = false, onRect, defs, index, c
         {w.type !== "rich_text" && w.type !== "embedded" && (
           <Section title="Symbol">
             <p className="meta">{w.type === "kpi" || w.type === "gauge" ? "Shown beside the number." : w.type === "list" ? "Shown before each row." : "Shown next to the title. Optional."}</p>
-            <SymbolPicker value={w.symbol} onChange={(symbol) => onChange({ symbol })} defaultShape={w.type === "kpi" || w.type === "gauge" ? "ring" : "plain"} />
+            <SymbolPicker value={w.symbol} onChange={(symbol) => onChange({ symbol })} defaultShape={w.type === "kpi" || w.type === "gauge" ? "ring" : "plain"} defaultSize={w.type === "kpi" ? 52 : w.type === "gauge" ? 44 : w.type === "list" ? 34 : 20} />
           </Section>)}
 
         {kind && (

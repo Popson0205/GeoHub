@@ -1,14 +1,15 @@
 import { useId, useMemo, useState } from "react";
 import { SymbolIcon } from "./SymbolIcon";
-import { ICONS, MAX_SVG, MAX_SVG_MAP, MOTIONS, SHAPES, isHex, sanitizeSvg } from "../lib/symbols";
+import { ICONS, MAX_SIZE, MAX_SVG, MAX_SVG_MAP, MIN_SIZE, MOTIONS, SHAPES, isHex, sanitizeSvg } from "../lib/symbols";
 import type { SymbolMotion, SymbolShape, SymbolSpec } from "../lib/types";
 
 /**
  * Choose a symbol: from the library, or paste / upload your own SVG code. Then its colour, the shape behind it and (where the place can
  * show it) an animation. `onChange(undefined)` removes the symbol. Used for indicators, lists, selectors and map points.
  */
-export function SymbolPicker({ value, onChange, motion = true, forMap = false, autoColor = "Automatic", defaultShape = "plain" }:
-  { value?: SymbolSpec; onChange: (s: SymbolSpec | undefined) => void; motion?: boolean; forMap?: boolean; autoColor?: string; defaultShape?: SymbolShape }) {
+export function SymbolPicker({ value, onChange, motion = true, forMap = false, autoColor = "Automatic", defaultShape = "plain", defaultSize }:
+  { value?: SymbolSpec; onChange: (s: SymbolSpec | undefined) => void; motion?: boolean; forMap?: boolean; autoColor?: string; defaultShape?: SymbolShape;
+    /** The size (px) used when the author sets none, shown as the starting point of the size control. */ defaultSize?: number }) {
   const id = useId();
   const [tab, setTab] = useState<"library" | "svg">(value?.svg ? "svg" : "library");
   const [q, setQ] = useState("");
@@ -60,6 +61,14 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
         </div>
       )}
       {value && (<div className="sympick-opts">
+        <div className="field"><label htmlFor={`${id}-sz`}>Size{value.size ? `: ${value.size} px` : defaultSize ? ` (automatic: ${defaultSize} px)` : " (automatic)"}</label>
+          <div className="row" style={{ gap: 8 }}>
+            <input id={`${id}-sz`} type="range" min={MIN_SIZE} max={MAX_SIZE} step={2} value={value.size ?? defaultSize ?? 32} onChange={(e) => set({ size: Number(e.target.value) })} aria-valuetext={`${value.size ?? defaultSize ?? 32} pixels`} style={{ flex: 1 }} />
+            <input type="number" min={MIN_SIZE} max={MAX_SIZE} aria-label="Size in pixels" className="sympick-num" value={value.size ?? ""} placeholder={String(defaultSize ?? 32)}
+              onChange={(e) => { const n = Math.round(Number(e.target.value)); set({ size: e.target.value === "" ? undefined : Math.max(MIN_SIZE, Math.min(MAX_SIZE, n || MIN_SIZE)) }); }} />
+            {value.size && <button type="button" className="link-btn" onClick={() => set({ size: undefined })}>Automatic</button>}
+          </div>
+          <small className="meta">{forMap ? "Pixels on the map. Automatic follows the marker size." : "The text next to it keeps its size; a symbol that does not fit is scaled down to the space."}</small></div>
         <div className="field"><label htmlFor={`${id}-sh`}>Shape behind it</label>
           <select id={`${id}-sh`} value={value.shape ?? defaultShape} onChange={(e) => set({ shape: e.target.value as SymbolShape })}>{SHAPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div className="field"><label htmlFor={`${id}-co`}>Colour</label>

@@ -28,10 +28,10 @@ const bad: [string, string][] = [
   ['<svg><circle r="5" fill="url(javascript:alert(1))"/></svg>', "javascript"],
   ['<svg><path d="M0 0 L10 10 <script>alert(1)</script>"/></svg>', "script"],
   ['<svg><circle r="5" xlink:href="javascript:alert(1)"/></svg>', "xlink"],
-  ['<svg><animate attributeName="href" values="javascript:alert(1)"/><circle r="5"/></svg>', "animate"],
+  ['<svg><animate attributeName="href" values="javascript:alert(1)"/><circle r="5"/></svg>', "javascript"],
   ['<svg><set attributeName="onload" to="alert(1)"/><circle r="5"/></svg>', "<set"],
-  ['<svg><text x="0" y="10">hello</text><circle r="5"/></svg>', "<text"],
-  ['<svg><filter id="f"><feImage href="https://evil"/></filter><circle r="5" filter="url(#f)"/></svg>', "filter"],
+  ['<svg><text x="0" y="10" onclick="alert(1)">hello<script>alert(1)</script></text><circle r="5"/></svg>', "alert"],
+  ['<svg><filter id="f"><feImage href="https://evil"/></filter><circle r="5" filter="url(#f)"/></svg>', "feImage"],
   ['<svg><circle r="5" transform="translate(1) onload"/></svg>', "onload"],
   ['<svg><circle r="5" fill="red&quot; onload=&quot;alert(1)"/></svg>', "onload"],
   ['<svg><g><g><script>alert(1)</script></g></g><circle r="5"/></svg>', "script"],
@@ -41,7 +41,7 @@ for (const [code, needle] of bad) {
   const r = sanitizeSvg(code);
   const out = r.ok ? r.inner + r.root + r.viewBox : "";
   ok(!needle || !out.toLowerCase().includes(needle.toLowerCase()), `attack removed: ${code.slice(5, 60).replace(/\s+/g, " ")}`);
-  ok(!/on[a-z]+\s*=|<script|javascript:|https?:|<style|<image|<use|<text|foreignObject|<a\b/i.test(out), "…and nothing dangerous is left in what remains");
+  ok(!/on[a-z]+\s*=|<script|javascript:|https?:|<style|<image|<use|foreignObject|<a\b|feImage|<set\b/i.test(out), "…and nothing dangerous is left in what remains");
 }
 ok(!sanitizeSvg('<svg><circle r="5" fill="red" "onload=alert(1)"/></svg>').ok, "an attribute written without a name is refused, not guessed at");
 ok(text('<svg><circle r="5" id="x" fill="red"/></svg>') === '<circle r="5" fill="red"/>', "an id is only kept on gradients");
@@ -49,7 +49,7 @@ ok(text('<svg><circle r="5" id="x" fill="red"/></svg>') === '<circle r="5" fill=
 // ---- not SVG, or unusable ----
 ok(!sanitizeSvg("hello").ok && !sanitizeSvg("").ok && !sanitizeSvg(undefined).ok && !sanitizeSvg("<div><circle r='5'/></div>").ok, "text, nothing, and non-SVG are refused");
 ok(!sanitizeSvg('<svg><circle r="5"></svg>').ok && !sanitizeSvg('<svg><circle r="5"/>').ok && !sanitizeSvg('<svg><circle r="5"').ok, "unclosed or broken markup is refused");
-ok(!sanitizeSvg('<svg><text>hi</text></svg>').ok && !sanitizeSvg('<svg></svg>').ok, "an SVG with nothing to draw says so");
+ok(!sanitizeSvg('<svg><g/></svg>').ok && !sanitizeSvg('<svg></svg>').ok && !sanitizeSvg('<svg><defs><linearGradient id="a"/></defs></svg>').ok, "an SVG with nothing to draw says so");
 ok(!sanitizeSvg(`<svg><path d="${"M0 0".repeat(MAX_SVG)}"/></svg>`).ok && !sanitizeSvg(lucide, 50).ok, "too long is refused");
 ok(!sanitizeSvg('<!DOCTYPE svg [<!ENTITY x "y">]><svg><circle r="5"/></svg>').ok, "entity tricks are refused");
 const many = `<svg>${'<circle r="1"/>'.repeat(200)}</svg>`;
@@ -108,3 +108,67 @@ ok(cfg.pages[0].controls?.[0].symbol?.shape === "square" && !!cfg.pages[0].contr
 let k = 0;
 const mon = templateWidgets("monitor", form, () => `t${k++}`);
 ok(mon.filter((w) => w.type === "kpi").every((w) => w.symbol?.shape === "ring" && !!w.symbol.icon), "the Monitoring board's key numbers come with ring symbols");
+
+// ---- text, filters and animation (what a designed icon uses) ----
+const naira = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="nairaGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00E5A0"/><stop offset="50%" stop-color="#FF4545"/><stop offset="100%" stop-color="#C40032"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#FF4545" stroke-width="2" opacity="0.3">
+    <animate attributeName="r" values="65;90;65" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.5;0.05;0.5" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <text x="100" y="133" text-anchor="middle" font-family="Arial, sans-serif" font-size="115" font-weight="bold" fill="url(#nairaGradient)" filter="url(#glow)">
+    ₦
+    <animateTransform attributeName="transform" type="scale" values="1;1.08;1" additive="sum" dur="2s" repeatCount="indefinite"/>
+  </text>
+</svg>`;
+const nr = good(naira);
+ok(!!nr && nr.viewBox === "0 0 200 200", "the Naira example reads");
+ok(!!nr && nr.inner.includes("₦") && /<text [^>]*text-anchor="middle"[^>]*font-size="115"[^>]*>/.test(nr.inner) && nr.inner.includes('font-family="Arial, sans-serif"'), "its text, with its font settings, is kept");
+ok(!!nr && nr.inner.includes('<filter id="glow">') && nr.inner.includes("<feGaussianBlur") && nr.inner.includes('<feMergeNode in="SourceGraphic"/>') && nr.inner.includes('filter="url(#glow)"'), "its glow filter is kept");
+ok(!!nr && (nr.inner.match(/<animate /g) ?? []).length === 2 && nr.inner.includes('<animateTransform attributeName="transform" type="scale" values="1;1.08;1" additive="sum" dur="2s" repeatCount="indefinite"/>') && nr.inner.includes('values="65;90;65"'), "its animations are kept");
+ok(!!nr && nr.inner.includes('fill="url(#nairaGradient)"') && nr.inner.includes('<linearGradient id="nairaGradient"') && nr.notes.length === 0, "its gradient is kept and nothing needed removing");
+const nsvg = composeSymbolSvg({ svg: naira })!;
+ok(nsvg.includes("₦") && nsvg.includes("<animateTransform") && nsvg.includes('viewBox="0 0 200 200"'), "the finished symbol contains the text and the animation");
+
+const attacks2: [string, string][] = [
+  ['<svg><text x="1" y="1">&lt;script&gt;alert(1)&lt;/script&gt;</text></svg>', "<script"],
+  ['<svg><text x="1" y="1" font-family="x;}</style><script>a()</script>">hi</text></svg>', "script"],
+  ['<svg><text x="1" y="1" font-family="Arial&quot; onload=&quot;a()">hi</text></svg>', "onload"],
+  ['<svg><text x="1" y="1">hi<tspan onclick="a()">x</tspan></text></svg>', "tspan"],
+  ['<svg><circle r="5"><animate attributeName="onclick" values="a()" dur="1s"/></circle></svg>', "onclick"],
+  ['<svg><circle r="5"><animate attributeName="href" values="javascript:alert(1)" dur="1s"/></circle></svg>', "href"],
+  ['<svg><circle r="5"><animate attributeName="fill" values="url(https://evil/x)" dur="1s"/></circle></svg>', "evil"],
+  ['<svg><circle r="5"><animate attributeName="fill" values="red;blue" dur="1s" begin="click"/></circle></svg>', "click"],
+  ['<svg><circle r="5"><animate attributeName="r" values="1;9" dur="1s" end="a.click"/></circle></svg>', "a.click"],
+  ['<svg><a><animate attributeName="href" to="javascript:alert(1)"/></a><circle r="5"/></svg>', "javascript"],
+  ['<svg><circle r="5"><set attributeName="r" to="50"/></circle></svg>', "<set"],
+  ['<svg><circle r="5"><animateMotion path="M0 0L9 9" dur="1s"/></circle></svg>', "animateMotion"],
+  ['<svg><filter id="f"><feTurbulence baseFrequency="0.01" numOctaves="9"/></filter><circle r="5" filter="url(#f)"/></svg>', "feTurbulence"],
+  ['<svg><filter id="f"><feImage href="data:image/svg+xml,<svg onload=alert(1)>"/></filter><circle r="5"/></svg>', "data:"],
+  ['<svg><filter id="f"><feConvolveMatrix order="50" kernelMatrix="1"/></filter><circle r="5"/></svg>', "feConvolveMatrix"],
+  ['<svg><filter id="f"><feDisplacementMap in="SourceGraphic" scale="999"/></filter><circle r="5"/></svg>', "feDisplacementMap"],
+  ['<svg><circle r="5" filter="url(https://evil/f.svg#a)"/></svg>', "evil"],
+];
+for (const [code, needle] of attacks2) {
+  const r = sanitizeSvg(code);
+  const out = r.ok ? r.inner + r.root : "";
+  ok(!out.toLowerCase().includes(needle.toLowerCase()), `new attack removed: ${code.slice(5, 70).replace(/\s+/g, " ")}`);
+}
+const slow = good('<svg><circle r="5"><animate attributeName="r" values="1;9" dur="0.001s" repeatCount="indefinite"/><animate attributeName="r" values="1;9" dur="1s" repeatCount="99999999"/></circle><filter id="f"><feGaussianBlur stdDeviation="500"/></filter></svg>');
+ok(!!slow && !/dur="0\.001s"/.test(slow.inner) && !slow.inner.includes("99999999") && !slow.inner.includes('stdDeviation="500"'), "animations too fast, repeated absurdly often, or blurs that are too large are refused");
+const okAnim = good('<svg><circle r="5"><animate attributeName="r" values="1;9" dur="500ms" begin="1s" repeatCount="3" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1"/></circle></svg>');
+ok(!!okAnim && okAnim.inner.includes('dur="500ms"') && okAnim.inner.includes('begin="1s"') && okAnim.inner.includes('repeatCount="3"') && okAnim.inner.includes("keySplines"), "ordinary timing options pass");
+const manyText = good(`<svg>${'<text x="1" y="1">a</text>'.repeat(8)}</svg>`);
+ok((manyText?.inner.match(/<text /g) ?? []).length === 5, "at most five pieces of text");
+const longText = good(`<svg><text x="1" y="1">${"w".repeat(300)}</text></svg>`);
+ok(!!longText && longText.inner.replace(/<[^>]+>/g, "").length <= 40, "a long text is cut");
+const ctl = good('<svg><text x="1" y="1">a\u202Eb\u0000c&#8358;&bogus;d</text></svg>');
+ok(!!ctl && ctl.inner.includes("a b c₦d") || (ctl?.inner ?? "").includes("₦"), "control and direction characters are removed; a numeric entity becomes its character");
+const esc2 = good('<svg><text x="1" y="1">a &amp;&lt; b</text></svg>');
+ok(!!esc2 && esc2.inner.includes("a &amp;&lt; b") && !esc2.inner.includes("<b"), "text is escaped again when written out");
+
+// ---- size ----
+ok(cleanSymbolSpec({ icon: "bolt", size: 64.4 })?.size === 64 && cleanSymbolSpec({ icon: "bolt", size: 11 }) !== undefined && !("size" in cleanSymbolSpec({ icon: "bolt", size: 11 })!) && !("size" in cleanSymbolSpec({ icon: "bolt", size: 999 })!) && !("size" in cleanSymbolSpec({ icon: "bolt", size: "big" })!), "a size from 12 to 160 is kept; anything else is dropped");
