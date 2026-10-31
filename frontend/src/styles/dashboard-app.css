@@ -539,3 +539,24 @@
 .sympick-num { width: 64px; }
 /* Where the room is limited (an indicator's row), the symbol is as big as the author set but never taller than the space, and stays square. */
 .kpi-row > .sym { width: auto !important; height: min(var(--sym-px), 100%) !important; }
+
+/* The SVG code box: a code editor look. Small, monospaced, never wrapped (it scrolls sideways) so the indentation stays readable.
+   !important on the font because the dashboard's own font setting also targets textareas. */
+.field textarea.sympick-code, textarea.sympick-code {
+  font: 12px/1.5 ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace !important;
+  white-space: pre; overflow: auto; tab-size: 2; min-height: 200px; max-height: 480px; resize: vertical; letter-spacing: 0; word-break: normal;
+}
+
+/* The size row in the symbol picker: slider and number side by side (the app's general input style makes inputs full width). */
+.sympick .row { flex-wrap: nowrap; align-items: center; }
+.field input[type="range"], .sympick input[type="range"] { flex: 1 1 auto; width: auto; min-height: 0; padding: 0; border: 0; box-shadow: none; background: transparent; accent-color: var(--green-600); }
+.field input.sympick-num, .sympick input.sympick-num { flex: none; width: 70px; }
+.field input[type="color"], .sympick input[type="color"] { width: 44px; min-height: 0; height: 32px; padding: 2px; flex: none; }
+
+/* The settings sidebar sets every input to full width (.dash-aside .field :is(input…)). These three need their own size. */
+.dash-aside .field input.sympick-num { flex: none; width: 72px !important; }
+.dash-aside .field .sympick input[type="range"] { flex: 1 1 auto; width: auto !important; min-width: 0; min-height: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.dash-aside .field .sympick input[type="color"] { flex: none; width: 44px !important; height: 32px; min-height: 0 !important; padding: 2px !important; }
+.sympick-big { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2); margin-bottom: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-md);
+  background: repeating-conic-gradient(#0000000d 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.sympick-big .sym { flex: none; }

@@ -25,7 +25,7 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
     if (!f) return;
     if (f.size > limit * 4) { onChange({ ...(value ?? {}), svg: "x".repeat(limit + 1), icon: undefined }); return; }   // shows the "too long" message
     const rd = new FileReader();
-    rd.onload = () => set({ svg: String(rd.result ?? ""), icon: undefined });
+    rd.onload = () => set({ svg: String(rd.result ?? ""), icon: undefined, shape: value?.svg ? value.shape ?? "plain" : "plain" });
     rd.readAsText(f);
   };
   return (
@@ -40,14 +40,19 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
       {tab === "library" ? (<>
         <input type="search" className="fdrop-search" value={q} placeholder="Search symbols (power, water, building…)" aria-label="Search symbols" onChange={(e) => setQ(e.target.value)} />
         <div className="sympick-grid" role="group" aria-label="Library symbols">
-          {found.map((i) => <button key={i.id} type="button" title={i.label} aria-label={i.label} aria-pressed={!value?.svg && value?.icon === i.id} onClick={() => set({ icon: i.id, svg: undefined })}><SymbolIcon spec={{ icon: i.id }} size={26} /></button>)}
+          {found.map((i) => <button key={i.id} type="button" title={i.label} aria-label={i.label} aria-pressed={!value?.svg && value?.icon === i.id} onClick={() => set({ icon: i.id, svg: undefined, shape: value?.shape ?? defaultShape })}><SymbolIcon spec={{ icon: i.id }} size={26} /></button>)}
           {found.length === 0 && <p className="meta">No symbol matches “{q}”.</p>}
         </div>
       </>) : (
         <div className="field">
           <label htmlFor={`${id}-svg`}>SVG code</label>
-          <textarea id={`${id}-svg`} className="sympick-code" rows={6} spellCheck={false} value={value?.svg ?? ""} placeholder={'<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>'}
-            onChange={(e) => set({ svg: e.target.value, icon: undefined })} aria-describedby={`${id}-note`} />
+          {check?.ok && value && (
+            <div className="sympick-big" aria-label="Preview of your SVG, large">
+              <SymbolIcon spec={{ ...value, size: 96, motion: undefined }} size={96} color={forMap ? "#1f6b52" : undefined} label="Preview of your SVG" />
+              <small className="meta">How it looks (shape: {SHAPES.find((s) => s.id === (value.shape ?? "plain"))?.label.toLowerCase()}). Animation inside your SVG plays here.</small>
+            </div>)}
+          <textarea id={`${id}-svg`} className="sympick-code" rows={10} wrap="off" spellCheck={false} autoCapitalize="off" autoCorrect="off" autoComplete="off" value={value?.svg ?? ""} placeholder={'<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>'}
+            onChange={(e) => set({ svg: e.target.value, icon: undefined, shape: value?.svg ? value.shape ?? "plain" : "plain" })} aria-describedby={`${id}-note`} />
           <div className="row" style={{ gap: 12 }}>
             <label className="link-btn sympick-file">Upload an .svg file<input type="file" accept=".svg,image/svg+xml" hidden onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} /></label>
             {value?.svg && <button type="button" className="link-btn" onClick={() => set({ svg: undefined })}>Clear code</button>}
@@ -55,7 +60,7 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
           <div id={`${id}-note`} aria-live="polite">
             {check && !check.ok && <p className="fdrop-problem" role="alert">{check.error}</p>}
             {check?.ok && check.notes.length > 0 && <p className="meta">Left out for safety: {check.notes.join(", ")}.</p>}
-            {check?.ok && <p className="meta">Shapes only: scripts, styles, links, images and text are never kept. Up to {limit} characters.</p>}
+            {check?.ok && <p className="meta">Shapes, short text, glow effects and animation are kept. Scripts, styles, links and images never are. Up to {limit} characters.</p>}
             {!check && <p className="meta">Paste the code of an icon (it should start with &lt;svg). Up to {limit} characters.</p>}
           </div>
         </div>
@@ -70,7 +75,7 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
           </div>
           <small className="meta">{forMap ? "Pixels on the map. Automatic follows the marker size." : "The text next to it keeps its size; a symbol that does not fit is scaled down to the space."}</small></div>
         <div className="field"><label htmlFor={`${id}-sh`}>Shape behind it</label>
-          <select id={`${id}-sh`} value={value.shape ?? defaultShape} onChange={(e) => set({ shape: e.target.value as SymbolShape })}>{SHAPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+          <select id={`${id}-sh`} value={value.shape ?? "plain"} onChange={(e) => set({ shape: e.target.value as SymbolShape })}>{SHAPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div className="field"><label htmlFor={`${id}-co`}>Colour</label>
           <div className="row" style={{ gap: 8 }}>
             <input id={`${id}-co`} type="color" value={isHex(value.color) ? value.color : "#1f6b52"} onChange={(e) => set({ color: e.target.value })} />
