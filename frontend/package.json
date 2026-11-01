@@ -26,8 +26,9 @@
     "test:sw": "node scripts/sw-test.mjs",
     "test:returned": "vite-node scripts/returned-test.ts",
     "test:i18n": "vite-node scripts/i18n-test.ts",
+    "test:thumb": "vite-node scripts/thumb-test.ts",
     "test:quality": "vite-node scripts/quality-test.ts",
-    "test": "npm run test:sync && npm run test:digitize && npm run test:forms && npm run test:symbology && npm run test:dnd && npm run test:form-import && npm run test:csv && npm run test:dashboards && npm run test:collect-only && npm run test:controls && npm run test:gps && npm run test:symbols && npm run test:sw && npm run test:returned && npm run test:i18n && npm run test:quality && npm run test:ui"
+    "test": "npm run test:sync && npm run test:digitize && npm run test:forms && npm run test:symbology && npm run test:dnd && npm run test:form-import && npm run test:csv && npm run test:dashboards && npm run test:collect-only && npm run test:controls && npm run test:gps && npm run test:symbols && npm run test:sw && npm run test:returned && npm run test:i18n && npm run test:quality && npm run test:thumb && npm run test:ui"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",
