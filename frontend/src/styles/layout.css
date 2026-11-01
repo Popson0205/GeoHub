@@ -383,3 +383,27 @@ body.is-dnd * { cursor: grabbing !important; }
   .review-actions .btn-primary, .review-actions .btn-danger { flex: 1 1 40%; }
   .review-head .btn kbd, .review-actions kbd { display: none; }   /* no keyboard on a phone */
 }
+
+/* ---- map editor: the tool rail floats on the map, under the undo / table / save bar ---- */
+.tool-rail { position: absolute; z-index: 6; top: 64px; left: var(--s-3); display: flex; flex-direction: column; gap: 6px; max-height: calc(100% - 64px - 40px); overflow-y: auto; scrollbar-width: thin;
+  padding: 5px; background: var(--n-0); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-md); }
+.tool-rail .icon-grid.tiles { display: flex; flex-direction: column; gap: 3px; }
+.tool-rail .icon-grid.tiles + .icon-grid.tiles { padding-top: 6px; border-top: 1px solid var(--line); }
+.tool-rail .icon-tile { width: 58px; min-height: 48px; padding: 5px 2px 4px; gap: 3px; border-color: transparent; box-shadow: none; background: transparent; }
+.tool-rail .icon-tile:hover:not(:disabled) { background: var(--n-100); border-color: transparent; }
+.tool-rail .icon-tile[aria-pressed="true"] { background: var(--green-600); border-color: var(--green-600); color: #fff; }
+.tool-rail .icon-tile.btn-danger:not(:disabled) { color: var(--danger-600); }
+.tool-rail .icon-tile:disabled { opacity: .38; }
+.tool-rail .icon-cap { font-size: 10.5px; }
+.tool-rail .icon-tile svg { width: 20px; height: 20px; }
+.side .tool-status h2 { text-transform: none; letter-spacing: -0.01em; font-size: var(--fs-lg); color: var(--ink-900); }
+/* the map hint (what to click next) moves clear of the rail */
+.map-wrap:has(.tool-rail) .map-hint { left: calc(50% + 36px); }
+@media (max-width: 900px) {
+  /* a phone: one row of tools along the bottom of the map, scrolling sideways */
+  .tool-rail { top: auto; bottom: 34px; left: var(--s-2); right: var(--s-2); flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; padding: 4px; }
+  .tool-rail .icon-grid.tiles { flex-direction: row; flex-wrap: nowrap; flex: none; }
+  .tool-rail .icon-grid.tiles + .icon-grid.tiles { padding-top: 0; padding-left: 6px; border-top: 0; border-left: 1px solid var(--line); }
+  .tool-rail .icon-tile { width: 54px; min-height: 46px; flex: none; }
+  .map-wrap:has(.tool-rail) .map-hint { left: 50%; }
+}
