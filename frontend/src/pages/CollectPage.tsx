@@ -208,7 +208,9 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const drawMode = draft && !draft.geometry && placing && form ? form.geometry_type : null;
 
   return (
-    <main className="collect">
+    // Before a record is started the sheet only holds the form choice and one button: size it to that and give
+    // the rest of the screen to the map, so the button sits low in thumb reach and the field is easy to see.
+    <main className={`collect${tab === "collect" && !draft && forms && forms.length > 0 ? " is-idle" : ""}`}>
       <h1 className="sr-only">Data collector</h1>
       <header className="collect-head">
         {pub ? <BrandMark size={24} /> : <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>}

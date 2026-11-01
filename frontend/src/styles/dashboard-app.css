@@ -1,26 +1,40 @@
 /* ======================================================================================================
    Dashboard app: the gallery, reports, and the full-screen builder (sidebar, side panels, canvas).
-   The app's accent is violet, so it reads as its own app inside Geohub. A dashboard's own theme only
-   touches the canvas (.dashboard-canvas-outer), never this chrome.
+   The app uses Geohub's own green and ink, so it reads as part of the same product. A dashboard's own theme
+   only touches the canvas (.dashboard-canvas-outer), never this chrome.
    ====================================================================================================== */
-:root { --dapp: #7a2e8e; --dapp-dark: #5d2270; --dapp-soft: #f4eff7; --builder-chrome: #1d2230; --builder-chrome-2: #272d3f; }
+:root { --dapp: var(--green-600); --dapp-dark: var(--green-700); --dapp-soft: var(--green-50); --builder-chrome: var(--ink-900); --builder-chrome-2: var(--ink-800); --builder-mark: var(--green-300); }
 
 /* ---- app bar, toolbar, gallery ---- */
-.dapp-bar { display: flex; align-items: center; gap: var(--s-4); padding: 0 var(--s-4); background: var(--card); border-bottom: 1px solid var(--line); }
-.dapp-name { font-weight: 600; color: var(--dapp); }
+.dapp-bar { display: flex; align-items: center; gap: var(--s-4); padding: 0 var(--s-5); background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.dapp-name { font-weight: 600; color: var(--ink-900); white-space: nowrap; }
 .dapp-bar nav { display: flex; gap: var(--s-1, 4px); }
-.dapp-bar nav a { padding: 10px 14px; color: var(--n-700); text-decoration: none; border-bottom: 3px solid transparent; font-weight: 500; }
-.dapp-bar nav a:hover { color: var(--dapp); }
-.dapp-bar nav a.active { color: var(--dapp); border-bottom-color: var(--dapp); }
-.dapp-toolbar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); background: var(--dapp); color: #fff; }
-.dapp-toolbar h1 { margin: 0; font-size: var(--fs-xl); color: #fff; }
+.dapp-bar nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; font-weight: 500; white-space: nowrap; }
+.dapp-bar nav a:hover { color: var(--ink-900); }
+.dapp-bar nav a.active { color: var(--green-700); border-bottom-color: var(--dapp); font-weight: 600; }
+/* the page header of the gallery and reports: title, project picker, main action */
+.dapp-toolbar { width: 100%; max-width: 1280px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); padding: var(--s-8) var(--s-8) 0; color: var(--ink-900); }
+.dapp-toolbar h1 { margin: 0; font-size: var(--fs-3xl); color: var(--ink-900); }
 .dapp-toolbar .grow { flex: 1; }
-.dapp-project select { padding: 4px 8px; border-radius: var(--r-sm, 6px); border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.12); color: #fff; }
-.dapp-project select option { color: #111; }
-.dapp-project-name { opacity: .85; font-size: var(--fs-sm); }
-.dapp-new { padding: 7px 14px; border: 1px solid #fff; border-radius: var(--r-md); background: #fff; color: var(--dapp); font-weight: 600; cursor: pointer; }
-.dapp-new:hover:not(:disabled) { background: var(--dapp-soft); }
+.dapp-project select { min-height: var(--control-h); padding: 0 34px 0 var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--n-0); color: var(--ink-900); font: 500 var(--fs-md) var(--font-ui); max-width: 100%;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%2372837a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; }
+.dapp-project select:hover { border-color: var(--n-400); }
+.dapp-project { max-width: 100%; }
+.dapp-project-name { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: var(--r-full); background: var(--n-100); color: var(--n-700); font-size: var(--fs-sm); font-weight: 500; }
+.dapp-new { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--control-h); padding: 0 var(--s-4); border: 1px solid var(--green-600); border-radius: var(--r-md); background: var(--green-600); color: #fff; font: 500 var(--fs-md) var(--font-ui); cursor: pointer; box-shadow: var(--sh-xs); transition: background var(--t-fast); }
+.dapp-new:hover:not(:disabled) { background: var(--green-700); border-color: var(--green-700); }
 .dapp-new:disabled { opacity: .7; cursor: default; }
+@media (max-width: 760px) {
+  .dapp-toolbar { padding: var(--s-6) var(--s-4) 0; }
+  .dapp-toolbar h1 { font-size: var(--fs-2xl); flex: 1 1 100%; }
+  .dapp-toolbar .grow { display: none; }
+  .dapp-project, .dapp-new { flex: 1 1 100%; }
+  .dapp-project select { width: 100%; }
+  .dapp-new { justify-content: center; }
+  .dapp-bar { padding: 0 var(--s-3); }
+}
 .dapp-page { width: 100%; max-width: 1280px; padding-block: var(--s-5); }
 .dash-gallery-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--s-3); font-size: var(--fs-sm); color: var(--muted); }
 .dash-gallery-filter { font-weight: 600; color: var(--ink); }
@@ -34,6 +48,9 @@
 .dash-card-body span, .dash-card-body small { color: var(--muted); font-size: var(--fs-sm); }
 .dash-card-delete { position: absolute; top: 6px; right: 6px; opacity: 0; background: var(--card); }
 .dash-card:hover .dash-card-delete, .dash-card:focus-within .dash-card-delete { opacity: 1; }
+@media (hover: none) { .dash-card-delete { opacity: 1; } }   /* touch screens cannot hover: keep it visible */
+.dash-card-thumb { background: linear-gradient(135deg, var(--green-50), var(--n-50)); }
+.dash-gallery-head { padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); }
 
 /* ---- the builder: sidebar | side panel | canvas, filling the window ---- */
 .dashboard-builder { display: flex; height: 100vh; height: 100dvh; background: var(--builder-chrome); color: #e8eaf2; overflow: hidden; }
@@ -42,7 +59,7 @@
 .dashboard-sidebar-items { display: flex; flex-direction: column; }
 .dashboard-sidebar-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 18px; border: 0; border-left: 3px solid transparent; background: transparent; color: inherit; font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; white-space: nowrap; }
 .dashboard-sidebar-item:hover:not(:disabled) { background: var(--builder-chrome-2); }
-.dashboard-sidebar-item.is-active { background: var(--builder-chrome-2); border-left-color: #c58bd6; }
+.dashboard-sidebar-item.is-active { background: var(--builder-chrome-2); border-left-color: var(--builder-mark); }
 .dashboard-sidebar-item:disabled, .dashboard-sidebar-item.is-disabled { opacity: .4; cursor: default; }
 .dashboard-sidebar-item.has-unsaved-changes { color: #ffd479; }
 .dashboard-sidebar-icon { flex: none; }
@@ -151,7 +168,7 @@
   .dashboard-sidebar, .dashboard-sidebar.is-collapsed { width: auto; flex-direction: row; padding: 0; overflow-x: auto; }
   .dashboard-sidebar-items { flex-direction: row; }
   .dashboard-sidebar-item { padding: 10px 12px; border-left: 0; border-bottom: 3px solid transparent; }
-  .dashboard-sidebar-item.is-active { border-bottom-color: #c58bd6; }
+  .dashboard-sidebar-item.is-active { border-bottom-color: var(--builder-mark); }
   .dashboard-sidebar-collapse { display: none; }
   .dashboard-side-panel { width: auto; max-height: 55vh; border-right: 0; border-bottom: 1px solid var(--line); }
   .dashboard-canvas-outer { overflow: visible; }

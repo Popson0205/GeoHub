@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import CsvImportPanel from "../components/CsvImportPanel";
 import FormRenderer from "../components/FormRenderer";
-import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
+import { Icon } from "../components/icons";
+import ProjectNav, { ProjectNavSkeleton } from "../components/ProjectNav";
+import { Button, EmptyState, ErrorState, Loading, MoreMenu, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
 import { csvEscape, download } from "../lib/csv";
 import { columnFields } from "../lib/fieldSpec";
@@ -46,9 +48,9 @@ export default function DataPage() {
   const counts = useMemo(() => { const c: Record<string, number> = {}; for (const f of all) c[f.status] = (c[f.status] ?? 0) + 1; return c; }, [all]);
   const target = picked.size ? rows.filter((r) => picked.has(r.id)) : rows;
 
-  if (project.loading || forms.loading || feats.loading) return <div className="container"><Loading /></div>;
+  if (project.loading || forms.loading || feats.loading) return <><ProjectNavSkeleton /><div className="container"><Loading label="Loading records…" /></div></>;
   const err = project.error ?? forms.error ?? feats.error;
-  if (err != null) return <div className="container"><ErrorState error={err} onRetry={() => { void project.reload(); void forms.reload(); void feats.reload(); }} /></div>;
+  if (err != null) return <><ProjectNav projectId={projectId} project={project.data} /><div className="container"><ErrorState error={err} onRetry={() => { void project.reload(); void forms.reload(); void feats.reload(); }} /></div></>;
 
   const patchLocal = (u: Feature) => feats.setData((feats.data ?? []).map((f) => (f.id === u.id ? u : f)));
   const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -107,77 +109,92 @@ export default function DataPage() {
   }
 
   const shareLink = form && form.version > 0 ? `/collect/${projectId}/forms/${form.id}/share` : null;
+  const picks = picked.size ? ` (${picked.size})` : "";
   return (
-    <div className="container" style={{ width: "100%" }}>
-      <div className="page-head">
-        <h1>Collected data</h1><span className="grow" />
-        {shareLink && canManage && <Link className="btn" to={shareLink}>Share form</Link>}
-        <Link className="btn" to={`/dashboards?project=${projectId}`}>Dashboards</Link>
-        <Link className="btn" to="/collect">Back to projects</Link>
-      </div>
-      <p className="meta" style={{ marginTop: 0 }}>{project.data?.name}</p>
-
-      {!list.length ? <EmptyState title="No forms yet" action={canManage ? <Link className="btn btn-primary" to={`/collect/${projectId}/forms`}>Create a form</Link> : undefined}>Collected data appears here once a form is published and shared.</EmptyState> : (
+    <>
+      <ProjectNav projectId={projectId} project={project.data}
+        actions={canManage && list.length > 0 ? <>
+          {shareLink && <Link className="btn" to={shareLink}><Icon name="share" size={18} />Share form</Link>}
+          <Button variant="primary" onClick={() => setPublishing((p) => !p)} aria-expanded={publishing}><Icon name="globe" size={18} />Publish to data hub</Button>
+        </> : undefined} />
+      <div className="container" style={{ width: "100%" }}>
+      {!list.length ? <EmptyState icon="form" title="No forms yet" action={canManage ? <Link className="btn btn-primary" to={`/collect/${projectId}/forms`}>Create a form</Link> : undefined}>Collected data appears here once a form is published and shared.</EmptyState> : (
         <>
-          <div className="row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
-            <label className="meta" htmlFor="d-form">Form</label>
-            <select id="d-form" value={formId} onChange={(e) => { setFormId(e.target.value); setPicked(new Set()); setEditing(null); setImporting(false); }}>
-              {list.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-            <label className="meta" htmlFor="d-status">Show</label>
-            <select id="d-status" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
-              <option value="all">All ({all.length})</option>
-              {(["submitted", "approved", "rejected", "draft"] as FeatureStatus[]).map((s) => <option key={s} value={s}>{STATUS[s].label} ({counts[s] ?? 0})</option>)}
-            </select>
-            <span className="grow" />
-            {canManage && form && <Button small onClick={() => setImporting((v) => !v)} aria-expanded={importing} disabled={form.version === 0} title={form.version === 0 ? "Publish the form before importing into it" : undefined}>Import CSV</Button>}
-            <Button small onClick={exportCsv} disabled={!target.length}>Download CSV{picked.size ? ` (${picked.size})` : ""}</Button>
-            <Button small onClick={exportGeoJson} disabled={!target.length}>Download GeoJSON{picked.size ? ` (${picked.size})` : ""}</Button>
-            {canManage && <Button small variant="primary" onClick={() => setPublishing((p) => !p)}>Publish to data hub</Button>}
+          {publishing && project.data && <PublishPanel project={project.data} onClose={() => setPublishing(false)} />}
+          {publishing && <p className="meta" style={{ marginTop: -12, marginBottom: 20, maxWidth: 560 }}>Approved and waiting records are published; rejected ones are left out. This form has {counts.approved ?? 0} approved and {counts.submitted ?? 0} waiting. Approve the good ones first if you only want checked data public.</p>}
+
+          <div className="toolbar-bar">
+            <div className="field">
+              <label htmlFor="d-form">Form</label>
+              <select id="d-form" value={formId} onChange={(e) => { setFormId(e.target.value); setPicked(new Set()); setEditing(null); setImporting(false); }}>
+                {list.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div className="status-filter" role="group" aria-label="Show records">
+              {(["all", "submitted", "approved", "rejected", "draft"] as const).filter((s) => s === "all" || s === filter || (counts[s] ?? 0) > 0).map((s) => (
+                <button key={s} type="button" className="filter-chip" aria-pressed={filter === s} onClick={() => { setFilter(s); setPicked(new Set()); }}>
+                  {s === "all" ? "All" : STATUS[s].label}<span className="filter-count">{s === "all" ? all.length : counts[s] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+            <div className="toolbar-actions">
+              {canManage && form && <Button small onClick={() => setImporting((v) => !v)} aria-expanded={importing} disabled={form.version === 0} title={form.version === 0 ? "Publish the form before importing into it" : undefined}><Icon name="upload" size={16} />Import CSV</Button>}
+              <MoreMenu label="Download" text={`Download${picks}`} icon="download" items={[
+                { label: `CSV spreadsheet${picks}`, icon: "table", disabled: !target.length, onSelect: exportCsv },
+                { label: `GeoJSON for GIS${picks}`, icon: "navMap", disabled: !target.length, onSelect: exportGeoJson },
+              ]} />
+            </div>
           </div>
 
           {importing && canManage && form && form.version > 0 && (
             <CsvImportPanel key={form.id} projectId={projectId} form={form} onClose={() => setImporting(false)} onImported={() => { setFilter("all"); void feats.reload(); }} />)}
 
-          {publishing && project.data && <PublishPanel project={project.data} onClose={() => setPublishing(false)} />}
-          {publishing && <p className="meta" style={{ marginTop: -8 }}>Approved and waiting records are published; rejected ones are left out. This form has {counts.approved ?? 0} approved and {counts.submitted ?? 0} waiting. Approve the good ones first if you only want checked data public.</p>}
-
           {canManage && picked.size > 0 && (
-            <div className="row" role="toolbar" aria-label="Selected records" style={{ marginBottom: 8 }}>
+            <div className="selection-bar" role="toolbar" aria-label="Selected records">
               <strong>{picked.size} selected</strong>
-              <Button small onClick={() => void review([...picked], "approved")}>Approve</Button>
+              <Button small onClick={() => void review([...picked], "approved")}><Icon name="check" size={16} />Approve</Button>
               <Button small onClick={() => void review([...picked], "rejected")}>Reject</Button>
-              <Button small onClick={() => void remove([...picked])}>Delete</Button>
-              <Button small onClick={() => setPicked(new Set())}>Clear</Button>
+              <Button small onClick={() => void remove([...picked])}><Icon name="delete" size={16} />Delete</Button>
+              <Button small variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
             </div>
           )}
 
           {editing && form && (
-            <section className="card" style={{ maxWidth: 640, marginBottom: 16 }} aria-label="Edit record">
+            <section className="card inline-panel" style={{ maxWidth: 640 }} aria-label="Edit record">
               <h2>Edit record</h2>
               <FormRenderer form={form} value={draft} onChange={setDraft} errors={errors} />
               <div className="row" style={{ marginTop: 12 }}><Button variant="primary" busy={saving} onClick={() => void save()}>Save</Button><Button onClick={() => setEditing(null)}>Cancel</Button></div>
             </section>
           )}
 
-          {!rows.length ? <EmptyState title={all.length ? "Nothing matches this filter" : "No data collected yet"}>{all.length ? "Choose a different status above." : shareLink && canManage ? "Share the form link or add collaborators to start collecting." : "Data collected with this form shows up here."}</EmptyState> : (
-            <div style={{ overflowX: "auto" }}>
+          {!rows.length ? (
+            <EmptyState icon={all.length ? "search" : "inbox"} title={all.length ? "Nothing matches this filter" : "No data collected yet"}
+              action={!all.length && shareLink && canManage ? <Link className="btn btn-primary" to={shareLink}><Icon name="share" size={18} />Share the form</Link> : all.length ? <Button onClick={() => setFilter("all")}>Show all records</Button> : undefined}>
+              {all.length ? "No records have this status." : shareLink && canManage ? "Share the form link or add collaborators, and their records will show up here as they arrive." : "Data collected with this form shows up here."}
+            </EmptyState>
+          ) : (
+            <div className="table-wrap">
               <table className="data-table">
                 <thead><tr>
-                  {canManage && <th scope="col"><input type="checkbox" aria-label="Select all shown" checked={picked.size > 0 && rows.every((r) => picked.has(r.id))} onChange={(e) => setPicked(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>}
-                  <th scope="col">Status</th>{cols.map((c) => <th key={c.id} scope="col">{c.label}</th>)}<th scope="col">Updated</th>{canManage && <th scope="col"><span className="sr-only">Actions</span></th>}
+                  {canManage && <th scope="col" className="check-col"><input type="checkbox" aria-label="Select all shown" checked={picked.size > 0 && rows.every((r) => picked.has(r.id))} onChange={(e) => setPicked(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>}
+                  <th scope="col">Status</th>{cols.map((c) => <th key={c.id} scope="col">{c.label}</th>)}<th scope="col">Updated</th>{canManage && <th scope="col" className="col-sticky-end"><span className="sr-only">Actions</span></th>}
                 </tr></thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.id}>
-                      {canManage && <td><input type="checkbox" aria-label="Select record" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /></td>}
-                      <td><span className={STATUS[r.status].cls}>{STATUS[r.status].label}</span></td>
-                      {cols.map((c) => <td key={c.id}>{cell(r.properties[c.id])}</td>)}
-                      <td>{new Date(r.updated_at).toLocaleDateString()}</td>
-                      {canManage && <td style={{ whiteSpace: "nowrap" }}>
-                        <Button small onClick={() => startEdit(r)}>Edit</Button>{" "}
-                        <Button small onClick={() => void review([r.id], "approved")} disabled={r.status === "approved"}>Approve</Button>{" "}
-                        <Button small onClick={() => void remove([r.id])}>Delete</Button>
+                    <tr key={r.id} className={picked.has(r.id) ? "is-picked" : undefined}>
+                      {canManage && <td className="check-col"><input type="checkbox" aria-label="Select record" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /></td>}
+                      <td className="cell-nowrap"><span className={STATUS[r.status].cls}>{STATUS[r.status].label}</span></td>
+                      {cols.map((c) => <td key={c.id} className="cell-wrap">{cell(r.properties[c.id])}</td>)}
+                      <td className="cell-nowrap">{new Date(r.updated_at).toLocaleDateString()}</td>
+                      {canManage && <td className="col-sticky-end">
+                        <div className="row-actions">
+                          {r.status !== "approved" && <Button small onClick={() => void review([r.id], "approved")}><Icon name="check" size={16} />Approve</Button>}
+                          <Button small onClick={() => startEdit(r)}>Edit</Button>
+                          <MoreMenu label="More for this record" items={[
+                            ...(r.status !== "rejected" ? [{ label: "Reject", onSelect: () => void review([r.id], "rejected") }] : []),
+                            { label: "Delete", icon: "delete" as const, danger: true, onSelect: () => void remove([r.id]) },
+                          ]} />
+                        </div>
                       </td>}
                     </tr>
                   ))}
@@ -187,6 +204,7 @@ export default function DataPage() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

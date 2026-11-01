@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Icon } from "../components/icons";
+import ProjectNav from "../components/ProjectNav";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
@@ -66,11 +68,16 @@ export default function SharePage() {
   }
 
   return (
+    <>
+    <ProjectNav projectId={projectId} />
     <div className="container" style={{ width: "100%" }}>
-      <div className="page-head">
-        <h1>Share “{form.data.name}”</h1><span className="grow" />
-        <Link className="btn" to={`/collect/${projectId}/data`}>Collected data</Link>
-        <Link className="btn" to={`/collect/${projectId}/forms/${formId}`}>Back to builder</Link>
+      <div className="section-head">
+        <Link className="page-back" to={`/collect/${projectId}/forms`}><Icon name="arrowLeft" size={16} />All forms</Link>
+        <div className="section-head-row">
+          <h2>Share “{form.data.name}”</h2>
+          <Link className="btn" to={`/collect/${projectId}/forms/${formId}`}><Icon name="reshape" size={18} />Edit form</Link>
+        </div>
+        <p className="muted">Send collectors a link, or add people to the project so they can collect from the app.</p>
       </div>
 
       {!s.published ? (
@@ -138,5 +145,6 @@ export default function SharePage() {
         ))}
       </section>
     </div>
+    </>
   );
 }

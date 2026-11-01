@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import DatasetThumb from "../components/DatasetThumb";
+import { Icon } from "../components/icons";
 import { Button, EmptyState, ErrorState, Loading } from "../components/ui";
 import { useAsync } from "../lib/hooks";
 
@@ -19,14 +20,14 @@ export default function HubPage() {
         <p>Surveyed features and imagery from field teams, published with clear licences.</p>
         <form className="search" onSubmit={submit} role="search">
           <label className="sr-only" htmlFor="q">Search datasets</label>
-          <input id="q" className="input" placeholder="Search datasets, places or tags" value={q} onChange={(e) => setQ(e.target.value)} />
+          <span className="search-field"><Icon name="search" size={18} /><input id="q" type="search" className="input" placeholder="Search datasets, places or tags" value={q} onChange={(e) => setQ(e.target.value)} /></span>
           <Button type="submit" variant="accent">Search</Button>
         </form>
       </section>
       <section className="container" style={{ paddingTop: 12, width: "100%" }} aria-live="polite">
         {loading && <Loading label="Loading datasets…" />}
         {error != null && <ErrorState error={error} onRetry={reload} />}
-        {data && data.length === 0 && <EmptyState title="No datasets found">{applied ? `Nothing matches "${applied}". Try a place or a topic.` : "Nothing has been published yet."}</EmptyState>}
+        {data && data.length === 0 && <EmptyState icon={applied ? "search" : "navHub"} title={applied ? "No datasets found" : "Nothing published yet"} action={applied ? <Button onClick={() => { setQ(""); setApplied(""); }}>Show all datasets</Button> : undefined}>{applied ? `Nothing matches "${applied}". Try a place or a topic.` : "Datasets appear here once a team publishes reviewed data."}</EmptyState>}
         <div className="stack">
           {data?.map((d) => (
             <article className="dataset" key={d.slug}>

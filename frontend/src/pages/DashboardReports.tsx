@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 import DashAppBar from "../components/dashboard/DashAppBar";
 import ReportView from "../components/dashboard/ReportView";
@@ -42,7 +43,7 @@ export default function DashboardReports() {
       <h2>Make a report</h2>
       <p className="meta">A report is a snapshot of the dashboards you choose, worked out from the records as they are right now. Print it, or save it as a PDF from the print window.</p>
       {dashboards.length === 0
-        ? <p className="meta">This project has no dashboards yet. Make one in <strong>Dashboards</strong> first.</p>
+        ? <><p className="meta">This project has no dashboards yet. A report is made from dashboards, so create one first.</p><div className="row"><Link className="btn btn-primary" to="/dashboards">Go to Dashboards</Link></div></>
         : <>
           <div className="field"><span className="label">Dashboards to include</span>
             <div className="cols" role="group" aria-label="Dashboards to include">
