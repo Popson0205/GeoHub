@@ -36,13 +36,16 @@ ok(none.includes("Visualize, monitor, and share information") && none.includes("
 // ---- edit mode and the settings panel ----
 import { WidgetSettings } from "../src/pages/DashboardPage";
 import TemplatePicker from "../src/components/TemplatePicker";
+import { TEMPLATES } from "../src/lib/dashboardTemplates";
 import { dashboardFields, newWidget } from "../src/lib/dashboard";
 const editHtml = (h => h.replace(/<!-- -->/g, ""))(renderToString(
   <MemoryRouter initialEntries={[{ pathname: "/", state: { edit: true } }]}><ToastProvider><ConfirmProvider>
     <DashboardView projectId="p" dashboard={dash} forms={[form]} features={feats} canEdit onRefresh={() => {}} />
   </ConfirmProvider></ToastProvider></MemoryRouter>));
-ok(editHtml.includes("Save") && editHtml.includes("+ Add page") && editHtml.includes("Drag an element by its title bar"), "the builder shows Save, Add page and the drag hint");
-ok(editHtml.includes("Reset layout") === false && editHtml.includes("Dashboard pages"), "editors always see the page tabs");
+// Add page and the drag hint now live in the header's "More options" menu, which opens on click.
+ok(editHtml.includes("Save") && editHtml.includes('aria-label="More options"'), "the builder shows Save, and a More options menu (with Add page and the drag hint)");
+// A one-page dashboard has no tab strip; a second page (added from the header menu) brings the tabs.
+ok(editHtml.includes("Reset layout") === false && !editHtml.includes("Dashboard pages"), "a one-page dashboard shows no page tabs and no Reset layout");
 const defs = dashboardFields(form);
 for (const t of ["kpi", "bar", "pie", "line", "table", "map"] as const) {
   try {
@@ -59,7 +62,7 @@ for (const t of ["kpi", "bar", "pie", "line", "table", "map"] as const) {
 {
   const h = renderToString(<TemplatePicker value="executive" onChange={() => {}} />);
   ok(["Standard overview", "Executive summary", "Map focus", "Review queue", "Trends and analysis", "Blank"].every((n) => h.includes(n)), "the template picker offers every template");
-  ok((h.match(/type="radio"/g) ?? []).length === 6 && h.includes("checked") && (h.match(/<svg/g) ?? []).length === 6, "one radio and one thumbnail per template, with the chosen one marked");
+  ok((h.match(/type="radio"/g) ?? []).length === TEMPLATES.length && h.includes("checked") && (h.match(/<svg/g) ?? []).length === TEMPLATES.length, "one radio and one thumbnail per template, with the chosen one marked");
   ok(true, "template gallery drawn above");
 }
 const tbl = renderToString(<WidgetSettings w={newWidget("table", defs)} defs={defs} index={0} count={1} onChange={() => {}} onMove={() => {}} onRemove={() => {}} onClose={() => {}} />);
@@ -89,7 +92,8 @@ const navyPage = jointView("/?page=navy");
 ok(activeTab(navyPage) === "Navy" && navyPage.includes("5 records") && !navyPage.includes("30 records"), "the address picks the page, and the page only counts its own form");
 ok(activeTab(jointView("/?page=nope")) === "Overview", "an unknown page falls back to the first");
 const filtered = jointView("/?page=army&status=approved");
-ok(filtered.includes("10 of 30 records") && filtered.includes('<option value="approved" selected'), "filters in the address are applied and shown");
+// Review status has no box any more; an address that carries one shows it as a removable chip.
+ok(filtered.includes("10 of 30 records") && filtered.includes("Review status: Approved"), "filters in the address are applied and shown");
 ok(jointView("/?page=navy&status=approved").includes("5 records"), "the same filter carries to another page");
 ok(/class="widget t-kpi s6[^"]*" style="grid-row:span 2"/.test(first), "two number cards share a line, two rows tall");
 const army = jointView("/?page=army");

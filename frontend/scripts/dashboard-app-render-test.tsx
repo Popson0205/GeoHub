@@ -1,5 +1,6 @@
 // Draws the Dashboard app's screens on the server with sample data, to catch crashes the type checker can't see.
 import { renderToString } from "react-dom/server";
+import { TEMPLATES } from "../src/lib/dashboardTemplates";
 import { MemoryRouter } from "react-router-dom";
 import { AddElementPanel, BuilderSidebar, DataSourcesPanel, EmptyCanvas, ThemePanel, TimePanel, ViewPanel } from "../src/components/dashboard/Panels";
 import { WidgetSettings } from "../src/components/dashboard/WidgetSettings";
@@ -68,7 +69,7 @@ ok(["Number", "Gauge", "List", "Details", "Rich text", "Embedded content", "Bar 
 ok(vp("header").includes("Dashboard title") && !vp("header", false).includes("Dashboard title"), "View > Header edits the title for editors only");
 ok(vp("sidebar").includes("Move to grid") && vp("sidebar").includes("Move to side"), "View > Sidebar moves elements between grid and side column");
 const pages = vp("pages");
-ok(pages.includes("Page name") && pages.includes("Records from") && pages.includes("Apply to this page") && (pages.match(/type="radio"/g) ?? []).length === 6, "View > Pages has page settings and the template gallery");
+ok(pages.includes("Page name") && pages.includes("Records from") && pages.includes("Apply to this page") && (pages.match(/type="radio"/g) ?? []).length === TEMPLATES.length, "View > Pages has page settings and the template gallery");
 ok(pr(<DataSourcesPanel forms={[form]} features={feats} pages={dash.config.pages} pageFormId="f" canEdit onUse={noop} onClose={noop} />).includes("12 records · used on 1 page"), "Data sources shows counts and where each form is used");
 ok(pr(<DataSourcesPanel forms={[]} features={[]} pages={[]} canEdit onUse={noop} onClose={noop} />).includes("No forms yet"), "Data sources with no forms says so");
 const th = pr(<ThemePanel canEdit onChange={noop} onClose={noop} />);

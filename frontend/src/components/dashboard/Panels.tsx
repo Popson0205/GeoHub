@@ -44,24 +44,25 @@ const ITEMS: { key: PanelKey; label: string }[] = [
 export function BuilderSidebar({ active, onToggle, canEdit, dirty, saving, saved, onSave, onDiscard, collapsed, onCollapse }:
   { active: PanelKey | null; onToggle: (k: PanelKey) => void; canEdit: boolean; dirty: boolean; saving: boolean; saved: boolean; onSave: () => void; onDiscard: () => void; collapsed: boolean; onCollapse: () => void }) {
   return (
+    // Labels stay in the buttons when the rail is collapsed, only hidden from view, so each icon still has its name.
     <aside className={`dashboard-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Dashboard tools">
       <div className="dashboard-sidebar-items">
         {ITEMS.map((it) => {
           const off = !canEdit && it.key !== "data";
           return (
             <button key={it.key} type="button" className={`dashboard-sidebar-item${active === it.key ? " is-active" : ""}${off ? " is-disabled" : ""}`} disabled={off} aria-pressed={active === it.key} title={it.label} onClick={() => onToggle(it.key)}>
-              <SideIcon k={it.key} />{!collapsed && it.label}
+              <SideIcon k={it.key} /><span className={collapsed ? "sr-only" : undefined}>{it.label}</span>
             </button>
           );
         })}
         {canEdit && (
           <button type="button" className={`dashboard-sidebar-item${dirty ? " has-unsaved-changes" : ""}`} disabled={saving || !dirty} onClick={onSave} title={dirty ? "Save the dashboard" : "Nothing to save"}>
-            <SideIcon k="save" />{!collapsed && (saving ? "Saving…" : saved && !dirty ? "Saved" : dirty ? "Save*" : "Save")}
+            <SideIcon k="save" /><span className={collapsed ? "sr-only" : undefined}>{saving ? "Saving…" : saved && !dirty ? "Saved" : dirty ? "Save*" : "Save"}</span>
           </button>
         )}
         {canEdit && dirty && (
           <button type="button" className="dashboard-sidebar-item" disabled={saving} onClick={onDiscard} title="Discard unsaved changes">
-            <SideIcon k="discard" />{!collapsed && "Discard"}
+            <SideIcon k="discard" /><span className={collapsed ? "sr-only" : undefined}>Discard</span>
           </button>
         )}
       </div>

@@ -358,6 +358,8 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
           <HeaderControls controls={workingControls} source={pageSource} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters}
             unfinished={unfinishedControls} editing={editing} onEdit={() => setPanel("filters")} />
           <div className="dash-actions">
+            {/* How many records the page is drawn from. While something is filtered, the filter line shows "x of y" instead. */}
+            {!isFiltered(filters) && <span className="meta dash-total">{total.toLocaleString()} {total === 1 ? "record" : "records"}</span>}
             {(time || tl) && <span className="meta dash-asof" title={tl ? `Dashboard range: ${tl}` : undefined}>{[time && `Data as of ${time}`, tl].filter(Boolean).join(" · ")}</span>}
             {canEdit && !publicView && <button type="button" className="dashboard-header-btn" onClick={() => openPanel("view", "sharing")}>Share{dashboard.shared ? " ·  Public" : ""}</button>}
             <HeaderMenu
