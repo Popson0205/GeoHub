@@ -342,3 +342,13 @@ th[aria-sort] { color: var(--ink-900); }
 .seg-control button:hover { color: var(--ink-900); }
 .seg-control button[aria-checked="true"] { background: var(--n-0); color: var(--ink-900); font-weight: 600; box-shadow: var(--sh-xs); }
 .seg-control button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* sharing a form: WhatsApp, the phone's Share menu, and a QR code */
+.share-options { display: flex; flex-direction: column; gap: var(--s-4); padding-top: var(--s-4); margin-top: var(--s-2); border-top: 1px solid var(--line); }
+.share-buttons { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.btn-whatsapp { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }            /* WhatsApp green, darkened for 4.5:1 with white */
+.btn-whatsapp:hover:not(:disabled) { background: #186a42; border-color: #186a42; color: #fff; }
+.share-qr { display: flex; align-items: center; gap: var(--s-4); }
+.share-qr .qr { width: 132px; height: 132px; flex: none; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
+.share-qr-text { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); }
+@media (max-width: 480px) { .share-qr { flex-direction: column; align-items: flex-start; } }
