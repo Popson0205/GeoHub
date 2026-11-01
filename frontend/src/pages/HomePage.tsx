@@ -1,7 +1,8 @@
 import { lazy, Suspense, useMemo } from "react";
 import { Link } from "react-router-dom";
+import FootprintThumb from "../components/FootprintThumb";
 import { Icon, type IconName } from "../components/icons";
-import { CardSkeletons, ErrorState, thumbStyle } from "../components/ui";
+import { CardSkeletons, ErrorState } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import { useAsync } from "../lib/hooks";
 import type { Project, WorkMap } from "../lib/types";
@@ -97,7 +98,7 @@ export default function HomePage() {
           <ul className="recent-grid">
             {recent.map((r) => (
               <li key={`${r.kind}-${r.id}`} className="card recent-card">
-                <div className="thumb" style={thumbStyle(r.id)} aria-hidden="true" />
+                <FootprintThumb kind={r.kind} id={r.id} version={r.updated} />
                 <div className="recent-body">
                   <span className="recent-kind"><Icon name={r.kind === "map" ? "navMap" : "navCollect"} size={14} />{r.kind === "map" ? "Map" : "Data collection"}</span>
                   <Link className="recent-title" to={r.to}>{r.name}</Link>

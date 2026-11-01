@@ -326,3 +326,10 @@ th[aria-sort] { color: var(--ink-900); }
 .pager-size .input { min-height: var(--control-h-sm); width: auto; padding-block: 0; }
 .pager-at { padding: 0 var(--s-2); color: var(--ink-900); font-weight: 500; }
 @media (max-width: 600px) { .table-tools .table-search { flex: 1 1 100%; } .pager .grow { display: none; } }
+
+/* the outline of a project's records or a map's features, on its card */
+.thumb-footprint { position: relative; overflow: hidden; }
+.thumb-footprint svg { position: absolute; inset: 0; width: 100%; height: 100%; animation: dialog-fade .3s ease-out; }
+.fp-point { fill: var(--green-600); stroke: #fff; stroke-width: 1.4; }
+.fp-line { fill: none; stroke: var(--green-700); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.fp-area { fill: rgba(23, 99, 76, .22); stroke: var(--green-700); stroke-width: 1.2; stroke-linejoin: round; }

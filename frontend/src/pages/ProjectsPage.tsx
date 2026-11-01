@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import FootprintThumb from "../components/FootprintThumb";
 import { Icon } from "../components/icons";
-import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, thumbStyle, useToast, type MoreMenuItem } from "../components/ui";
+import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, useToast, type MoreMenuItem } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { License, Project } from "../lib/types";
@@ -63,7 +64,7 @@ export default function ProjectsPage() {
             ];
             return (
               <article className="card item-card" key={p.id}>
-                <div className="thumb" style={thumbStyle(p.id)} aria-hidden="true" />
+                <FootprintThumb kind="project" id={p.id} version={`${p.updated_at}:${p.feature_count}`} />
                 <div className="item-card-body">
                   <h2><Link to={home}>{p.name}</Link></h2>
                   <div className="item-stats">
