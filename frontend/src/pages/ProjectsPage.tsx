@@ -10,7 +10,8 @@ export default function ProjectsPage() {
   const toast = useToast();
   const nav = useNavigate();
   const { data, error, loading, reload } = useAsync((api) => api.listProjects(), []);
-  const [creating, setCreating] = useState(false);
+  // ?new=1 (from the home page) opens the "New project" panel straight away.
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get("new") === "1");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState<Project | null>(null);

@@ -10,7 +10,8 @@ export default function MapsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const { data, error, loading, reload } = useAsync((api) => api.listMaps(), []);
-  const [creating, setCreating] = useState(false);
+  // ?new=1 (from the home page) opens the "New map" panel straight away.
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get("new") === "1");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");

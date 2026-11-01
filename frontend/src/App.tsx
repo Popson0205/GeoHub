@@ -2,7 +2,7 @@ import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-rou
 import { lazy, Suspense, type ReactNode } from "react";
 import Shell from "./components/Shell";
 import { Loading } from "./components/ui";
-import { RequireAuth } from "./lib/auth";
+import { RequireAuth, useAuth } from "./lib/auth";
 import { isCollectorApp } from "./lib/pwa";
 
 // Each page loads when it is first opened, so the first visit downloads only what that page needs.
@@ -16,6 +16,7 @@ const HubPage = lazy(() => import("./pages/HubPage"));
 const DatasetPage = lazy(() => import("./pages/DatasetPage"));
 const CollectPage = lazy(() => import("./pages/CollectPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
+const HomePage = lazy(() => import("./pages/HomePage"));
 const MapsPage = lazy(() => import("./pages/MapsPage"));
 const MapEditorPage = lazy(() => import("./pages/MapEditorPage"));
 const MapPortalPage = lazy(() => import("./pages/MapPortalPage"));
@@ -34,6 +35,13 @@ export function PageLoading() {
   return <div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>;
 }
 const Page = ({ children }: { children: ReactNode }) => <Suspense fallback={<PageLoading />}>{children}</Suspense>;
+
+/** Signed in: your work. Signed out: what Geohub is. The introduction stays at /about for everyone. */
+function Home() {
+  const { user, ready } = useAuth();
+  if (!ready) return <PageLoading />;
+  return user ? <HomePage /> : <LandingPage />;
+}
 
 function NotFound() {
   return (
@@ -84,7 +92,8 @@ export default function App() {
       {/* A dashboard opens in its own full-screen workspace, like the form builder */}
       <Route path="/dashboards/:dashboardId" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route element={<Shell />}>
-        <Route index element={<LandingPage />} />
+        <Route index element={<Home />} />
+        <Route path="/about" element={<LandingPage />} />
         {/* Web mapping: standalone maps, no forms or projects */}
         <Route path="/maps" element={<RequireAuth><MapsPage /></RequireAuth>} />
         <Route path="/maps/:mapId" element={<RequireAuth><MapEditorPage /></RequireAuth>} />
