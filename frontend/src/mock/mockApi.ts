@@ -47,8 +47,8 @@ export class MockApi implements Api {
   private save() { try { localStorage.setItem(KEY, JSON.stringify(this.s)); } catch { /* storage full */ } }
   private auth() { if (!tokens.get()) throw new ApiError(401, "Sign in to continue."); }
   private counts(p: Project): Project {
-    const n = this.s.features.filter((f) => f.project_id === p.id && !f.deleted).length;
-    return { ...p, feature_count: n };
+    const mine = this.s.features.filter((f) => f.project_id === p.id && !f.deleted);
+    return { ...p, feature_count: mine.length, waiting_count: mine.filter((f) => f.status === "submitted").length };
   }
   private strip(r: Row): Feature { const { seq: _s, ...f } = r; return f; }
 

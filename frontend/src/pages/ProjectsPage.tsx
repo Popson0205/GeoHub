@@ -73,7 +73,9 @@ export default function ProjectsPage() {
                 </div>
                 <div className="item-card-foot">
                   <Link className="btn btn-primary" to={`/collect/${p.id}`}><Icon name="navCollect" size={18} />Collect</Link>
-                  {p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/data`}>View data</Link>}
+                  {manage && (p.waiting_count ?? 0) > 0
+                    ? <Link className="btn btn-attention" to={`/collect/${p.id}/data?review=1`}>Review {p.waiting_count}<span className="sr-only"> waiting records</span></Link>
+                    : p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/data`}>View data</Link>}
                   <span className="grow" />
                   <MoreMenu label={`More for ${p.name}`} items={more} />
                 </div>

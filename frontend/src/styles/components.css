@@ -298,3 +298,7 @@ article.card:hover { box-shadow: var(--sh-md); border-color: var(--line-strong);
 .toast .toast-action { min-height: 32px; padding: 0 var(--s-3); border: 1px solid rgba(255, 255, 255, .35); border-radius: var(--r-md); background: transparent; color: #fff; font: 600 var(--fs-md) var(--font-ui); opacity: 1; }
 .toast .toast-action:hover { background: rgba(255, 255, 255, .12); border-color: #fff; }
 .toast :focus-visible { outline: 2px solid #9ec2ff; outline-offset: 2px; }
+
+/* a secondary button that needs a look: records waiting for review */
+.btn-attention { border-color: var(--warning-100); background: var(--warning-50); color: var(--warn-ink); }
+.btn-attention:hover:not(:disabled) { border-color: var(--warning-600); background: var(--warning-100); color: var(--warn-ink); }

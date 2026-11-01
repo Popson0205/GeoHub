@@ -4,5 +4,6 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: [{ find: /^.*\/components\/MapView$/, replacement: path.resolve(__dirname, "FakeMapView.tsx") }] },
+  // Matches "../components/MapView" from pages and "./MapView" from other components.
+  resolve: { alias: [{ find: /^(.*\/components|\.)\/MapView$/, replacement: path.resolve(__dirname, "FakeMapView.tsx") }] },
 });
