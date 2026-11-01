@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type {
+import type { MediaItem,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -46,6 +46,8 @@ export interface Api {
   getPublicDashboard(token: string): Promise<PublicDashboard>;
 
   listFeatures(projectId: string): Promise<Feature[]>;
+  /** Photos and other files attached to a record, with links to view them. */
+  getFeatureMedia(featureId: string): Promise<MediaItem[]>;
   /** The caller's own records that a reviewer rejected, with the reviewer's note. */
   listReturned(projectId: string): Promise<Feature[]>;
   createFeature(f: NewFeature): Promise<Feature>;
@@ -364,6 +366,12 @@ class HttpApi implements Api {
       cursor = page.next_cursor;
     } while (cursor);
     return out;
+  }
+  async getFeatureMedia(featureId: string) {
+    const f: Wire = await this.req("GET", `/features/${featureId}`);
+    return ((f.media ?? []) as Wire[]).filter((m) => m.url).map((m): MediaItem => ({
+      id: m.id, field_id: m.field_id ?? undefined, kind: m.kind, url: m.url, original_url: m.original_url ?? undefined, width: m.width ?? undefined, height: m.height ?? undefined,
+    }));
   }
   async listReturned(projectId: string) {
     const page: Wire = await this.req("GET", `/projects/${projectId}/features?status=rejected&mine=true&limit=1000`);

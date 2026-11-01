@@ -117,6 +117,8 @@ export interface Feature {
   /** What the reviewer wrote when approving or rejecting it. */
   review_note?: string;
 }
+/** A photo, recording or file attached to a record. `url` is a link that works for a limited time. */
+export interface MediaItem { id: string; field_id?: string; kind: string; url: string; original_url?: string; width?: number; height?: number }
 export type NewFeature = Pick<Feature, "id" | "project_id" | "form_id" | "form_version" | "geometry" | "properties">;
 
 // ---- sync ----

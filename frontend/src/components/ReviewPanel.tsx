@@ -4,7 +4,8 @@ import { Icon } from "./icons";
 import { Button } from "./ui";
 import { dashboardFields, display } from "../lib/dashboard";
 import { allFields, isMedia } from "../lib/fieldSpec";
-import type { Feature, Form } from "../lib/types";
+import { loadApi } from "../lib/api";
+import type { Feature, Form, MediaItem } from "../lib/types";
 
 type Decision = "approved" | "rejected";
 
@@ -35,6 +36,17 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
 
   const defs = useMemo(() => dashboardFields(form), [form]);
   const media = useMemo(() => allFields(form.fields).filter((f) => isMedia(f.type)), [form]);
+  // The current record's photos and files, fetched when it opens (links expire, so they are not kept).
+  const [files_, setFiles] = useState<MediaItem[] | null>(null);
+  const [viewing, setViewing] = useState<MediaItem | null>(null);
+  const hasMedia = !!cur && media.some((m) => { const v = cur.properties[m.id]; return Array.isArray(v) ? v.length > 0 : !!v; });
+  useEffect(() => {
+    if (!cur || !hasMedia) { setFiles([]); return; }
+    let live = true;
+    setFiles(null);
+    loadApi().then((api) => api.getFeatureMedia(cur.id)).then((m) => { if (live) setFiles(m); }).catch(() => { if (live) setFiles([]); });
+    return () => { live = false; };
+  }, [cur?.id, hasMedia]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = useCallback((i: number) => { setAt(Math.max(0, Math.min(items.length - 1, i))); setNote(""); }, [items.length]);
   /** The next record still waiting, after this one, wrapping round to the start. */
@@ -63,6 +75,7 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (viewing) { if (e.key === "Escape") { e.preventDefault(); setViewing(null); } return; }   // the photo viewer has the keyboard
       const t = e.target as HTMLElement | null;
       if (t && (t.closest("input, textarea, select, [contenteditable=true]") || t.closest(".dialog"))) {
         if (e.key === "Escape" && t.closest("textarea, input")) (t as HTMLElement).blur();
@@ -79,7 +92,7 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [cur, decide, onEdit, onClose, go, at]);
+  }, [cur, decide, onEdit, onClose, go, at, viewing]);
 
   if (!items.length) {
     return (
@@ -130,8 +143,26 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
                 })}
                 {media.map((m) => {
                   const v = cur.properties[m.id];
-                  const n = Array.isArray(v) ? v.length : v ? 1 : 0;
-                  return <div key={m.id}><dt>{m.label || m.id}</dt><dd className={n ? undefined : "is-empty"}>{n ? `${n} ${m.type === "photo" ? (n === 1 ? "photo" : "photos") : n === 1 ? "file" : "files"}` : "None"}</dd></div>;
+                  const ids = Array.isArray(v) ? (v as string[]) : v ? [String(v)] : [];
+                  const files = (files_ ?? []).filter((f) => ids.includes(f.id) || f.field_id === m.id);
+                  const word = m.type === "photo" ? (ids.length === 1 ? "photo" : "photos") : ids.length === 1 ? "file" : "files";
+                  return (
+                    <div key={m.id}><dt>{m.label || m.id}</dt>
+                      <dd className={ids.length ? undefined : "is-empty"}>
+                        {!ids.length ? "None" : files.length ? (
+                          <span className="review-media">
+                            {files.map((f, i) => f.kind === "photo" || f.kind === "image" || f.kind === "signature"
+                              ? <button key={f.id} type="button" className="review-thumb" onClick={() => setViewing(f)} aria-label={`View ${m.label || "photo"} ${i + 1} of ${files.length} larger`}><img src={f.url} alt="" loading="lazy" /></button>
+                              : f.kind === "audio" ? <audio key={f.id} controls src={f.url} preload="none" aria-label={`${m.label || "Recording"} ${i + 1}`} />
+                              : f.kind === "video" ? <video key={f.id} controls src={f.url} preload="none" className="review-video" aria-label={`${m.label || "Video"} ${i + 1}`} />
+                              : <a key={f.id} href={f.url} target="_blank" rel="noreferrer">Open file {i + 1}</a>)}
+                            {ids.length > files.length && <span className="muted review-media-missing">{ids.length - files.length} more not uploaded yet</span>}
+                          </span>
+                        ) : files_ === null ? <span className="muted">Loading {ids.length} {word}…</span>
+                          : <span className="muted">{ids.length} {word}, not uploaded yet (still on the collector's phone)</span>}
+                      </dd>
+                    </div>
+                  );
                 })}
               </dl>
             </div>
@@ -154,6 +185,17 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
             <Button variant="primary" busy={busy === "approved"} disabled={!!busy || cur.status === "approved"} onClick={() => void decide("approved")} aria-keyshortcuts="A"><Icon name="check" size={18} />Approve<kbd aria-hidden="true">A</kbd></Button>
           </footer>
         </>
+      )}
+      {viewing && (
+        <div className="dialog-backdrop lightbox" onMouseDown={(e) => { if (e.target === e.currentTarget) setViewing(null); }}>
+          <figure className="lightbox-figure" role="dialog" aria-modal="true" aria-label="Photo">
+            <img src={viewing.url} alt="Photo attached to this record" />
+            <figcaption>
+              <a href={viewing.original_url ?? viewing.url} target="_blank" rel="noreferrer">Open full size</a>
+              <Button small onClick={() => setViewing(null)} autoFocus>Close<kbd aria-hidden="true">Esc</kbd></Button>
+            </figcaption>
+          </figure>
+        </div>
       )}
     </section>
   );

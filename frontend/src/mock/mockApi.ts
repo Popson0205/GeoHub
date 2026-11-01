@@ -4,7 +4,7 @@ import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type {
+import type { MediaItem,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -317,7 +317,17 @@ export class MockApi implements Api {
     const page = rows.slice(0, 500);
     return { changes: page.map((r) => this.strip(r)), cursor: String(page.length ? page[page.length - 1].seq : since), has_more: rows.length > page.length };
   }
-  async uploadMedia() { await wait(200); }
+  /** Mock: photos live in memory for this visit, so review mode can show them. */
+  private media = new Map<string, { feature_id: string; field_id?: string; kind: string; url: string }>();
+  async uploadMedia(_projectId: string, featureId: string, mediaId: string, blob: Blob, fieldId?: string) {
+    await wait(200);
+    const url = typeof URL !== "undefined" && typeof URL.createObjectURL === "function" ? URL.createObjectURL(blob) : "";
+    this.media.set(mediaId, { feature_id: featureId, field_id: fieldId, kind: blob.type.startsWith("image/") ? "photo" : blob.type.split("/")[0] || "file", url });
+  }
+  async getFeatureMedia(featureId: string): Promise<MediaItem[]> {
+    await wait(); this.auth();
+    return [...this.media.entries()].filter(([, m]) => m.feature_id === featureId && m.url).map(([id, m]) => ({ id, field_id: m.field_id, kind: m.kind, url: m.url }));
+  }
 
   async listImagery(projectId: string) { await wait(60); this.auth(); return this.s.imagery.filter((i) => i.project_id === projectId); }
   async getImagery(id: string) { await wait(40); const a = this.s.imagery.find((i) => i.id === id); if (!a) throw new ApiError(404, "Imagery not found."); return a; }
