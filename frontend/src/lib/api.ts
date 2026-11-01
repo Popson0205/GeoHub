@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem, FeatureStatus,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -124,6 +124,8 @@ export interface Api {
   publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<{ dataset: Dataset; job: Job }>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
   /** One form's collected records as a GIS file, made in the background: poll the job for `download_url`. */
+  /** The project's history, newest first, 50 at a time. Owners and administrators only. */
+  listActivity(projectId: string, opts?: { kind?: AuditKind; actor?: string; cursor?: string | null }): Promise<{ items: AuditEvent[]; next_cursor: string | null }>;
   exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }): Promise<Job>;
   getJob(id: string): Promise<Job>;
 }
@@ -606,6 +608,14 @@ class HttpApi implements Api {
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
+  async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
+    const q = new URLSearchParams({ limit: "50" });
+    if (opts.kind) q.set("kind", opts.kind);
+    if (opts.actor) q.set("actor", opts.actor);
+    if (opts.cursor) q.set("cursor", opts.cursor);
+    const r = await this.req<Wire>("GET", `/projects/${projectId}/audit?${q}`);
+    return { items: r.items as AuditEvent[], next_cursor: (r.next_cursor as string | null) ?? null };
+  }
   async exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }) {
     return toJob(await this.req("POST", `/projects/${projectId}/exports`, input));
   }

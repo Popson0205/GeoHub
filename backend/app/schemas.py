@@ -465,9 +465,11 @@ class AuditOut(BaseModel):
     id: int
     at: datetime
     actor_id: UUID | None
+    actor_name: str | None = None
     action: str
     target_type: str | None
     target_id: str | None
+    target_name: str | None = Field(None, description="The form, person, dashboard or dataset's current name; for a record, its form's name")
     details: dict[str, Any]
 
 

@@ -52,6 +52,7 @@ async function gather(): Promise<SearchItem[]> {
   return [
     ...maps.map((m): SearchItem => ({ kind: "Map", title: m.name, hint: m.description || undefined, to: `/maps/${m.id}`, icon: "navMap" })),
     ...projects.map((p): SearchItem => ({ kind: "Project", title: p.name, hint: p.description || undefined, to: p.role === "collector" ? `/collect/${p.id}` : `/collect/${p.id}/data`, icon: "navCollect" })),
+    ...projects.filter((p) => p.role === "owner" || p.role === "admin").map((p): SearchItem => ({ kind: "Activity", title: `${p.name} activity`, hint: "Who changed what", to: `/collect/${p.id}/activity`, icon: "inbox" })),
     ...forms.flat().map((f): SearchItem => ({ kind: "Form", title: f.name, hint: pname.get(f.project_id), to: `/collect/${f.project_id}/forms/${f.id}`, icon: "form" })),
     ...dashboards.flat().map((d): SearchItem => ({ kind: "Dashboard", title: d.name, hint: pname.get(d.project_id), to: `/dashboards/${d.id}`, icon: "navDash" })),
     ...datasets.map((d): SearchItem => ({ kind: "Dataset", title: d.title, hint: pname.get(d.project_id) ?? "Data hub", to: `/hub/${d.slug}`, icon: "navHub" })),

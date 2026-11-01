@@ -24,6 +24,7 @@ const JoinMapPage = lazy(() => import("./pages/JoinMapPage"));
 const SharePage = lazy(() => import("./pages/SharePage"));
 const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
+const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const DashboardApp = lazy(() => import("./pages/DashboardApp"));
 const DashboardReports = lazy(() => import("./pages/DashboardReports"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -107,6 +108,7 @@ export default function App() {
         <Route path="/collect/:projectId/forms" element={<RequireAuth><FormsPage /></RequireAuth>} />
         <Route path="/collect/:projectId/forms/:formId/share" element={<RequireAuth><SharePage /></RequireAuth>} />
         <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
+        <Route path="/collect/:projectId/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
         {/* Dashboards: their own app. A gallery, a reports page, and the builder above */}
         <Route path="/dashboards" element={<RequireAuth><DashboardApp /></RequireAuth>} />
         <Route path="/dashboards/reports" element={<RequireAuth><DashboardReports /></RequireAuth>} />

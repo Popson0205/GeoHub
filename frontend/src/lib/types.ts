@@ -250,6 +250,15 @@ export interface ContributorsReport {
   daily: { day: string; count: number }[];
   starts_at?: string; ends_at?: string;
 }
+/** One entry in a project's history (the server's audit log). */
+export interface AuditEvent {
+  id: number; at: string; actor_id: string | null; actor_name?: string | null;
+  /** e.g. "feature.create", "feature.review", "form.publish", "member.add" */
+  action: string;
+  target_type: string | null; target_id: string | null; target_name?: string | null;
+  details: Record<string, unknown>;
+}
+export type AuditKind = "records" | "forms" | "people" | "publishing" | "dashboards" | "project";
 export interface Activity { feature_id: string; user_id?: string; name?: string; action: "added" | "edited"; at: string; geometry_type: "point" | "line" | "area"; status: ReviewStatus }
 export interface PublishInput {
   title: string; slug: string; description: string; license: License; visibility: "public" | "private";
