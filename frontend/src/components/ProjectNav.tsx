@@ -48,6 +48,7 @@ export default function ProjectNav({ projectId, project, actions, compact, waiti
                 <span className="badge badge-quiet">{ROLE_LABEL[p.role] ?? p.role}</span>
                 <span><Icon name="users" size={15} />{p.collector_count} {p.collector_count === 1 ? "collector" : "collectors"}</span>
                 <span><Icon name="point" size={15} />{p.feature_count} {p.feature_count === 1 ? "record" : "records"}</span>
+                {manage && <Link className={`project-nav-link${pathname === `${base}/activity` ? " is-active" : ""}`} to={`${base}/activity`} aria-current={pathname === `${base}/activity` ? "page" : undefined}><Icon name="inbox" size={15} />Activity</Link>}
               </p>
             )}
           </div>

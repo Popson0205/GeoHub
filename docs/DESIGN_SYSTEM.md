@@ -59,6 +59,13 @@ These shared pieces keep every page shaped the same way, so people learn the app
 | Undo toast (`useUndoable` in `ui.tsx`) | Deleting records and dashboards | Remove from view at once, really delete when the toast closes (time, ×, leaving the page or closing the tab). Use it instead of a confirmation for anything that can be put back; keep `useConfirm` for what cannot (deleting a map, removing a member, replacing a link). |
 | Home (`HomePage.tsx`) and `GettingStarted.tsx` | `/` when signed in | Needs your attention, then recent work. The first-run checklist ticks itself off and disappears after the first record. Visitors get the introduction, also at `/about`. |
 | `FootprintThumb.tsx` | Project, map and recent cards | The item's real points, lines and areas as a small SVG. No map library, no tiles, loads when the card is on screen. |
+| `QuickSearch.tsx` | Top bar, Ctrl K / ⌘K / "/" | One box for every map, project, form, dashboard, dataset and page. Combobox pattern: arrow keys move, Enter opens, Escape closes and returns focus. New kinds of things go in `gather()`. |
+| `ActivityPage.tsx` | Project header "Activity" link (owners, admins) | The audit log as sentences: who, did what, to what (in bold). Runs of the same thing by one person close together are one line that can be opened. Filters are chips plus a person picker. |
+| `ErrorBoundary.tsx` | Around every page (and inside the top bar shell) | A page that fails to draw shows reload / try again / go to the start, a reassurance that saved work is safe, and a reference to quote. Report other caught errors with `reportError()` from `lib/errorReport.ts`. |
+| `ConflictCard.tsx` | Collector, when sync finds a record changed elsewhere | Only what differs, theirs beside yours, keep either whole or choose per question. |
+| `ShareOptions.tsx` | Share form page | WhatsApp first (where field teams talk), the phone's Share menu, and a QR code to show or print. |
+| Quality flags (`lib/quality.ts`) | Collected data, review mode | Hints, never blocks: poor GPS (over 30 m), placed by hand, possible duplicate. Shown as chips with a sentence on hover and in review. |
+| Languages (`lib/i18n.ts`) | Collector and public forms | English, Yorùbá, Hausa, Igbo, Naijá. Every string the collector sees goes through `t()`; `missing()` lists untranslated keys. The translations are drafts for a native speaker to check. |
 
 The Dashboards app uses the same green and ink as the rest of Geohub (`--dapp` tokens in `dashboard-app.css` now point at the brand tokens).
 

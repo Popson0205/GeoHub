@@ -469,8 +469,9 @@ async def import_features(map_id: UUID, body: ImportIn, user=Depends(current_use
                 errors.append({"row": i + 1, "message": err})
                 continue
             await cur.execute(
-                "INSERT INTO workspace_features (id, map_id, geom, properties, created_by, status, reviewed_by, reviewed_at) "
-                "VALUES (%s, %s, geom_from_json(%s), %s, %s, %s, %s, CASE WHEN %s = 'approved' THEN now() END) "
+                # clock_timestamp(), not now(): rows of one import keep the file's order (now() is the same for all of them)
+                "INSERT INTO workspace_features (id, map_id, geom, properties, created_by, status, reviewed_by, reviewed_at, created_at) "
+                "VALUES (%s, %s, geom_from_json(%s), %s, %s, %s, %s, CASE WHEN %s = 'approved' THEN now() END, clock_timestamp()) "
                 "ON CONFLICT (id) DO NOTHING",
                 (f.id or uuid4(), map_id, json.dumps(f.geometry), Jsonb(f.properties), user["id"], status,
                  user["id"] if status == "approved" else None, status))
@@ -484,7 +485,7 @@ async def export_geojson(map_id: UUID, status: Literal["submitted", "approved", 
                          user=Depends(current_user), conn=Depends(get_conn)):
     m = await require_map(conn, map_id, user["id"])
     cur = await conn.execute(
-        f"SELECT {FEATURE_SQL} {FEATURE_FROM} WHERE f.map_id = %s AND (%s::text IS NULL OR f.status = %s) ORDER BY f.created_at",
+        f"SELECT {FEATURE_SQL} {FEATURE_FROM} WHERE f.map_id = %s AND (%s::text IS NULL OR f.status = %s) ORDER BY f.created_at, f.id",
         (map_id, status, status))
     fc = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "id": str(r["id"]), "geometry": r["geometry"], "properties": r["properties"]}

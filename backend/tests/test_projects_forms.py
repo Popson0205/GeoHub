@@ -1,3 +1,5 @@
+import uuid
+
 def test_project_lifecycle_and_counts(project):
     o = project.owner
     p = o.get(f"/projects/{project.id}").json()
@@ -68,3 +70,31 @@ def test_delete_project_cascades(project, actor):
     o = project.owner
     assert o.delete(f"/projects/{project.id}").status_code == 204
     assert o.get(f"/projects/{project.id}").status_code == 404
+
+
+def test_activity_names_people_and_things_and_filters_by_kind(project):
+    o = project.owner
+    c = project.add("collector")
+    fid = str(uuid.uuid4())
+    r = c.post(f"/projects/{project.id}/features", json={"id": fid, "form_id": project.form_id, "geometry": {"type": "Point", "coordinates": [3.4, 6.5]}, "properties": {"type": "Clinic", "beds": 5}})
+    assert r.status_code == 201, r.text
+    assert c.patch(f"/features/{fid}", json={"properties": {"type": "Clinic", "beds": 5}, "base_version": 1}).status_code == 200
+    items = o.get(f"/projects/{project.id}/audit").json()["items"]
+    made = next(a for a in items if a["action"] == "feature.create")
+    assert made["target_id"] == fid and made["actor_id"] == str(c.id) and made["actor_name"] and made["target_name"]
+    assert any(a["action"] == "feature.edit" for a in items)
+    added = next(a for a in items if a["action"] == "member.add")
+    assert added["target_name"]                                  # the person added, by name
+    records = o.get(f"/projects/{project.id}/audit", params={"kind": "records"}).json()["items"]
+    assert records and all(a["action"].startswith("feature") for a in records)
+    people = o.get(f"/projects/{project.id}/audit", params={"kind": "people"}).json()["items"]
+    assert people and all(a["action"].startswith("member.") for a in people)
+    mine = o.get(f"/projects/{project.id}/audit", params={"actor": str(c.id)}).json()["items"]
+    assert mine and all(a["actor_id"] == str(c.id) for a in mine)
+    # a sync retry with the same change_id is not counted twice
+    ch = {"change_id": str(uuid.uuid4()), "id": str(uuid.uuid4()), "op": "create", "base_version": 0, "form_id": project.form_id,
+          "form_version": 1, "geometry": {"type": "Point", "coordinates": [3.41, 6.51]}, "properties": {"type": "Clinic", "beds": 5}}
+    for _ in range(2):
+        assert c.post("/sync/push", json={"project_id": project.id, "changes": [ch]}).json()["results"][0]["status"] == "applied"
+    again = [a for a in o.get(f"/projects/{project.id}/audit", params={"kind": "records"}).json()["items"] if a["target_id"] == ch["id"]]
+    assert len(again) == 1

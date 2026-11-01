@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type {
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -46,6 +46,10 @@ export interface Api {
   getPublicDashboard(token: string): Promise<PublicDashboard>;
 
   listFeatures(projectId: string): Promise<Feature[]>;
+  /** Photos and other files attached to a record, with links to view them. */
+  getFeatureMedia(featureId: string): Promise<MediaItem[]>;
+  /** The caller's own records that a reviewer rejected, with the reviewer's note. */
+  listReturned(projectId: string): Promise<Feature[]>;
   createFeature(f: NewFeature): Promise<Feature>;
   updateFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }): Promise<Feature>;
   deleteFeature(id: string): Promise<void>;
@@ -119,6 +123,10 @@ export interface Api {
   /** Starts publishing. The snapshot is built by a background job: poll `job` with getJob before saying it worked. */
   publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<{ dataset: Dataset; job: Job }>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
+  /** One form's collected records as a GIS file, made in the background: poll the job for `download_url`. */
+  /** The project's history, newest first, 50 at a time. Owners and administrators only. */
+  listActivity(projectId: string, opts?: { kind?: AuditKind; actor?: string; cursor?: string | null }): Promise<{ items: AuditEvent[]; next_cursor: string | null }>;
+  exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }): Promise<Job>;
   getJob(id: string): Promise<Job>;
 }
 
@@ -169,7 +177,7 @@ const toForm = (f: Wire, projectId?: string): Form => ({
 const toFeature = (f: Wire): Feature => ({
   id: f.id, project_id: f.project_id, form_id: f.form_id, form_version: f.form_version,
   geometry: f.geometry, properties: f.properties ?? {}, status: f.status, version: f.version,
-  updated_at: f.updated_at, deleted: f.deleted_at ? true : undefined,
+  updated_at: f.updated_at, deleted: f.deleted_at ? true : undefined, review_note: f.review_note || undefined,
 });
 const toImagery = (i: Wire): ImageryAsset => ({
   id: i.id, project_id: i.project_id ?? undefined, map_id: i.map_id ?? undefined, name: i.name, status: i.status, error: i.error ?? undefined,
@@ -362,6 +370,16 @@ class HttpApi implements Api {
       cursor = page.next_cursor;
     } while (cursor);
     return out;
+  }
+  async getFeatureMedia(featureId: string) {
+    const f: Wire = await this.req("GET", `/features/${featureId}`);
+    return ((f.media ?? []) as Wire[]).filter((m) => m.url).map((m): MediaItem => ({
+      id: m.id, field_id: m.field_id ?? undefined, kind: m.kind, url: m.url, original_url: m.original_url ?? undefined, width: m.width ?? undefined, height: m.height ?? undefined,
+    }));
+  }
+  async listReturned(projectId: string) {
+    const page: Wire = await this.req("GET", `/projects/${projectId}/features?status=rejected&mine=true&limit=1000`);
+    return (page.items as Wire[]).map(toFeature);
   }
   async createFeature(f: NewFeature) {
     const { project_id, ...body } = f;
@@ -590,6 +608,17 @@ class HttpApi implements Api {
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
+  async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
+    const q = new URLSearchParams({ limit: "50" });
+    if (opts.kind) q.set("kind", opts.kind);
+    if (opts.actor) q.set("actor", opts.actor);
+    if (opts.cursor) q.set("cursor", opts.cursor);
+    const r = await this.req<Wire>("GET", `/projects/${projectId}/audit?${q}`);
+    return { items: r.items as AuditEvent[], next_cursor: (r.next_cursor as string | null) ?? null };
+  }
+  async exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }) {
+    return toJob(await this.req("POST", `/projects/${projectId}/exports`, input));
+  }
 }
 
 /** Backend slugs: lowercase letters, digits and hyphens, 2-63 chars, a short random suffix keeps them unique. */

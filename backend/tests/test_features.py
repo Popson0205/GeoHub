@@ -142,3 +142,58 @@ def test_project_counts_records_waiting_for_review(project):
     assert o.get("/projects").json()["items"][0]["waiting_count"] == 1
     assert o.delete(f"/features/{b}").status_code in (200, 204)
     assert o.get(f"/projects/{project.id}").json()["waiting_count"] == 0
+
+
+def test_a_collector_gets_back_their_returned_records_with_the_note(project):
+    # A reviewer's note has to reach the collector, including on collect-only phones that never pull everything.
+    col = project.add("collector")
+    _, mine1 = create(project, who=col)
+    _, mine2 = create(project, who=col)
+    _, other = create(project)                                         # the owner's own record
+    o = project.owner
+    assert o.post(f"/features/{mine1}/review", json={"decision": "rejected", "note": "Photo is blurry, please retake"}).status_code == 200
+    assert o.post(f"/features/{other}/review", json={"decision": "rejected", "note": "x"}).status_code == 200
+    assert o.post(f"/features/{mine2}/review", json={"decision": "approved"}).status_code == 200
+    items = col.get(f"/projects/{project.id}/features", params={"status": "rejected", "mine": True}).json()["items"]
+    assert [i["id"] for i in items] == [mine1] and items[0]["review_note"] == "Photo is blurry, please retake"
+    # fixing it sends it back for review
+    r = col.patch(f"/features/{mine1}", json={"properties": {"type": "Clinic", "beds": 6, "services": ["ER"]}, "base_version": items[0]["version"]})
+    assert r.status_code == 200 and r.json()["status"] == "submitted", r.text
+    assert col.get(f"/projects/{project.id}/features", params={"status": "rejected", "mine": True}).json()["items"] == []
+
+
+def test_collected_records_download_as_geopackage_shapefile_and_kml(project, client):
+    # Collected data (not a published dataset) can be downloaded in GIS formats, all of it, by status, or picked records.
+    import io, subprocess, zipfile
+    import httpx
+    o = project.owner
+    _, a = create(project)
+    _, b = create(project, properties={"type": "Hospital", "beds": 40, "services": ["ER", "Lab"]})
+    assert o.post(f"/features/{a}/review", json={"decision": "approved"}).status_code == 200
+
+    def export(**body):
+        r = o.post(f"/projects/{project.id}/exports", json={"form_id": project.form_id, **body})
+        assert r.status_code == 202, r.text
+        job = o.get(f"/jobs/{r.json()['id']}").json()
+        assert job["status"] == "done", job
+        return job, httpx.get(job["result"]["download_url"]).content
+
+    job, data = export(format="gpkg")
+    path = f"/tmp/records-{project.id[:8]}.gpkg"
+    open(path, "wb").write(data)
+    info = subprocess.run(["ogrinfo", "-so", "-al", path], capture_output=True, text=True).stdout
+    assert "Feature Count: 2" in info and "services" in info and "status" in info and job["result"]["filename"].endswith(".gpkg")
+
+    _, data = export(format="shp", statuses=["approved"])
+    z = zipfile.ZipFile(io.BytesIO(data))
+    shp = [n for n in z.namelist() if n.endswith(".dbf")][0]
+    z.extract(shp, "/tmp")
+    assert "Feature Count: 1" in subprocess.run(["ogrinfo", "-so", "-al", f"/tmp/{shp}"], capture_output=True, text=True).stdout
+    assert "field_mapping.csv" in z.namelist()
+
+    _, data = export(format="kml", ids=[b])
+    kml = data.decode()
+    assert kml.count("<Placemark") == 1 and "Hospital" in kml and "Lab" in kml
+
+    # a draft-only form, or someone outside the project, gets nothing
+    assert o.post(f"/projects/{project.id}/exports", json={"form_id": str(uuid.uuid4()), "format": "kml"}).status_code == 404
