@@ -129,3 +129,16 @@ def test_delete_restore_and_visibility(project):
 def test_media_listed_on_feature_detail(project):
     r, fid = create(project)
     assert project.owner.get(f"/features/{fid}").json()["media"] == []
+
+def test_project_counts_records_waiting_for_review(project):
+    # The Data collection pages show how many records still need a decision.
+    _, a = create(project)
+    _, b = create(project)
+    create(project, properties={"beds": 1}, status="draft")       # a draft is not waiting for review
+    o = project.owner
+    p = o.get(f"/projects/{project.id}").json()
+    assert p["feature_count"] == 3 and p["waiting_count"] == 2
+    assert o.post(f"/features/{a}/review", json={"decision": "approved"}).status_code == 200
+    assert o.get("/projects").json()["items"][0]["waiting_count"] == 1
+    assert o.delete(f"/features/{b}").status_code in (200, 204)
+    assert o.get(f"/projects/{project.id}").json()["waiting_count"] == 0

@@ -20,6 +20,7 @@ router = APIRouter(tags=["projects"])
 PROJECT_SQL = (
     "SELECT p.id, p.name, p.description, p.created_at, m.role, p.last_activity_at AS last_update, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL) AS feature_count, "
+    "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL AND f.status = 'submitted') AS waiting_count, "
     "(SELECT count(*) FROM members mm WHERE mm.project_id = p.id AND mm.role = 'collector') AS collector_count "
     "FROM projects p JOIN members m ON m.project_id = p.id AND m.user_id = %s ")
 

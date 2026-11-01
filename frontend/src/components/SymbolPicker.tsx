@@ -40,7 +40,7 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
       {tab === "library" ? (<>
         <input type="search" className="fdrop-search" value={q} placeholder="Search symbols (power, water, building…)" aria-label="Search symbols" onChange={(e) => setQ(e.target.value)} />
         <div className="sympick-grid" role="group" aria-label="Library symbols">
-          {found.map((i) => <button key={i.id} type="button" title={i.label} aria-label={i.label} aria-pressed={!value?.svg && value?.icon === i.id} onClick={() => set({ icon: i.id, svg: undefined, shape: value?.shape ?? defaultShape })}><SymbolIcon spec={{ icon: i.id }} size={26} /></button>)}
+          {found.map((i) => <button key={i.id} type="button" title={i.label} aria-label={`${i.label} symbol`} aria-pressed={!value?.svg && value?.icon === i.id} onClick={() => set({ icon: i.id, svg: undefined, shape: value?.shape ?? defaultShape })}><SymbolIcon spec={{ icon: i.id }} size={26} /></button>)}
           {found.length === 0 && <p className="meta">No symbol matches “{q}”.</p>}
         </div>
       </>) : (

@@ -20,6 +20,8 @@ export interface Project {
   description?: string;
   role: Role;
   feature_count: number;
+  /** Records submitted and not yet approved or rejected. */
+  waiting_count?: number;
   collector_count: number;
   updated_at: string;
 }

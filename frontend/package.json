@@ -12,13 +12,19 @@
     "cap:android": "npx cap open android",
     "test:sync": "vite-node scripts/sync-test.ts",
     "test:digitize": "vite-node scripts/digitize-test.ts",
-    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/builder.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/csv-import.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-app.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-share.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-gear.test.tsx",
+    "test:ui": "vite-node -c scripts/ui/vite.config.ts scripts/ui/editor.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/portal.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/builder.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/csv-import.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-app.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-share.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/dashboard-gear.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/undo.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/review.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/home.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/table.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/guide.test.tsx && vite-node -c scripts/ui/vite.config.ts scripts/ui/theme.test.tsx",
     "test:forms": "vite-node scripts/forms-test.ts",
     "test:symbology": "vite-node scripts/symbology-test.ts",
     "test:dnd": "vite-node scripts/dnd-test.ts",
     "test:form-import": "vite-node scripts/form-import-test.ts",
     "test:csv": "vite-node scripts/csv-import-test.ts",
-    "test:dashboards": "vite-node scripts/dashboard-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-render-test.tsx && vite-node scripts/dashboard-app-test.ts && vite-node scripts/dashboard-share-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-app-render-test.tsx"
+    "test:dashboards": "vite-node scripts/dashboard-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-render-test.tsx && vite-node scripts/dashboard-app-test.ts && vite-node scripts/dashboard-share-test.ts && vite-node -c scripts/ui/vite.config.ts scripts/dashboard-app-render-test.tsx",
+    "test:collect-only": "vite-node scripts/collect-only-test.ts",
+    "test:controls": "vite-node scripts/dashboard-controls-test.ts",
+    "test:gps": "vite-node scripts/gps-test.ts",
+    "test:symbols": "vite-node scripts/symbols-test.ts",
+    "test:sw": "node scripts/sw-test.mjs",
+    "test": "npm run test:sync && npm run test:digitize && npm run test:forms && npm run test:symbology && npm run test:dnd && npm run test:form-import && npm run test:csv && npm run test:dashboards && npm run test:collect-only && npm run test:controls && npm run test:gps && npm run test:symbols && npm run test:sw && npm run test:ui"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",

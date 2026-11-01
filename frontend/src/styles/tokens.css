@@ -3,7 +3,9 @@
    Brand: deep forest ink + Geohub green. One warm accent for emphasis only.
    Every text/background pair below meets WCAG AA (4.5:1 body, 3:1 large/UI).
    ========================================================================== */
-:root {
+/* The light palette. It is also set on dashboard canvases (.dash-app) and reports, which keep the look their
+   author chose whatever theme the app is in. */
+:root, .dash-app, .report-doc {
   color-scheme: light;
 
   /* ---- type ---- */
@@ -80,6 +82,22 @@
   --warn-ink: #5c3d00;
   --focus: #1a5fd0;
 
+  /* ---- roles that differ between light and dark ---- */
+  --link: var(--green-600);
+  --link-hover: var(--green-700);
+  --primary-hover: var(--green-700);    /* filled green button on hover (white text) */
+  --danger-strong: var(--danger-700);   /* error toast background (white text) */
+  --info-ink: #174ea6;
+  --chrome-950: #0b1d19;                /* top bar, collector header, hero panels: dark in both themes */
+  --chrome-900: #10241f;
+  --chrome-800: #17342d;
+  --inverse: var(--ink-900);            /* dark pills on the page: toasts, selection bar, active filter */
+  --thumb-a: #e3ece0;                   /* card placeholder artwork */
+  --thumb-b: #efece0;
+  --tag-new-bg: #fbe6b5; --tag-new-ink: #5c3d00;
+  --tag-mod-bg: #d6e4f8; --tag-mod-ink: #174ea6;
+  --tag-sub-bg: #e8dff5; --tag-sub-ink: #4b2a85;
+
   /* ---- shape ---- */
   --r-sm: 6px;
   --r-md: 8px;      /* controls */
@@ -123,4 +141,56 @@
 /* Touch devices get larger targets (WCAG 2.5.8 and common guidance: 44px). */
 @media (pointer: coarse) {
   :root { --control-h: 44px; --control-h-sm: 38px; }
+}
+
+/* ==========================================================================
+   Dark theme. Follows the device setting unless the person picked Light or Dark
+   (data-theme on <html>). Screens only: printing always uses the light palette.
+   Neutrals are green-tinted like the light ones; every text pair keeps 4.5:1.
+   ========================================================================== */
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --n-0: #151d1a; --n-25: #121a17; --n-50: #0e1412; --n-100: #1f2a26; --n-200: #29352f; --n-300: #364640;
+    --n-400: #52645d; --n-500: #82948c; --n-600: #a3b3ac; --n-700: #c4d0cb; --n-800: #dde6e2;
+    --ink-950: #f1f6f3; --ink-900: #e4ece8; --ink-800: #cbd6d1;
+    --green-50: #13261f; --green-100: #1b3a2e; --green-200: #24503f; --green-300: #3a7a5f; --green-400: #4fae89; --green-500: #4fae89;
+    --green-600: #207d5b; --green-700: #5bbd96; --green-800: #a9dec7; --green-900: #c6ecdb;
+    --accent-50: #33190f; --accent-100: #4a2416; --accent-500: #f08a5d;
+    --success-50: #13261f; --warning-50: #2a2210; --warning-100: #3a2e12; --warning-600: #c99a3a; --warn-ink: #f2cd75;
+    --danger-50: #2c1514; --danger-100: #45201c; --danger-600: #f28b80; --danger-700: #ffb4ab;
+    --info-50: #142540; --info-600: #8ab8ff; --info-ink: #8ab8ff;
+    --focus: #8ab8ff;
+    --link: #5bbd96; --link-hover: #7fd3b0;
+    --primary-hover: #1b7253; --danger-strong: #8f1d13;
+    --inverse: #2a3a35;
+    --thumb-a: #17231f; --thumb-b: #1b2622;
+    --tag-new-bg: #3a2e12; --tag-new-ink: #f2cd75; --tag-mod-bg: #142540; --tag-mod-ink: #8ab8ff; --tag-sub-bg: #2a2140; --tag-sub-ink: #c9b4f0;
+    --sh-xs: 0 1px 2px rgba(0, 0, 0, .35);
+    --sh-sm: 0 1px 3px rgba(0, 0, 0, .4), 0 1px 2px rgba(0, 0, 0, .3);
+    --sh-md: 0 4px 12px rgba(0, 0, 0, .45), 0 2px 4px rgba(0, 0, 0, .3);
+    --sh-lg: 0 12px 32px rgba(0, 0, 0, .55), 0 4px 10px rgba(0, 0, 0, .35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --n-0: #151d1a; --n-25: #121a17; --n-50: #0e1412; --n-100: #1f2a26; --n-200: #29352f; --n-300: #364640;
+  --n-400: #52645d; --n-500: #82948c; --n-600: #a3b3ac; --n-700: #c4d0cb; --n-800: #dde6e2;
+  --ink-950: #f1f6f3; --ink-900: #e4ece8; --ink-800: #cbd6d1;
+  --green-50: #13261f; --green-100: #1b3a2e; --green-200: #24503f; --green-300: #3a7a5f; --green-400: #4fae89; --green-500: #4fae89;
+  --green-600: #207d5b; --green-700: #5bbd96; --green-800: #a9dec7; --green-900: #c6ecdb;
+  --accent-50: #33190f; --accent-100: #4a2416; --accent-500: #f08a5d;
+  --success-50: #13261f; --warning-50: #2a2210; --warning-100: #3a2e12; --warning-600: #c99a3a; --warn-ink: #f2cd75;
+  --danger-50: #2c1514; --danger-100: #45201c; --danger-600: #f28b80; --danger-700: #ffb4ab;
+  --info-50: #142540; --info-600: #8ab8ff; --info-ink: #8ab8ff;
+  --focus: #8ab8ff;
+  --link: #5bbd96; --link-hover: #7fd3b0;
+  --primary-hover: #1b7253; --danger-strong: #8f1d13;
+  --inverse: #2a3a35;
+  --thumb-a: #17231f; --thumb-b: #1b2622;
+  --tag-new-bg: #3a2e12; --tag-new-ink: #f2cd75; --tag-mod-bg: #142540; --tag-mod-ink: #8ab8ff; --tag-sub-bg: #2a2140; --tag-sub-ink: #c9b4f0;
+  --sh-xs: 0 1px 2px rgba(0, 0, 0, .35);
+  --sh-sm: 0 1px 3px rgba(0, 0, 0, .4), 0 1px 2px rgba(0, 0, 0, .3);
+  --sh-md: 0 4px 12px rgba(0, 0, 0, .45), 0 2px 4px rgba(0, 0, 0, .3);
+  --sh-lg: 0 12px 32px rgba(0, 0, 0, .55), 0 4px 10px rgba(0, 0, 0, .35);
 }
