@@ -114,6 +114,8 @@ export interface Feature {
   version: number;
   updated_at: string;
   deleted?: boolean;
+  /** What the reviewer wrote when approving or rejecting it. */
+  review_note?: string;
 }
 export type NewFeature = Pick<Feature, "id" | "project_id" | "form_id" | "form_version" | "geometry" | "properties">;
 

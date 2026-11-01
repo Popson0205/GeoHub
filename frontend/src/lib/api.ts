@@ -46,6 +46,8 @@ export interface Api {
   getPublicDashboard(token: string): Promise<PublicDashboard>;
 
   listFeatures(projectId: string): Promise<Feature[]>;
+  /** The caller's own records that a reviewer rejected, with the reviewer's note. */
+  listReturned(projectId: string): Promise<Feature[]>;
   createFeature(f: NewFeature): Promise<Feature>;
   updateFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }): Promise<Feature>;
   deleteFeature(id: string): Promise<void>;
@@ -169,7 +171,7 @@ const toForm = (f: Wire, projectId?: string): Form => ({
 const toFeature = (f: Wire): Feature => ({
   id: f.id, project_id: f.project_id, form_id: f.form_id, form_version: f.form_version,
   geometry: f.geometry, properties: f.properties ?? {}, status: f.status, version: f.version,
-  updated_at: f.updated_at, deleted: f.deleted_at ? true : undefined,
+  updated_at: f.updated_at, deleted: f.deleted_at ? true : undefined, review_note: f.review_note || undefined,
 });
 const toImagery = (i: Wire): ImageryAsset => ({
   id: i.id, project_id: i.project_id ?? undefined, map_id: i.map_id ?? undefined, name: i.name, status: i.status, error: i.error ?? undefined,
@@ -362,6 +364,10 @@ class HttpApi implements Api {
       cursor = page.next_cursor;
     } while (cursor);
     return out;
+  }
+  async listReturned(projectId: string) {
+    const page: Wire = await this.req("GET", `/projects/${projectId}/features?status=rejected&mine=true&limit=1000`);
+    return (page.items as Wire[]).map(toFeature);
   }
   async createFeature(f: NewFeature) {
     const { project_id, ...body } = f;

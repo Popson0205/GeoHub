@@ -205,7 +205,26 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   }
 
   // A record deleted a moment ago stays hidden while its Undo is on screen.
-  const mine = features.filter((f) => !f.deleted && !hiddenIds.has(f.id));
+  const visible = features.filter((f) => !f.deleted && !hiddenIds.has(f.id));
+  // Records a reviewer sent back, with their note. They are listed on their own, first.
+  const returned = visible.filter((f) => f.status === "rejected" && f.sync === "synced");
+  const mine = visible.filter((f) => !returned.includes(f));
+  const editRecord = (f: LocalFeature) => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); };
+  const returnedList = returned.length > 0 && (
+    <section className="returned" aria-labelledby="returned-title">
+      <h2 id="returned-title">Returned for changes</h2>
+      <p className="field-hint">A reviewer sent {returned.length === 1 ? "this record" : "these records"} back. Fix and save: {returned.length === 1 ? "it goes" : "they go"} back for review.</p>
+      {returned.map((f) => (
+        <div className="list-item returned-item" key={f.id}>
+          <div className="grow">
+            <strong>{titleOf(f)}</strong>
+            {f.review_note ? <blockquote className="returned-note"><span className="sr-only">Reviewer's note: </span>{f.review_note}</blockquote> : <small>The reviewer did not leave a note.</small>}
+          </div>
+          <Button small variant="primary" onClick={() => editRecord(f)}>Fix and resend</Button>
+        </div>
+      ))}
+    </section>
+  );
   const rejected = features.filter((f) => f.sync === "rejected");
   const drawMode = draft && !draft.geometry && placing && form ? form.geometry_type : null;
 
@@ -241,6 +260,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
           <div className="state"><strong>No published forms</strong>Ask the project admin to publish a form, then sync.</div>
         ) : !draft ? (
           <>
+            {collectOnly && returnedList}
             <h2>Collect</h2>
             {forms.length > 1 && (
               <div className="choice-row" role="group" aria-label="Form">
@@ -270,6 +290,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
         {tab === "data" && (
           <>
+            {returnedList}
             <h2>My data</h2>
             {conflicts.map((c) => (
               <div className="state state-error" key={c.id} role="alert">
@@ -278,14 +299,14 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
                 <div className="row"><Button small onClick={() => resolveConflict(c.id, "server")}>Keep their version</Button><Button small onClick={() => resolveConflict(c.id, "mine").then(() => sync(true))}>Keep mine</Button></div>
               </div>
             ))}
-            {mine.length === 0 && <div className="state"><strong>Nothing collected yet</strong>Records you save appear here, even offline.</div>}
+            {mine.length === 0 && !returned.length && <div className="state"><strong>Nothing collected yet</strong>Records you save appear here, even offline.</div>}
             {mine.map((f) => (
               <div className="list-item" key={f.id}>
                 <div className="grow">
                   <strong>{titleOf(f)}</strong>
                   <small>{f.sync === "synced" ? "Synced" : f.sync === "pending" ? "Waiting to sync" : f.sync === "conflict" ? "Needs a decision" : `Not accepted: ${Object.values(f.errors ?? {}).join(" ")}`}</small>
                 </div>
-                {(!pub || f.sync !== "synced") && <Button small onClick={() => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); }}>Edit</Button>}
+                {(!pub || f.sync !== "synced") && <Button small onClick={() => editRecord(f)}>Edit</Button>}
                 {(!pub || f.sync !== "synced") && <Button small variant="danger" onClick={() => undoable({
                   text: `“${titleOf(f)}” deleted.`,
                   hide: () => setHiddenIds((h) => new Set(h).add(f.id)),
@@ -319,7 +340,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
       <nav className="tabbar" aria-label="Collector sections">
         {((collectOnly ? ["collect", "sync"] : ["collect", "data", "sync"]) as readonly ("collect" | "data" | "sync")[]).map((t) => (
-          <button key={t} aria-current={tab === t} onClick={() => setTab(t)}>{t === "collect" ? "Collect" : t === "data" ? "My data" : "Sync"}{t === "sync" && pending ? ` (${pending})` : ""}</button>
+          <button key={t} aria-current={tab === t} onClick={() => setTab(t)}>{t === "collect" ? "Collect" : t === "data" ? "My data" : "Sync"}{t === "sync" && pending ? ` (${pending})` : ""}{t === "data" && returned.length > 0 && <span className="tab-count"><span className="sr-only">, </span>{returned.length}<span className="sr-only"> returned for changes</span></span>}</button>
         ))}
       </nav>
     </main>

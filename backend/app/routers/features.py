@@ -44,6 +44,7 @@ async def list_features(
         status: str | None = Query(None, pattern="^(draft|submitted|approved|rejected)$"),
         form_id: UUID | None = None, updated_since: datetime | None = None,
         include_deleted: bool = Query(False, description="Admins only"),
+        mine: bool = Query(False, description="Only records the caller created (a collector's own, e.g. those returned for changes)"),
         limit: int = Query(100, ge=1, le=1000), cursor: str | None = None,
         user=Depends(current_user), conn=Depends(get_conn)):
     await require_role(conn, project_id, user["id"])
@@ -63,6 +64,8 @@ async def list_features(
         where.append("f.status = %s"); params.append(status)
     if form_id:
         where.append("f.form_id = %s"); params.append(form_id)
+    if mine:
+        where.append("f.created_by = %s"); params.append(user["id"])
     if updated_since:
         where.append("f.updated_at > %s"); params.append(updated_since)
     cur = await conn.execute(f"SELECT {svc.FEATURE_SELECT} FROM features f WHERE {' AND '.join(where)} "

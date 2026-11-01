@@ -407,3 +407,12 @@ body.is-dnd * { cursor: grabbing !important; }
   .tool-rail .icon-tile { width: 54px; min-height: 46px; flex: none; }
   .map-wrap:has(.tool-rail) .map-hint { left: 50%; }
 }
+
+/* collector: records a reviewer returned, with their note */
+.returned { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); margin-bottom: var(--s-2); border: 1px solid var(--warning-100); border-radius: var(--r-lg); background: var(--warning-50); }
+.returned h2 { font-size: var(--fs-lg); color: var(--warn-ink); }
+.returned .field-hint { color: var(--warn-ink); }
+.returned-item { align-items: flex-start; }
+.returned-item .grow { display: flex; flex-direction: column; gap: 4px; }
+.returned-note { margin: 0; padding: 6px var(--s-3); border-left: 3px solid var(--warning-600); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--n-50); color: var(--ink-900); font-size: var(--fs-sm); line-height: 1.45; }
+.tabbar .tab-count { margin-left: 6px; }

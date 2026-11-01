@@ -150,6 +150,8 @@ export class MockApi implements Api {
       forms: this.s.forms.filter((f) => f.project_id === d.project_id), features: this.s.features.filter((f) => f.project_id === d.project_id).map((r) => this.strip(r)) });
   }
 
+  /** Mock: everyone is the demo user, so every rejected record counts as "mine". */
+  async listReturned(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted && f.status === "rejected").map((r) => this.strip(r)); }
   async listFeatures(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted).map((r) => this.strip(r)); }
   async createFeature(nf: NewFeature) {
     await wait(); this.auth();
@@ -177,11 +179,11 @@ export class MockApi implements Api {
     const r = this.s.features.find((f) => f.id === id);
     if (r) { r.deleted = true; r.seq = ++this.s.seq; r.version += 1; this.save(); }
   }
-  async reviewFeature(id: string, decision: "approved" | "rejected", _note?: string) {
+  async reviewFeature(id: string, decision: "approved" | "rejected", note?: string) {
     await wait(); this.auth();
     const r = this.s.features.find((f) => f.id === id);
     if (!r || r.deleted) throw new ApiError(404, "Feature not found.");
-    r.status = decision; r.version += 1; r.seq = ++this.s.seq; this.save();
+    r.status = decision; r.review_note = note || undefined; r.version += 1; r.seq = ++this.s.seq; this.save();
     return this.strip(r);
   }
 
@@ -292,6 +294,7 @@ export class MockApi implements Api {
       } else if (c.base_version === cur.version) {
         if (c.geometry) cur.geometry = c.geometry;
         if (c.properties) cur.properties = c.properties;
+        if (cur.status === "approved" || cur.status === "rejected") { cur.status = "submitted"; cur.review_note = undefined; }   // edited after review: needs a fresh review, as on the server
         cur.version += 1; cur.seq = ++this.s.seq; cur.updated_at = new Date().toISOString();
         out.push({ change_id: c.change_id, id: c.id, status: "applied", version: cur.version });
       } else if (c.geometry && JSON.stringify(c.geometry) !== JSON.stringify(cur.geometry)) {
@@ -299,6 +302,7 @@ export class MockApi implements Api {
       } else {
         // Stale base but the shape did not change: merge properties (contract rule 4).
         cur.properties = { ...cur.properties, ...(c.properties ?? {}) };
+        if (cur.status === "approved" || cur.status === "rejected") { cur.status = "submitted"; cur.review_note = undefined; }
         cur.version += 1; cur.seq = ++this.s.seq;
         out.push({ change_id: c.change_id, id: c.id, status: "applied", version: cur.version, merged: true });
       }

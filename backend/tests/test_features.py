@@ -142,3 +142,21 @@ def test_project_counts_records_waiting_for_review(project):
     assert o.get("/projects").json()["items"][0]["waiting_count"] == 1
     assert o.delete(f"/features/{b}").status_code in (200, 204)
     assert o.get(f"/projects/{project.id}").json()["waiting_count"] == 0
+
+
+def test_a_collector_gets_back_their_returned_records_with_the_note(project):
+    # A reviewer's note has to reach the collector, including on collect-only phones that never pull everything.
+    col = project.add("collector")
+    _, mine1 = create(project, who=col)
+    _, mine2 = create(project, who=col)
+    _, other = create(project)                                         # the owner's own record
+    o = project.owner
+    assert o.post(f"/features/{mine1}/review", json={"decision": "rejected", "note": "Photo is blurry, please retake"}).status_code == 200
+    assert o.post(f"/features/{other}/review", json={"decision": "rejected", "note": "x"}).status_code == 200
+    assert o.post(f"/features/{mine2}/review", json={"decision": "approved"}).status_code == 200
+    items = col.get(f"/projects/{project.id}/features", params={"status": "rejected", "mine": True}).json()["items"]
+    assert [i["id"] for i in items] == [mine1] and items[0]["review_note"] == "Photo is blurry, please retake"
+    # fixing it sends it back for review
+    r = col.patch(f"/features/{mine1}", json={"properties": {"type": "Clinic", "beds": 6, "services": ["ER"]}, "base_version": items[0]["version"]})
+    assert r.status_code == 200 and r.json()["status"] == "submitted", r.text
+    assert col.get(f"/projects/{project.id}/features", params={"status": "rejected", "mine": True}).json()["items"] == []
