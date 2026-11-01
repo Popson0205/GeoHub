@@ -10,3 +10,9 @@ Checks run for the redesign (all from the `frontend` folder):
 
 To repeat the scan: run `npm run dev` in mock mode, open a page, and run axe-core in the browser console
 (`axe.run().then(r => console.table(r.violations))`) or with the axe browser extension.
+
+## UX improvements pass
+
+- `npm test` runs every test file (sync, digitize, forms, symbology, drag and drop, form import, CSV, dashboards, collect-only, dashboard controls, GPS, symbols, service worker and all UI tests): 988 checks.
+- axe-core 4.10 (WCAG 2.0/2.1 A and AA plus best practice) on 19 screens, in light and dark, at 1440px and 390px: zero violations. Screens: visitor home, sign in, data hub, dataset, home, about, maps, map editor, map portal, projects, collected data, review mode, map viewer, forms, form builder, share form, collector, dashboards, reports.
+- To repeat: run `npm run dev`, open a page, set the system or app theme, and run axe in the console (`axe.run().then(r => console.table(r.violations))`).

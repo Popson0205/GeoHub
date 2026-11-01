@@ -366,7 +366,7 @@ body.is-dnd * { cursor: grabbing !important; }
 .review-answers > div:last-child { border-bottom: 0; }
 .review-answers dt { color: var(--muted); font-size: var(--fs-sm); }
 .review-answers dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.review-answers dd.is-empty { color: var(--n-500); font-weight: 400; font-style: italic; }
+.review-answers dd.is-empty { color: var(--muted); font-weight: 400; font-style: italic; }
 .review-map { position: relative; min-height: 360px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-xs); }
 .review-map > .map-wrap { position: absolute; inset: 0; flex: none; min-height: 0; }
 .review-actions { position: sticky; bottom: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-md); }
