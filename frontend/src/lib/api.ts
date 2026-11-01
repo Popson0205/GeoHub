@@ -148,7 +148,7 @@ type Wire = any;
 
 const toProject = (p: Wire): Project => ({
   id: p.id, name: p.name, description: p.description, role: p.role,
-  feature_count: p.feature_count, collector_count: p.collector_count, updated_at: p.last_update ?? p.created_at,
+  feature_count: p.feature_count, waiting_count: p.waiting_count ?? 0, collector_count: p.collector_count, updated_at: p.last_update ?? p.created_at,
 });
 /** The server always sends `choices` (empty when a field has none); the UI treats "no choices" as absent. Groups and repeats nest. */
 const fromWireField = (x: Wire): FormField => ({

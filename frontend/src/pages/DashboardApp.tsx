@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import DashAppBar from "../components/dashboard/DashAppBar";
 import { useActiveProject } from "../components/dashboard/useActiveProject";
 import { Icon } from "../components/icons";
-import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
+import { Button, EmptyState, ErrorState, Loading, useToast, useUndoable } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { newPage } from "../lib/dashboard";
 import { useAsync } from "../lib/hooks";
@@ -46,7 +46,7 @@ export function DashboardGallery({ dashboards, canEdit, onDelete }: { dashboards
 export default function DashboardApp() {
   const nav = useNavigate();
   const toast = useToast();
-  const confirm = useConfirm();
+  const undoable = useUndoable();
   const { projects, viewable, active, choose } = useActiveProject();
   const list = useAsync((api) => (active ? api.listDashboards(active.id) : Promise.resolve([] as Dashboard[])), [active?.id]);
   const [creating, setCreating] = useState(false);
@@ -63,10 +63,16 @@ export default function DashboardApp() {
       nav(`/dashboards/${d.id}`);
     } catch (e) { toast(e instanceof Error ? e.message : "Could not create the dashboard.", "error"); setCreating(false); }
   }
-  async function remove(d: Dashboard) {
-    if (!(await confirm({ title: `Delete “${d.name}”?`, message: "Its elements are removed. The collected data is not touched.", confirmLabel: "Delete dashboard", danger: true }))) return;
-    try { await (await loadApi()).deleteDashboard(d.id); void list.reload(); toast("Dashboard deleted.", "success"); }
-    catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); }
+  /** The dashboard leaves the gallery at once and is deleted when the Undo window closes. */
+  function remove(d: Dashboard) {
+    const before = list.data ?? [];
+    undoable({
+      text: `“${d.name}” deleted.`,
+      hide: () => list.setData((cur) => (cur ?? []).filter((x) => x.id !== d.id)),
+      commit: async () => (await loadApi()).deleteDashboard(d.id),
+      restore: () => list.setData((cur) => (cur ?? []).some((x) => x.id === d.id) ? cur : before.filter((x) => x.id === d.id || (cur ?? []).some((c) => c.id === x.id))),
+      failText: `Could not delete “${d.name}”. It has been put back.`,
+    });
   }
 
   let body;
@@ -85,7 +91,7 @@ export default function DashboardApp() {
             action={canEdit ? <Button variant="primary" onClick={() => void create()} disabled={creating}><Icon name="plus" size={18} />Create your first dashboard</Button> : undefined}>
             {canEdit ? "A dashboard turns this project's records into charts, maps and counts that update as data comes in." : "An administrator has not created any dashboards for this project."}
           </EmptyState>
-        : <DashboardGallery dashboards={items} canEdit={canEdit} onDelete={(d) => void remove(d)} />}
+        : <DashboardGallery dashboards={items} canEdit={canEdit} onDelete={remove} />}
     </>);
   }
 

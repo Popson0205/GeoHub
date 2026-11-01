@@ -54,6 +54,12 @@ These shared pieces keep every page shaped the same way, so people learn the app
 | Selection bar (`.selection-bar`) | When table rows are ticked | Dark bar with the count and the bulk actions. It replaces per-row buttons for many records at once. |
 | Framed table (`.table-wrap`) | Collected data | Scrolls sideways inside its frame; the row actions column (`.col-sticky-end`) stays visible. Each row shows its main action, the rest go in a `MoreMenu`. |
 
+| Review mode (`ReviewPanel.tsx`) | Collected data, `?review=1` | One waiting record at a time: answers (unanswered ones marked), location, Approve / Reject / Edit with an optional note. A / R / E decide, J / K move, Escape finishes. The next waiting record opens after each decision. |
+| `RecordTable.tsx` | Collected data | Search across every answer, sort by any column (empty cells last, `aria-sort` set), choose columns (kept per form in the browser), pages of 25 to 250 rows. |
+| Undo toast (`useUndoable` in `ui.tsx`) | Deleting records and dashboards | Remove from view at once, really delete when the toast closes (time, ×, leaving the page or closing the tab). Use it instead of a confirmation for anything that can be put back; keep `useConfirm` for what cannot (deleting a map, removing a member, replacing a link). |
+| Home (`HomePage.tsx`) and `GettingStarted.tsx` | `/` when signed in | Needs your attention, then recent work. The first-run checklist ticks itself off and disappears after the first record. Visitors get the introduction, also at `/about`. |
+| `FootprintThumb.tsx` | Project, map and recent cards | The item's real points, lines and areas as a small SVG. No map library, no tiles, loads when the card is on screen. |
+
 The Dashboards app uses the same green and ink as the rest of Geohub (`--dapp` tokens in `dashboard-app.css` now point at the brand tokens).
 
 ## Adding to the app
@@ -74,3 +80,13 @@ Fields are arranged by dragging, not with move buttons.
 - Near the top or bottom of the list, dragging scrolls it.
 
 The placement rules are plain functions in `src/lib/fieldSpec.ts` (`moveTo`, `canPlace`, `insertAt`) and `src/lib/dnd.ts`, tested by `npm run test:dnd`. The interaction is `src/components/useFieldDnd.tsx`.
+
+## Dark mode
+The app follows the device setting; Appearance in the account menu sets Auto, Light or Dark (stored in the browser, applied before the first paint as `data-theme` on `<html>`).
+
+- All colours come from `tokens.css`. The dark palette redefines the same tokens, so components need no dark rules of their own.
+- Use the role tokens where light and dark need different colours: `--link`, `--primary-hover`, `--danger-strong`, `--inverse` (dark pills on the page: toasts, selection bar), `--chrome-*` (top bar and hero panels, dark in both themes).
+- Never hard-code `#fff` for a surface; use `--n-0` (or `--card`). White stays only where it is meant to: the switch knob, the signature pad, the printable report.
+- Dashboard canvases and reports keep the light palette (`.dash-app`, `.report-doc`): a dashboard looks as its author designed it.
+- Printing always uses the light palette.
+- Check every new screen in both themes; `docs/DESIGN_QA.md` has the scan.

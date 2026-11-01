@@ -149,9 +149,21 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 
 // ---- toasts ----
 type ToastKind = "info" | "success" | "error";
-interface ToastItem { id: number; kind: ToastKind; text: string }
+interface ToastItem { id: number; kind: ToastKind; text: string; undo?: () => void }
 const ToastCtx = createContext<(text: string, kind?: ToastKind) => void>(() => {});
 export const useToast = () => useContext(ToastCtx);
+
+/**
+ * Something removed now and really done a few seconds later, unless the person presses Undo.
+ * - `hide` takes it out of view straight away.
+ * - `commit` does it for real (the API call) when the toast closes, the page is left or the tab is closed.
+ * - `restore` puts it back: after Undo, or when `commit` fails.
+ * Use this instead of an "Are you sure?" dialog for anything that can be put back until it is committed.
+ */
+export interface UndoableAction { text: string; hide: () => void; commit: () => Promise<unknown> | unknown; restore: () => void; failText?: string }
+const UndoCtx = createContext<(a: UndoableAction) => void>((a) => { a.hide(); void a.commit(); });
+export const useUndoable = () => useContext(UndoCtx);
+const UNDO_MS = 6000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -161,14 +173,52 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems((l) => [...l, { id, kind, text }]);
     setTimeout(() => dismiss(id), kind === "error" ? 7000 : 4000);
   }, [dismiss]);
+
+  // Actions waiting for their Undo window to close. Kept here, above every page, so leaving a page does not lose them.
+  const pending = useRef(new Map<number, { action: UndoableAction; timer: ReturnType<typeof setTimeout> }>());
+  const finish = useCallback((id: number) => {
+    const p = pending.current.get(id);
+    if (!p) return;
+    pending.current.delete(id);
+    clearTimeout(p.timer);
+    dismiss(id);
+    Promise.resolve().then(() => p.action.commit()).catch((e: unknown) => {
+      p.action.restore();
+      push(p.action.failText ?? (e instanceof Error ? e.message : "That could not be done. It has been put back."), "error");
+    });
+  }, [dismiss, push]);
+  const undo = useCallback((id: number) => {
+    const p = pending.current.get(id);
+    if (!p) return;
+    pending.current.delete(id);
+    clearTimeout(p.timer);
+    dismiss(id);
+    p.action.restore();
+  }, [dismiss]);
+  const undoable = useCallback((action: UndoableAction) => {
+    const id = Date.now() + Math.random();
+    action.hide();
+    pending.current.set(id, { action, timer: setTimeout(() => finish(id), UNDO_MS) });
+    setItems((l) => [...l, { id, kind: "info", text: action.text, undo: () => undo(id) }]);
+  }, [finish, undo]);
+  // Closing or reloading the tab commits whatever is still waiting, so a delete is not silently dropped.
+  useEffect(() => {
+    const flush = () => { for (const id of [...pending.current.keys()]) finish(id); };
+    window.addEventListener("pagehide", flush);
+    return () => { window.removeEventListener("pagehide", flush); flush(); };
+  }, [finish]);
+
   return (
     <ToastCtx.Provider value={push}>
-      {children}
+      <UndoCtx.Provider value={undoable}>
+        {children}
+      </UndoCtx.Provider>
       <div className="toasts" aria-live="polite">
         {items.map((t) => (
-          <div key={t.id} className={`toast toast-${t.kind}`} role={t.kind === "error" ? "alert" : "status"}>
+          <div key={t.id} className={`toast toast-${t.kind}${t.undo ? " toast-undo" : ""}`} role={t.kind === "error" ? "alert" : "status"}>
             <span>{t.text}</span>
-            <button aria-label="Dismiss message" onClick={() => dismiss(t.id)}>×</button>
+            {t.undo && <button type="button" className="toast-action" onClick={t.undo}>Undo</button>}
+            <button aria-label={t.undo ? "Dismiss message (keeps the change)" : "Dismiss message"} onClick={() => (t.undo ? finish(t.id) : dismiss(t.id))}>×</button>
           </div>
         ))}
       </div>

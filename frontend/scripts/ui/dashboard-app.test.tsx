@@ -88,7 +88,8 @@ await (async () => {
   // time and region
   await click(btn("Time and region"));
   await click(screen.getByRole("button", { name: "Last 30 days" }));
-  ok(document.querySelector(".chip-x.is-static")?.textContent === "Last 30 days", "the date range shows on the canvas");
+  // The dashboard's own range is part of the header line ("Data as of … · Last 30 days"); it used to be a separate chip.
+  ok((document.querySelector(".dash-asof")?.textContent ?? "").includes("Last 30 days"), "the date range shows on the canvas");
 
   // save
   await click(btn(/^Save\*/));

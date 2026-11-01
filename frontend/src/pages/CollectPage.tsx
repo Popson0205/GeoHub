@@ -7,7 +7,7 @@ import SignaturePad from "../components/SignaturePad";
 import MapView, { type Bbox, type MapFeature } from "../components/MapView";
 import { BrandMark } from "../components/Shell";
 import { InstallCard } from "../components/PwaPrompts";
-import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
+import { Button, ErrorState, Loading, useToast, useUndoable } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { combineFixes, gpsProps, viewAround, withoutGps, type Fix } from "../lib/gps";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
@@ -27,7 +27,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   // Records made through a share link are kept under their own local key so they never mix with a signed-in collector's data.
   const projectId = pub ? `public:${pub.token}` : routeProjectId;
   const toast = useToast();
-  const confirm = useConfirm();
+  const undoable = useUndoable();
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const online = useOnline();
   // The installed app only collects: no "My data", no records on the map, nothing pulled from the server.
   const collectOnly = isCollectorApp();
@@ -203,7 +204,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
     return (textField && String(f.properties[textField.id] ?? "")) || fm?.name || "Feature";
   }
 
-  const mine = features.filter((f) => !f.deleted);
+  // A record deleted a moment ago stays hidden while its Undo is on screen.
+  const mine = features.filter((f) => !f.deleted && !hiddenIds.has(f.id));
   const rejected = features.filter((f) => f.sync === "rejected");
   const drawMode = draft && !draft.geometry && placing && form ? form.geometry_type : null;
 
@@ -284,7 +286,12 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
                   <small>{f.sync === "synced" ? "Synced" : f.sync === "pending" ? "Waiting to sync" : f.sync === "conflict" ? "Needs a decision" : `Not accepted: ${Object.values(f.errors ?? {}).join(" ")}`}</small>
                 </div>
                 {(!pub || f.sync !== "synced") && <Button small onClick={() => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); }}>Edit</Button>}
-                {(!pub || f.sync !== "synced") && <Button small variant="danger" onClick={async () => { if (await confirm({ title: "Delete this record?", message: "It is removed from this device and will not be sent.", confirmLabel: "Delete record", danger: true })) void deleteFeatureLocal(f.id); }}>Delete</Button>}
+                {(!pub || f.sync !== "synced") && <Button small variant="danger" onClick={() => undoable({
+                  text: `“${titleOf(f)}” deleted.`,
+                  hide: () => setHiddenIds((h) => new Set(h).add(f.id)),
+                  commit: async () => { await deleteFeatureLocal(f.id); setHiddenIds((h) => { const n = new Set(h); n.delete(f.id); return n; }); },
+                  restore: () => setHiddenIds((h) => { const n = new Set(h); n.delete(f.id); return n; }),
+                })}>Delete</Button>}
               </div>
             ))}
           </>

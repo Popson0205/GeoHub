@@ -11,7 +11,7 @@ const ROLE_LABEL: Record<Project["role"], string> = { owner: "Owner", admin: "Ad
  * and tabs for its sections. The same tabs on every page mean people always know where they are and how to move on,
  * instead of each page offering its own set of "back" and shortcut buttons.
  */
-export default function ProjectNav({ projectId, project, actions, compact }: {
+export default function ProjectNav({ projectId, project, actions, compact, waiting }: {
   projectId: string;
   /** Pass the project when the page has already loaded it; otherwise it is loaded here. */
   project?: Project | null;
@@ -19,6 +19,8 @@ export default function ProjectNav({ projectId, project, actions, compact }: {
   actions?: ReactNode;
   /** A slimmer header for full-height work surfaces such as the map. */
   compact?: boolean;
+  /** Records waiting for review, when the page knows a fresher number than the project's. */
+  waiting?: number;
 }) {
   const loaded = useAsync((api) => (project ? Promise.resolve(project) : api.getProject(projectId)), [projectId, project?.id]);
   const p = project ?? loaded.data ?? null;
@@ -26,8 +28,9 @@ export default function ProjectNav({ projectId, project, actions, compact }: {
   const { pathname } = useLocation();
   const base = `/collect/${projectId}`;
 
-  const tabs: { to: string; label: string; icon: IconName; show: boolean; match?: (path: string) => boolean }[] = [
-    { to: `${base}/data`, label: "Collected data", icon: "table", show: true },
+  const toReview = manage ? (waiting ?? p?.waiting_count ?? 0) : 0;
+  const tabs: { to: string; label: string; icon: IconName; show: boolean; match?: (path: string) => boolean; count?: number }[] = [
+    { to: `${base}/data`, label: "Collected data", icon: "table", show: true, count: toReview },
     { to: `${base}/review`, label: "Map", icon: "navMap", show: true },
     { to: `${base}/forms`, label: "Forms", icon: "form", show: manage, match: (path) => path.startsWith(`${base}/forms`) },
     { to: `/dashboards?project=${projectId}`, label: "Dashboards", icon: "navDash", show: p?.role !== "collector" },
@@ -59,6 +62,7 @@ export default function ProjectNav({ projectId, project, actions, compact }: {
             return (
               <Link key={t.label} to={t.to} className={`project-tab${on ? " is-active" : ""}`} aria-current={on ? "page" : undefined}>
                 <Icon name={t.icon} size={17} />{t.label}
+                {!!t.count && <span className="tab-count" title={`${t.count} waiting for review`}><span className="sr-only">, </span>{t.count}<span className="sr-only"> waiting for review</span></span>}
               </Link>
             );
           })}

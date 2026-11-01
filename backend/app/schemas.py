@@ -61,6 +61,7 @@ class ProjectOut(BaseModel):
     description: str
     role: Role = Field(description="The caller's role in this project")
     feature_count: int
+    waiting_count: int = Field(0, description="Records submitted and not yet reviewed")
     collector_count: int
     last_update: datetime
     created_at: datetime

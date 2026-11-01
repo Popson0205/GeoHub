@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import FootprintThumb from "../components/FootprintThumb";
 import { Icon } from "../components/icons";
-import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, thumbStyle, useConfirm, useToast } from "../components/ui";
+import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 
@@ -10,7 +11,8 @@ export default function MapsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const { data, error, loading, reload } = useAsync((api) => api.listMaps(), []);
-  const [creating, setCreating] = useState(false);
+  // ?new=1 (from the home page) opens the "New map" panel straight away.
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get("new") === "1");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
@@ -83,7 +85,7 @@ export default function MapsPage() {
         <div className="grid-cards">
           {data.map((m) => (
             <article className="card item-card" key={m.id}>
-              <div className="thumb" style={thumbStyle(m.id)} aria-hidden="true" />
+              <FootprintThumb kind="map" id={m.id} version={`${m.updated_at}:${m.feature_count}`} />
               <div className="item-card-body">
                 <h2><Link to={`/maps/${m.id}`}>{m.name}</Link></h2>
                 <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>

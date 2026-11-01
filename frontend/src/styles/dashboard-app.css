@@ -3,7 +3,7 @@
    The app uses Geohub's own green and ink, so it reads as part of the same product. A dashboard's own theme
    only touches the canvas (.dashboard-canvas-outer), never this chrome.
    ====================================================================================================== */
-:root { --dapp: var(--green-600); --dapp-dark: var(--green-700); --dapp-soft: var(--green-50); --builder-chrome: var(--ink-900); --builder-chrome-2: var(--ink-800); --builder-mark: var(--green-300); }
+:root { --dapp: var(--green-600); --dapp-dark: var(--green-700); --dapp-soft: var(--green-50); --builder-chrome: var(--chrome-900); --builder-chrome-2: var(--chrome-800); --builder-mark: var(--green-300); }
 
 /* ---- app bar, toolbar, gallery ---- */
 .dapp-bar { display: flex; align-items: center; gap: var(--s-4); padding: 0 var(--s-5); background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
@@ -24,7 +24,7 @@
 .dapp-project { max-width: 100%; }
 .dapp-project-name { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: var(--r-full); background: var(--n-100); color: var(--n-700); font-size: var(--fs-sm); font-weight: 500; }
 .dapp-new { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--control-h); padding: 0 var(--s-4); border: 1px solid var(--green-600); border-radius: var(--r-md); background: var(--green-600); color: #fff; font: 500 var(--fs-md) var(--font-ui); cursor: pointer; box-shadow: var(--sh-xs); transition: background var(--t-fast); }
-.dapp-new:hover:not(:disabled) { background: var(--green-700); border-color: var(--green-700); }
+.dapp-new:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 .dapp-new:disabled { opacity: .7; cursor: default; }
 @media (max-width: 760px) {
   .dapp-toolbar { padding: var(--s-6) var(--s-4) 0; }

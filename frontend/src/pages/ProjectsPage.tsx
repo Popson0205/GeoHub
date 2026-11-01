@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import FootprintThumb from "../components/FootprintThumb";
 import { Icon } from "../components/icons";
-import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, thumbStyle, useToast, type MoreMenuItem } from "../components/ui";
+import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, useToast, type MoreMenuItem } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { License, Project } from "../lib/types";
@@ -10,7 +11,8 @@ export default function ProjectsPage() {
   const toast = useToast();
   const nav = useNavigate();
   const { data, error, loading, reload } = useAsync((api) => api.listProjects(), []);
-  const [creating, setCreating] = useState(false);
+  // ?new=1 (from the home page) opens the "New project" panel straight away.
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get("new") === "1");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState<Project | null>(null);
@@ -62,7 +64,7 @@ export default function ProjectsPage() {
             ];
             return (
               <article className="card item-card" key={p.id}>
-                <div className="thumb" style={thumbStyle(p.id)} aria-hidden="true" />
+                <FootprintThumb kind="project" id={p.id} version={`${p.updated_at}:${p.feature_count}`} />
                 <div className="item-card-body">
                   <h2><Link to={home}>{p.name}</Link></h2>
                   <div className="item-stats">
@@ -73,7 +75,9 @@ export default function ProjectsPage() {
                 </div>
                 <div className="item-card-foot">
                   <Link className="btn btn-primary" to={`/collect/${p.id}`}><Icon name="navCollect" size={18} />Collect</Link>
-                  {p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/data`}>View data</Link>}
+                  {manage && (p.waiting_count ?? 0) > 0
+                    ? <Link className="btn btn-attention" to={`/collect/${p.id}/data?review=1`}>Review {p.waiting_count}<span className="sr-only"> waiting records</span></Link>
+                    : p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/data`}>View data</Link>}
                   <span className="grow" />
                   <MoreMenu label={`More for ${p.name}`} items={more} />
                 </div>

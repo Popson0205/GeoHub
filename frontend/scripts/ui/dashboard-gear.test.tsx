@@ -42,7 +42,9 @@ await (async () => {
 
   await click(gears()[0]);
   ok(panelOpen() && gears()[0].getAttribute("aria-expanded") === "true", "the gear button opens the settings");
-  ok(!!document.querySelector(".dset-head") && !!document.querySelector(".dset-foot") && document.querySelectorAll(".dset-sec").length === 3, "the panel has a header, three sections and a footer");
+  // Sections have been added over time (Symbol, Actions); what matters is the frame and that Content and Layout are there.
+  const secs = [...document.querySelectorAll(".dset-sec > summary")].map((s) => s.textContent ?? "");
+  ok(!!document.querySelector(".dset-head") && !!document.querySelector(".dset-foot") && secs.length >= 3 && secs.some((t) => t.includes("Content")) && secs.some((t) => t.includes("Layout")), "the panel has a header, its sections (Content … Layout) and a footer");
   const titleOf = () => document.querySelector(".dset-titles h2")?.textContent;
   const first = titleOf();
 
