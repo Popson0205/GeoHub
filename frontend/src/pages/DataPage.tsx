@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import CsvImportPanel from "../components/CsvImportPanel";
 import FormRenderer from "../components/FormRenderer";
+import RecordTable, { cellText } from "../components/RecordTable";
 import ReviewPanel from "../components/ReviewPanel";
 import { Icon } from "../components/icons";
 import ProjectNav, { ProjectNavSkeleton } from "../components/ProjectNav";
@@ -18,7 +19,6 @@ const STATUS: Record<FeatureStatus, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "badge" }, submitted: { label: "Waiting", cls: "badge badge-warn" },
   approved: { label: "Approved", cls: "badge badge-ok" }, rejected: { label: "Rejected", cls: "badge badge-bad" },
 };
-const cell = (v: unknown): string => (v == null ? "" : Array.isArray(v) ? v.map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).join("; ") : typeof v === "object" ? JSON.stringify(v) : String(v));
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "data";
 
 /** Everything collected for a project: check it, clean it, download it and send it to the data hub. */
@@ -78,7 +78,6 @@ export default function DataPage() {
   if (err != null) return <><ProjectNav projectId={projectId} project={project.data} /><div className="container"><ErrorState error={err} onRetry={() => { void project.reload(); void forms.reload(); void feats.reload(); }} /></div></>;
 
   const patchLocal = (u: Feature) => feats.setData((feats.data ?? []).map((f) => (f.id === u.id ? u : f)));
-  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   function startEdit(f: Feature) { setEditing(f); setDraft({ ...f.properties }); setErrors({}); }
   async function save() {
@@ -134,7 +133,7 @@ export default function DataPage() {
     for (const r of target) {
       const g = r.geometry;
       const pt = g.type === "Point" ? g.coordinates : null;
-      lines.push([r.id, r.status, pt?.[0] ?? "", pt?.[1] ?? "", pt ? "" : JSON.stringify(g), ...cols.map((c) => cell(r.properties[c.id]))].map(csvEscape).join(","));
+      lines.push([r.id, r.status, pt?.[0] ?? "", pt?.[1] ?? "", pt ? "" : JSON.stringify(g), ...cols.map((c) => cellText(r.properties[c.id]))].map(csvEscape).join(","));
     }
     download(`${slug(form?.name ?? "data")}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
   }
@@ -213,41 +212,12 @@ export default function DataPage() {
             </section>
           )}
 
-          {!rows.length ? (
-            <EmptyState icon={all.length ? "search" : "inbox"} title={all.length ? "Nothing matches this filter" : "No data collected yet"}
+          <RecordTable formId={formId} rows={rows} cols={cols} canManage={canManage} picked={picked} setPicked={setPicked}
+            onApprove={(id) => void review([id], "approved")} onReject={(id) => void review([id], "rejected")} onEdit={startEdit} onDelete={(id) => remove([id])}
+            empty={<EmptyState icon={all.length ? "search" : "inbox"} title={all.length ? "Nothing matches this filter" : "No data collected yet"}
               action={!all.length && shareLink && canManage ? <Link className="btn btn-primary" to={shareLink}><Icon name="share" size={18} />Share the form</Link> : all.length ? <Button onClick={() => setFilter("all")}>Show all records</Button> : undefined}>
               {all.length ? "No records have this status." : shareLink && canManage ? "Share the form link or add collaborators, and their records will show up here as they arrive." : "Data collected with this form shows up here."}
-            </EmptyState>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr>
-                  {canManage && <th scope="col" className="check-col"><input type="checkbox" aria-label="Select all shown" checked={picked.size > 0 && rows.every((r) => picked.has(r.id))} onChange={(e) => setPicked(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>}
-                  <th scope="col">Status</th>{cols.map((c) => <th key={c.id} scope="col">{c.label}</th>)}<th scope="col">Updated</th>{canManage && <th scope="col" className="col-sticky-end"><span className="sr-only">Actions</span></th>}
-                </tr></thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className={picked.has(r.id) ? "is-picked" : undefined}>
-                      {canManage && <td className="check-col"><input type="checkbox" aria-label="Select record" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /></td>}
-                      <td className="cell-nowrap"><span className={STATUS[r.status].cls}>{STATUS[r.status].label}</span></td>
-                      {cols.map((c) => <td key={c.id} className="cell-wrap">{cell(r.properties[c.id])}</td>)}
-                      <td className="cell-nowrap">{new Date(r.updated_at).toLocaleDateString()}</td>
-                      {canManage && <td className="col-sticky-end">
-                        <div className="row-actions">
-                          {r.status !== "approved" && <Button small onClick={() => void review([r.id], "approved")}><Icon name="check" size={16} />Approve</Button>}
-                          <Button small onClick={() => startEdit(r)}>Edit</Button>
-                          <MoreMenu label="More for this record" items={[
-                            ...(r.status !== "rejected" ? [{ label: "Reject", onSelect: () => void review([r.id], "rejected") }] : []),
-                            { label: "Delete", icon: "delete" as const, danger: true, onSelect: () => void remove([r.id]) },
-                          ]} />
-                        </div>
-                      </td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            </EmptyState>} />
           </>)}
         </>
       )}

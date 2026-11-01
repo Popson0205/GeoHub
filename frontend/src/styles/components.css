@@ -302,3 +302,27 @@ article.card:hover { box-shadow: var(--sh-md); border-color: var(--line-strong);
 /* a secondary button that needs a look: records waiting for review */
 .btn-attention { border-color: var(--warning-100); background: var(--warning-50); color: var(--warn-ink); }
 .btn-attention:hover:not(:disabled) { border-color: var(--warning-600); background: var(--warning-100); color: var(--warn-ink); }
+
+/* ---- records table: search, sortable headers, columns, pages ---- */
+.record-table { display: flex; flex-direction: column; gap: var(--s-3); }
+.table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+/* scoped under .table-tools so the data hub's large search box (pages.css) does not apply here */
+.table-tools .table-search { flex: 0 1 320px; }
+.table-tools .table-search .input { min-height: var(--control-h-sm); padding-left: 34px; font-size: var(--fs-sm); border-radius: var(--r-md); box-shadow: none; }
+.table-tools .table-search svg { left: 11px; }
+.table-count { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; margin-right: auto; }
+.th-sort { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border-radius: var(--r-sm); white-space: nowrap; }
+.th-sort:hover { color: var(--ink-900); }
+.th-sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.th-arrow { font-size: 11px; opacity: .35; }
+th[aria-sort] .th-arrow { opacity: 1; color: var(--green-700); }
+th[aria-sort] { color: var(--ink-900); }
+.col-picker-pop { right: 0; min-width: 240px; max-height: 360px; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: var(--s-2) var(--s-3); }
+.col-picker-pop .check { min-height: 34px; font-size: var(--fs-sm); }
+.col-picker-foot { display: flex; justify-content: flex-end; padding-top: var(--s-2); margin-top: var(--s-1); border-top: 1px solid var(--line); }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pager .grow { flex: 1; }
+.pager-size { display: inline-flex; align-items: center; gap: var(--s-2); }
+.pager-size .input { min-height: var(--control-h-sm); width: auto; padding-block: 0; }
+.pager-at { padding: 0 var(--s-2); color: var(--ink-900); font-weight: 500; }
+@media (max-width: 600px) { .table-tools .table-search { flex: 1 1 100%; } .pager .grow { display: none; } }
