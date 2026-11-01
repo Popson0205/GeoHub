@@ -2,6 +2,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Icon } from "./icons";
+import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 import { Loading } from "./ui";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
@@ -22,6 +23,7 @@ export default function Shell() {
   const loc = useLocation();
   const [navOpen, setNavOpen] = useState(false);     // phone menu
   const [userOpen, setUserOpen] = useState(false);
+  const [theme, setThemeState] = useState<ThemePref>(getTheme);
   const userRef = useRef<HTMLDivElement>(null);
 
   // Close menus when the page changes, on Escape, and on a click outside the user menu.
@@ -56,6 +58,16 @@ export default function Shell() {
             {userOpen && (
               <div className="menu-pop" role="menu" aria-label="Account">
                 <div className="menu-head"><strong>{user.name}</strong>{user.email && <span>{user.email}</span>}</div>
+                <div className="menu-theme" role="group" aria-label="Appearance">
+                  <span className="menu-label">Appearance</span>
+                  <div className="seg-control">
+                    {(["system", "light", "dark"] as ThemePref[]).map((t) => (
+                      <button key={t} type="button" role="menuitemradio" aria-checked={theme === t} onClick={() => { setTheme(t); setThemeState(t); }}>
+                        {t === "system" ? "Auto" : t === "light" ? "Light" : "Dark"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button type="button" role="menuitem" className="menu-item is-danger" onClick={async () => { setUserOpen(false); await logout(); nav("/hub"); }}>
                   <Icon name="logout" size={18} />Sign out
                 </button>

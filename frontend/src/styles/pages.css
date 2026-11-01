@@ -3,7 +3,7 @@
    ========================================================================== */
 
 /* ---- home ---- */
-.home-hero { position: relative; overflow: hidden; color: #eaf1ed; background: radial-gradient(1200px 500px at 85% 120%, rgba(47, 127, 96, .35), transparent 60%), var(--ink-950); }
+.home-hero { position: relative; overflow: hidden; color: #eaf1ed; background: radial-gradient(1200px 500px at 85% 120%, rgba(47, 127, 96, .35), transparent 60%), var(--chrome-950); }
 .home-hero::before { content: ""; position: absolute; inset: 0; opacity: .6; pointer-events: none;
   background:
     repeating-radial-gradient(circle at 82% 110%, transparent 0 26px, rgba(143, 190, 165, .17) 26px 27px),
@@ -13,8 +13,9 @@
 .home-hero p { max-width: 54ch; margin: 0 0 var(--s-8); color: #b7cbc1; font-size: 18px; line-height: 1.55; }
 .home-hero .row { flex-wrap: wrap; gap: var(--s-3); }
 .home-hero .btn { min-height: 46px; padding: 0 var(--s-6); font-size: var(--fs-lg); }
-.home-hero .btn-primary { background: var(--green-100); border-color: var(--green-100); color: var(--ink-900); }
-.home-hero .btn-primary:hover:not(:disabled) { background: #fff; border-color: #fff; color: var(--ink-900); }
+/* the hero is dark in both themes, so its buttons use fixed colours */
+.home-hero .btn-primary { background: #dcebe3; border-color: #dcebe3; color: #10241f; }
+.home-hero .btn-primary:hover:not(:disabled) { background: #fff; border-color: #fff; color: #10241f; }
 .home-hero .btn:not(.btn-primary) { background: transparent; color: #eaf1ed; border-color: rgba(255, 255, 255, .34); box-shadow: none; }
 .home-hero .btn:not(.btn-primary):hover { background: rgba(255, 255, 255, .1); border-color: #fff; color: #fff; }
 .product-grid { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-5); margin-top: -48px; }
@@ -25,13 +26,13 @@
 .flow-title { margin-top: var(--s-16); font-size: var(--fs-2xl); }
 .flow { display: grid; grid-template-columns: repeat(4, 1fr); margin: var(--s-5) 0 0; padding: 0; list-style: none; counter-reset: step; border-top: 1px solid var(--line-strong); }
 .flow li { position: relative; counter-increment: step; padding: var(--s-5) var(--s-5) 0 0; color: var(--muted); font-size: var(--fs-md); line-height: 1.5; }
-.flow li::before { content: counter(step); display: inline-grid; place-items: center; width: 26px; height: 26px; margin-bottom: var(--s-3); border-radius: 50%; background: var(--ink-900); color: #fff; font-size: var(--fs-xs); font-weight: 600; }
+.flow li::before { content: counter(step); display: inline-grid; place-items: center; width: 26px; height: 26px; margin-bottom: var(--s-3); border-radius: 50%; background: var(--ink-900); color: var(--n-0); font-size: var(--fs-xs); font-weight: 600; }
 .flow li::after { content: ""; position: absolute; top: -1px; left: 0; width: 56px; height: 2px; background: var(--green-600); }
 .flow strong { display: block; margin-bottom: 2px; color: var(--ink-900); font-size: var(--fs-lg); }
 
 /* ---- sign in ---- */
 .auth { min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); place-items: stretch; background: var(--n-0); }
-.auth-side { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: var(--s-12); color: #eaf1ed; background: radial-gradient(900px 520px at 20% 110%, rgba(47, 127, 96, .38), transparent 60%), var(--ink-950); }
+.auth-side { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: var(--s-12); color: #eaf1ed; background: radial-gradient(900px 520px at 20% 110%, rgba(47, 127, 96, .38), transparent 60%), var(--chrome-950); }
 .auth-side::before { content: ""; position: absolute; inset: 0;
   background:
     repeating-radial-gradient(circle at 20% 105%, transparent 0 30px, rgba(143, 190, 165, .16) 30px 31px),
