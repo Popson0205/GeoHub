@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Icon } from "./icons";
+import { Loading } from "./ui";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
   return (
@@ -69,7 +70,8 @@ export default function Shell() {
         </button>
       </header>
       <main id="main" className="page" style={{ display: "flex", flexDirection: "column" }}>
-        <Outlet />
+        {/* Pages load on demand: keep the top bar while one arrives */}
+        <Suspense fallback={<div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>}><Outlet /></Suspense>
       </main>
     </div>
   );

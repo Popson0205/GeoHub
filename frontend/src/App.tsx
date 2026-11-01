@@ -1,28 +1,39 @@
 import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { lazy, Suspense, type ReactNode } from "react";
 import Shell from "./components/Shell";
+import { Loading } from "./components/ui";
 import { RequireAuth } from "./lib/auth";
-import LoginPage from "./pages/LoginPage";
-import ProjectsPage from "./pages/ProjectsPage";
-import EditorPage from "./pages/EditorPage";
-import FormsPage from "./pages/FormsPage";
-import BuilderPage from "./pages/BuilderPage";
-import HubPage from "./pages/HubPage";
-import DatasetPage from "./pages/DatasetPage";
-import CollectPage from "./pages/CollectPage";
-import LandingPage from "./pages/LandingPage";
-import MapsPage from "./pages/MapsPage";
-import MapEditorPage from "./pages/MapEditorPage";
-import MapPortalPage from "./pages/MapPortalPage";
-import JoinMapPage from "./pages/JoinMapPage";
-import SharePage from "./pages/SharePage";
-import PublicFormPage from "./pages/PublicFormPage";
-import DataPage from "./pages/DataPage";
-import DashboardApp from "./pages/DashboardApp";
-import DashboardReports from "./pages/DashboardReports";
-import DashboardPage from "./pages/DashboardPage";
-import PublicDashboardPage from "./pages/PublicDashboardPage";
-import CollectHomePage from "./pages/CollectHomePage";
 import { isCollectorApp } from "./lib/pwa";
+
+// Each page loads when it is first opened, so the first visit downloads only what that page needs.
+// The service worker still caches every file, so the installed app works offline as before.
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
+const EditorPage = lazy(() => import("./pages/EditorPage"));
+const FormsPage = lazy(() => import("./pages/FormsPage"));
+const BuilderPage = lazy(() => import("./pages/BuilderPage"));
+const HubPage = lazy(() => import("./pages/HubPage"));
+const DatasetPage = lazy(() => import("./pages/DatasetPage"));
+const CollectPage = lazy(() => import("./pages/CollectPage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const MapsPage = lazy(() => import("./pages/MapsPage"));
+const MapEditorPage = lazy(() => import("./pages/MapEditorPage"));
+const MapPortalPage = lazy(() => import("./pages/MapPortalPage"));
+const JoinMapPage = lazy(() => import("./pages/JoinMapPage"));
+const SharePage = lazy(() => import("./pages/SharePage"));
+const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
+const DataPage = lazy(() => import("./pages/DataPage"));
+const DashboardApp = lazy(() => import("./pages/DashboardApp"));
+const DashboardReports = lazy(() => import("./pages/DashboardReports"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const PublicDashboardPage = lazy(() => import("./pages/PublicDashboardPage"));
+const CollectHomePage = lazy(() => import("./pages/CollectHomePage"));
+
+/** What shows while a page's code arrives (usually a fraction of a second, longer on a weak signal). */
+export function PageLoading() {
+  return <div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>;
+}
+const Page = ({ children }: { children: ReactNode }) => <Suspense fallback={<PageLoading />}>{children}</Suspense>;
 
 function NotFound() {
   return (
@@ -50,20 +61,20 @@ function LegacyDashboards() {
 /** The installed app: sign in, pick a project, collect. Everything else is on the website for administrators. */
 function CollectorRoutes() {
   return (
-    <Routes>
+    <Page><Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/collect" replace />} />
-    </Routes>
+    </Routes></Page>
   );
 }
 
 export default function App() {
   if (isCollectorApp()) return <CollectorRoutes />;
   return (
-    <Routes>
+    <Page><Routes>
       <Route path="/login" element={<LoginPage />} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
@@ -99,6 +110,6 @@ export default function App() {
         <Route path="/projects/:projectId/forms/:formId" element={<LegacyProject to="form" />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-    </Routes>
+    </Routes></Page>
   );
 }
