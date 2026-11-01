@@ -4,6 +4,7 @@ import { allFields, isContainer, isMedia } from "../lib/fieldSpec";
 import type { Form, Geometry, Props } from "../lib/types";
 import { cellText } from "./RecordTable";
 import { Button } from "./ui";
+import { t } from "../lib/i18n";
 
 type Side = "server" | "mine";
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -49,11 +50,11 @@ export default function ConflictCard({ row, form, title, onResolve }: {
     onResolve({ geometry: sideOf("__place") === "server" ? row.server.geometry : row.mine.geometry, properties });
   }
   const choice = (id: string, label: string) => (
-    <div className="conflict-pick" role="radiogroup" aria-label={`Keep which ${label}`}>
+    <div className="conflict-pick" role="radiogroup" aria-label={t("conflict.keepWhich", { name: label })}>
       {(["server", "mine"] as Side[]).map((s) => (
         <label key={s} className={sideOf(id) === s ? "is-on" : undefined}>
           <input type="radio" name={`c-${row.id}-${id}`} checked={sideOf(id) === s} onChange={() => setPick((p) => ({ ...p, [id]: s }))} />
-          {s === "server" ? "Theirs" : "Yours"}
+          {s === "server" ? t("conflict.theirs") : t("conflict.yours")}
         </label>
       ))}
     </div>
@@ -61,34 +62,34 @@ export default function ConflictCard({ row, form, title, onResolve }: {
 
   return (
     <section className="conflict" role="group" aria-labelledby={`c-${row.id}`}>
-      <h3 id={`c-${row.id}`}>Someone else changed “{title}”</h3>
-      <p className="field-hint">You both edited it before syncing. Keep one version, or choose answer by answer.</p>
+      <h3 id={`c-${row.id}`}>{t("conflict.title", { name: title })}</h3>
+      <p className="field-hint">{t("conflict.hint")}</p>
       {diffs.length === 0 && !placeMoved ? (
-        <p className="field-hint">The answers are the same; only the record's history differs.</p>
+        <p className="field-hint">{t("conflict.same")}</p>
       ) : (
         <div className="conflict-table" role="table" aria-label="Differences">
-          <div role="row" className="conflict-head"><span role="columnheader">Question</span><span role="columnheader">Theirs</span><span role="columnheader">Yours</span><span role="columnheader"><span className="sr-only">Keep</span></span></div>
+          <div role="row" className="conflict-head"><span role="columnheader">{t("conflict.question")}</span><span role="columnheader">{t("conflict.theirs")}</span><span role="columnheader">{t("conflict.yours")}</span><span role="columnheader"><span className="sr-only">Keep</span></span></div>
           {diffs.map((d) => (
             <div role="row" key={d.id}>
               <span role="rowheader">{d.label}</span>
-              <span role="cell" data-side="Theirs" className={cellText(row.server.properties[d.id]) ? undefined : "is-empty"}>{cellText(row.server.properties[d.id]) || "Not answered"}</span>
-              <span role="cell" data-side="Yours" className={cellText(row.mine.properties[d.id]) ? undefined : "is-empty"}>{cellText(row.mine.properties[d.id]) || "Not answered"}</span>
+              <span role="cell" data-side={t("conflict.theirs")} className={cellText(row.server.properties[d.id]) ? undefined : "is-empty"}>{cellText(row.server.properties[d.id]) || t("conflict.notAnswered")}</span>
+              <span role="cell" data-side={t("conflict.yours")} className={cellText(row.mine.properties[d.id]) ? undefined : "is-empty"}>{cellText(row.mine.properties[d.id]) || t("conflict.notAnswered")}</span>
               <span role="cell">{choice(d.id, d.label)}</span>
             </div>
           ))}
           {placeMoved && (
             <div role="row">
-              <span role="rowheader">Location</span>
-              <span role="cell" className="conflict-span">The two locations are {moved(row.server.geometry, row.mine.geometry)}</span>
-              <span role="cell">{choice("__place", "location")}</span>
+              <span role="rowheader">{t("conflict.location")}</span>
+              <span role="cell" className="conflict-span">{t("conflict.apart", { d: moved(row.server.geometry, row.mine.geometry) })}</span>
+              <span role="cell">{choice("__place", t("conflict.location").toLowerCase())}</span>
             </div>
           )}
         </div>
       )}
       <div className="conflict-actions">
-        <Button small onClick={() => onResolve("server")}>Keep all theirs</Button>
-        <Button small onClick={() => onResolve("mine")}>Keep all mine</Button>
-        {mixed && <Button small variant="primary" onClick={saveChoices}>Save my choices</Button>}
+        <Button small onClick={() => onResolve("server")}>{t("conflict.keepTheirs")}</Button>
+        <Button small onClick={() => onResolve("mine")}>{t("conflict.keepMine")}</Button>
+        {mixed && <Button small variant="primary" onClick={saveChoices}>{t("conflict.save")}</Button>}
       </div>
     </section>
   );

@@ -10,6 +10,7 @@ import { BrandMark } from "../components/Shell";
 import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useToast, useUndoable } from "../components/ui";
 import { loadApi } from "../lib/api";
+import { LANGS, setLang, t, useLang, type Lang } from "../lib/i18n";
 import { combineFixes, gpsProps, viewAround, withoutGps, type Fix } from "../lib/gps";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
@@ -17,7 +18,7 @@ import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib
 import { useOnline } from "../lib/hooks";
 import { isCollectorApp, setBusy, useFormManifest } from "../lib/pwa";
 import { deleteFeatureLocal, loadBundle, resolveConflict, saveFeatureLocal, syncProject, syncPublic, type SyncReport } from "../lib/sync";
-import { GEOMETRY_LABEL, type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
+import { type Form, type FormField, type Geometry, type Props, type PublicForm } from "../lib/types";
 
 interface Draft { id: string; formId: string; geometry: Geometry | null; props: Props; newMedia: string[]; existing: boolean }
 const DRAFT_ID = "__draft";
@@ -25,6 +26,7 @@ const DRAFT_ID = "__draft";
 /** `pub` is set when the collector is opened from a share link: no sign-in, records are sent through the public route. */
 export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const { projectId: routeProjectId = "" } = useParams();
+  const lang = useLang();   // re-render in the chosen language
   // Records made through a share link are kept under their own local key so they never mix with a signed-in collector's data.
   const projectId = pub ? `public:${pub.token}` : routeProjectId;
   const toast = useToast();
@@ -77,15 +79,15 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
     try {
       const r = pub ? await syncPublic(pub.token, projectId, { collectOnly }) : await syncProject(projectId, { collectOnly });
       setReport(r); setSyncError("");
-      if (!quiet) toast(`Synced. Sent ${r.pushed}, received ${r.pulled}${r.conflicts ? `, ${r.conflicts} need a decision` : ""}.`, r.conflicts || r.rejected ? "info" : "success");
+      if (!quiet) toast(`${t("toast.syncDone", { sent: r.pushed, got: r.pulled })}${r.conflicts ? ` ${t("toast.syncDecide", { n: r.conflicts })}` : ""}`, r.conflicts || r.rejected ? "info" : "success");
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : "Sync failed.");
-      if (!quiet) toast("Couldn't sync. Your data is safe on this device.", "error");
+      if (!quiet) toast(t("toast.syncError"), "error");
     } finally { syncing.current = false; setSyncBusy(false); }
   }, [projectId, pub, toast, collectOnly]);
 
   useEffect(() => { if (online && forms) void sync(true); }, [online, forms, sync]);
-  useEffect(() => { const t = setInterval(() => void sync(true), 60000); return () => clearInterval(t); }, [sync]);
+  useEffect(() => { const timer = setInterval(() => void sync(true), 60000); return () => clearInterval(timer); }, [sync]);
 
   // Installing from a shared form's page installs that form, opening on its own link.
   useFormManifest(pub ? { name: pub.form.name, startUrl: window.location.pathname } : null);
@@ -121,7 +123,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   useEffect(() => stopWatch, [stopWatch]);
 
   function capture() {
-    if (!navigator.geolocation) { toast("This device can't provide a location. Place the point on the map instead.", "error"); return; }
+    if (!navigator.geolocation) { toast(t("gps.noDevice"), "error"); return; }
     stopWatch(); setLocating(true); setAccuracy(null);
     const fixes: Fix[] = [];
     const GOOD = 3, MAX_FIXES = 12, MAX_MS = 15000;
@@ -140,7 +142,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
       (err) => {
         stopWatch();
         if (fixes.length) return;   // a reading was already taken; keep it
-        toast(err.code === 1 ? "Location permission is off. Allow it in settings, or place the point on the map." : "Couldn't get a location fix. Move to open sky and try again, or place the point on the map.", "error");
+        toast(err.code === 1 ? t("gps.denied") : t("gps.noFix"), "error");
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
@@ -151,9 +153,9 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
     if (!draft || !form || !draft.geometry) return;
     const errs = validateProperties(form, draft.props);
     setErrors(errs);
-    if (Object.keys(errs).length) { toast("Fix the highlighted fields first.", "error"); return; }
+    if (Object.keys(errs).length) { toast(t("toast.fixFields"), "error"); return; }
     await saveFeatureLocal({ id: draft.id, project_id: projectId, form, geometry: draft.geometry, properties: pruneProperties(form, draft.props) });
-    toast(navigator.onLine ? "Saved. Syncing…" : "Saved on this device. It will sync when you're online.", "success");
+    toast(navigator.onLine ? t("toast.savedSyncing") : t("toast.savedOffline"), "success");
     setDraft(null); setPlacing(false);
     void sync(true);
   }
@@ -161,7 +163,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   async function addMedia(field: FormField, file: Blob | undefined, ctx: MediaCtx) {
     if (!file || !draft) return;
     const cap = field.max_items ?? (field.type === "signature" ? 1 : field.type === "photo" ? 3 : 10);
-    if (ctx.value.length >= cap) { toast(`You can add up to ${cap} here.`, "error"); return; }
+    if (ctx.value.length >= cap) { toast(t("media.cap", { n: cap }), "error"); return; }
     const id = uuid();
     const name = file instanceof File && file.name ? file.name : `${id}.${file.type.split("/")[1] ?? "bin"}`;
     await db.media.add({ id, feature_id: draft.id, field_id: field.id, name, blob: file, uploaded: 0 });
@@ -183,14 +185,14 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
           {ctx.value.map((id, i) => (
             <span className="media-item" key={id}>
               {photoUrls[id] && media.find((m) => m.id === id)?.blob.type.startsWith("image/") ? <img src={photoUrls[id]} alt={`${field.label} ${i + 1}`} /> : <span className="media-chip">{field.type} {i + 1}</span>}
-              <button type="button" className="media-x" aria-label={`Remove ${field.label} ${i + 1}`} onClick={() => void dropMedia(id, ctx)}>×</button>
+              <button type="button" className="media-x" aria-label={t("media.remove", { name: field.label, i: i + 1 })} onClick={() => void dropMedia(id, ctx)}>×</button>
             </span>
           ))}
         </div>
         {field.type === "signature" ? (
           <SignaturePad disabled={ctx.value.length >= cap} onDone={(png) => void addMedia(field, png, ctx)} />
         ) : (
-          <label className="upload">{field.type === "photo" ? "Take photo" : field.type === "audio" ? "Record audio" : field.type === "video" ? "Record video" : "Attach file"} ({ctx.value.length}/{cap})
+          <label className="upload">{field.type === "photo" ? t("media.photo") : field.type === "audio" ? t("media.audio") : field.type === "video" ? t("media.video") : t("media.file")} ({ctx.value.length}/{cap})
             <input className="sr-only" type="file" accept={ACCEPT[field.type]} {...(field.type === "photo" ? (field.appearance === "camera_only" ? { capture: "environment" as const } : {}) : field.type === "file" ? {} : { capture: true })}
               onChange={(e) => { void addMedia(field, e.target.files?.[0], ctx); e.target.value = ""; }} />
           </label>
@@ -213,15 +215,15 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const editRecord = (f: LocalFeature) => { setDraft({ id: f.id, formId: f.form_id, geometry: f.geometry, props: { ...f.properties }, newMedia: [], existing: true }); setTab("collect"); };
   const returnedList = returned.length > 0 && (
     <section className="returned" aria-labelledby="returned-title">
-      <h2 id="returned-title">Returned for changes</h2>
-      <p className="field-hint">A reviewer sent {returned.length === 1 ? "this record" : "these records"} back. Fix and save: {returned.length === 1 ? "it goes" : "they go"} back for review.</p>
+      <h2 id="returned-title">{t("returned.title")}</h2>
+      <p className="field-hint">{t(returned.length === 1 ? "returned.one" : "returned.many")}</p>
       {returned.map((f) => (
         <div className="list-item returned-item" key={f.id}>
           <div className="grow">
             <strong>{titleOf(f)}</strong>
-            {f.review_note ? <blockquote className="returned-note"><span className="sr-only">Reviewer's note: </span>{f.review_note}</blockquote> : <small>The reviewer did not leave a note.</small>}
+            {f.review_note ? <blockquote className="returned-note"><span className="sr-only">{t("returned.noteLabel")} </span>{f.review_note}</blockquote> : <small>{t("returned.noNote")}</small>}
           </div>
-          <Button small variant="primary" onClick={() => editRecord(f)}>Fix and resend</Button>
+          <Button small variant="primary" onClick={() => editRecord(f)}>{t("returned.fix")}</Button>
         </div>
       ))}
     </section>
@@ -235,9 +237,16 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
     <main className={`collect${tab === "collect" && !draft && forms && forms.length > 0 ? " is-idle" : ""}`}>
       <h1 className="sr-only">Data collector</h1>
       <header className="collect-head">
-        {pub ? <BrandMark size={24} /> : <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label="Back to projects">←</Link>}
-        <div className="grow"><small>{pub ? "Shared form" : "Project"}</small><strong>{name}</strong></div>
-        <span className={`badge ${online ? "badge-ok" : "badge-warn"}`}>{online ? "Online" : "Offline"}{pending ? ` · ${pending} to sync` : ""}</span>
+        {pub ? <BrandMark size={24} /> : <Link to="/collect" style={{ color: "#c3d2ca" }} aria-label={t("head.back")}>←</Link>}
+        <div className="grow"><small>{pub ? t("head.shared") : t("head.project")}</small><strong>{name}</strong></div>
+        <label className="lang-pick">
+          <span className="sr-only">{t("head.language")}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" /></svg>
+          <select value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
+            {LANGS.map((l) => <option key={l.id} value={l.id} lang={l.id === "pcm" ? "pcm" : l.id}>{l.name}</option>)}
+          </select>
+        </label>
+        <span className={`badge ${online ? "badge-ok" : "badge-warn"}`}>{online ? t("head.online") : t("head.offline")}{pending ? ` · ${pending} to sync` : ""}</span>
       </header>
 
       <MapView
@@ -252,39 +261,39 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         label="Collection map"
       />
 
-      <section className="sheet" aria-label={tab === "collect" ? "Collect" : tab === "data" ? "My data" : "Sync"}>
-        {forms === null && loadError == null && <Loading label="Loading your project…" />}
+      <section className="sheet" aria-label={tab === "collect" ? t("tab.collect") : tab === "data" ? t("tab.data") : t("tab.sync")}>
+        {forms === null && loadError == null && <Loading label={t("load.project")} />}
         {loadError != null && <ErrorState error={loadError} onRetry={load} />}
-        {fromCache && <span className="badge badge-warn" style={{ alignSelf: "flex-start" }}>Using saved forms from this device</span>}
+        {fromCache && <span className="badge badge-warn" style={{ alignSelf: "flex-start" }}>{t("load.cached")}</span>}
 
         {forms && tab === "collect" && (forms.length === 0 ? (
-          <div className="state"><strong>No published forms</strong>Ask the project admin to publish a form, then sync.</div>
+          <div className="state"><strong>{t("forms.none.title")}</strong>{t("forms.none.text")}</div>
         ) : !draft ? (
           <>
             {collectOnly && returnedList}
-            <h2>Collect</h2>
+            <h2>{t("collect.title")}</h2>
             {forms.length > 1 && (
-              <div className="choice-row" role="group" aria-label="Form">
+              <div className="choice-row" role="group" aria-label={t("collect.form")}>
                 {forms.map((f) => <button key={f.id} className="choice" aria-pressed={formId === f.id} onClick={() => setFormId(f.id)}>{f.name}</button>)}
               </div>
             )}
-            <Button variant="accent" onClick={startDraft} disabled={!form}>New {form ? form.name.toLowerCase() : "record"}</Button>
+            <Button variant="accent" onClick={startDraft} disabled={!form}>{t("collect.new", { name: form ? form.name.toLowerCase() : "" }).trim()}</Button>
           </>
         ) : !draft.geometry ? (
           <>
-            <h2>New {form?.name.toLowerCase()}</h2>
-            <span className="field-hint">Step 1: set the location.{locating && accuracy != null ? ` Holding still improves it. Now ±${accuracy} m.` : ""}</span>
-            {form?.geometry_type === "Point" && <Button variant="accent" busy={locating} onClick={capture}>Capture at my location</Button>}
-            <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? "Place on the map" : `Draw the ${form ? GEOMETRY_LABEL[form.geometry_type] : "shape"} on the map`}</Button>
-            <Button variant="ghost" onClick={cancelDraft}>Cancel</Button>
+            <h2>{t("collect.new", { name: form?.name.toLowerCase() ?? "" })}</h2>
+            <span className="field-hint">{t("collect.step1")}{locating && accuracy != null ? ` ${t("collect.holdStill", { m: accuracy })}` : ""}</span>
+            {form?.geometry_type === "Point" && <Button variant="accent" busy={locating} onClick={capture}>{t("collect.capture")}</Button>}
+            <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? t("collect.place") : t("collect.draw")}</Button>
+            <Button variant="ghost" onClick={cancelDraft}>{t("cancel")}</Button>
           </>
         ) : form && (
           <>
-            <div className="row"><h2 className="grow">{draft.existing ? "Edit" : "New"} {form.name.toLowerCase()}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${draft.props.gps_elev_m} m elev.` : ""}{locating ? " · averaging…" : ""}</span>}</div>
+            <div className="row"><h2 className="grow">{t(draft.existing ? "collect.edit" : "collect.new", { name: form.name.toLowerCase() })}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${draft.props.gps_elev_m} m elev.` : ""}{locating ? " · averaging…" : ""}</span>}</div>
             <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
             <div className="row" style={{ position: "sticky", bottom: 0, background: "#fff", padding: "8px 0" }}>
-              <Button onClick={cancelDraft}>Cancel</Button>
-              <Button className="grow" variant="accent" onClick={save}>{online ? "Save record" : "Save on this device"}</Button>
+              <Button onClick={cancelDraft}>{t("cancel")}</Button>
+              <Button className="grow" variant="accent" onClick={save}>{online ? t("collect.saveOnline") : t("collect.saveOffline")}</Button>
             </div>
           </>
         ))}
@@ -292,25 +301,25 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         {tab === "data" && (
           <>
             {returnedList}
-            <h2>My data</h2>
+            <h2>{t("data.title")}</h2>
             {conflicts.map((c) => (
               <ConflictCard key={c.id} row={c} form={forms?.find((f) => f.id === c.mine.form_id)} title={titleOf(c.mine)}
                 onResolve={(choice) => void resolveConflict(c.id, choice).then(() => { if (choice !== "server") void sync(true); })} />
             ))}
-            {mine.length === 0 && !returned.length && <div className="state"><strong>Nothing collected yet</strong>Records you save appear here, even offline.</div>}
+            {mine.length === 0 && !returned.length && <div className="state"><strong>{t("data.empty.title")}</strong>{t("data.empty.text")}</div>}
             {mine.map((f) => (
               <div className="list-item" key={f.id}>
                 <div className="grow">
                   <strong>{titleOf(f)}</strong>
-                  <small>{f.sync === "synced" ? "Synced" : f.sync === "pending" ? "Waiting to sync" : f.sync === "conflict" ? "Needs a decision" : `Not accepted: ${Object.values(f.errors ?? {}).join(" ")}`}</small>
+                  <small>{f.sync === "synced" ? t("status.synced") : f.sync === "pending" ? t("status.pending") : f.sync === "conflict" ? t("status.conflict") : t("status.rejected", { why: Object.values(f.errors ?? {}).join(" ") })}</small>
                 </div>
-                {(!pub || f.sync !== "synced") && <Button small onClick={() => editRecord(f)}>Edit</Button>}
+                {(!pub || f.sync !== "synced") && <Button small onClick={() => editRecord(f)}>{t("edit")}</Button>}
                 {(!pub || f.sync !== "synced") && <Button small variant="danger" onClick={() => undoable({
-                  text: `“${titleOf(f)}” deleted.`,
+                  text: t("toast.deleted", { name: titleOf(f) }),
                   hide: () => setHiddenIds((h) => new Set(h).add(f.id)),
                   commit: async () => { await deleteFeatureLocal(f.id); setHiddenIds((h) => { const n = new Set(h); n.delete(f.id); return n; }); },
                   restore: () => setHiddenIds((h) => { const n = new Set(h); n.delete(f.id); return n; }),
-                })}>Delete</Button>}
+                })}>{t("delete")}</Button>}
               </div>
             ))}
           </>
@@ -318,27 +327,27 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
         {tab === "sync" && (
           <>
-            <h2>Sync</h2>
+            <h2>{t("sync.title")}</h2>
             <InstallCard />
-            <div className="list-item"><div className="grow"><strong>{online ? "You're online" : "You're offline"}</strong><small>{pending} change{pending === 1 ? "" : "s"} waiting to send</small></div></div>
-            <Button variant="primary" busy={syncBusy} disabled={!online} onClick={() => sync(false)}>Sync now</Button>
-            {!online && <span className="field-hint">Connect to the internet to sync. Your records are safe on this device.</span>}
-            {syncError && <div className="state state-error" role="alert"><strong>Last sync failed</strong>{syncError}</div>}
+            <div className="list-item"><div className="grow"><strong>{online ? t("sync.online") : t("sync.offline")}</strong><small>{pending === 1 ? t("sync.waitOne") : t("sync.waitMany", { n: pending })}</small></div></div>
+            <Button variant="primary" busy={syncBusy} disabled={!online} onClick={() => sync(false)}>{t("sync.now")}</Button>
+            {!online && <span className="field-hint">{t("sync.offlineText")}</span>}
+            {syncError && <div className="state state-error" role="alert"><strong>{t("sync.failed")}</strong>{syncError}</div>}
             {collectOnly && rejected.length > 0 && (
               <div className="state state-error" role="alert">
-                <strong>{rejected.length} record{rejected.length === 1 ? " was" : "s were"} not accepted</strong>
-                <span>The server refused {rejected.length === 1 ? "it" : "them"}. Discard {rejected.length === 1 ? "it" : "them"} and collect again.</span>
-                <Button small variant="danger" onClick={() => rejected.forEach((f) => void deleteFeatureLocal(f.id))}>Discard</Button>
+                <strong>{rejected.length === 1 ? t("sync.refusedOne") : t("sync.refusedMany", { n: rejected.length })}</strong>
+                <span>{t("sync.refusedText")}</span>
+                <Button small variant="danger" onClick={() => rejected.forEach((f) => void deleteFeatureLocal(f.id))}>{t("sync.discard")}</Button>
               </div>
             )}
-            {report && <div className="state"><strong>Last sync</strong>Sent {report.pushed} · received {report.pulled} · photos {report.photos}{report.conflicts ? ` · ${report.conflicts} conflicts` : ""}{report.rejected ? ` · ${report.rejected} not accepted` : ""}</div>}
+            {report && <div className="state"><strong>{t("sync.last")}</strong>{t("sync.report", { sent: report.pushed, got: report.pulled, photos: report.photos })}{report.conflicts ? ` · ${report.conflicts} conflicts` : ""}{report.rejected ? ` · ${report.rejected} not accepted` : ""}</div>}
           </>
         )}
       </section>
 
-      <nav className="tabbar" aria-label="Collector sections">
-        {((collectOnly ? ["collect", "sync"] : ["collect", "data", "sync"]) as readonly ("collect" | "data" | "sync")[]).map((t) => (
-          <button key={t} aria-current={tab === t} onClick={() => setTab(t)}>{t === "collect" ? "Collect" : t === "data" ? "My data" : "Sync"}{t === "sync" && pending ? ` (${pending})` : ""}{t === "data" && returned.length > 0 && <span className="tab-count"><span className="sr-only">, </span>{returned.length}<span className="sr-only"> returned for changes</span></span>}</button>
+      <nav className="tabbar" aria-label={t("tab.sections")}>
+        {((collectOnly ? ["collect", "sync"] : ["collect", "data", "sync"]) as readonly ("collect" | "data" | "sync")[]).map((s) => (
+          <button key={s} aria-current={tab === s} onClick={() => setTab(s)}>{s === "collect" ? t("tab.collect") : s === "data" ? t("tab.data") : t("tab.sync")}{s === "sync" && pending ? ` (${pending})` : ""}{s === "data" && returned.length > 0 && <span className="tab-count"><span className="sr-only">, </span>{returned.length}<span className="sr-only"> {t("tab.returned")}</span></span>}</button>
         ))}
       </nav>
     </main>

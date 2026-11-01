@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "./ui";
 
@@ -46,8 +47,8 @@ export default function SignaturePad({ onDone, disabled }: { onDone: (png: Blob)
       <canvas ref={ref} width={640} height={240} className="sig-canvas" role="img" aria-label="Signature area. Draw with a finger or a mouse."
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
       <div className="row">
-        <Button small onClick={clear} disabled={!inked || disabled}>Clear</Button>
-        <Button small variant="primary" onClick={done} disabled={!inked || disabled}>Use signature</Button>
+        <Button small onClick={clear} disabled={!inked || disabled}>{t("sig.clear")}</Button>
+        <Button small variant="primary" onClick={done} disabled={!inked || disabled}>{t("sig.use")}</Button>
       </div>
     </div>
   );
