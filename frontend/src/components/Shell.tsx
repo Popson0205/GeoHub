@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { Icon } from "./icons";
 import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 import { Loading } from "./ui";
+import QuickSearch from "./QuickSearch";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
   return (
@@ -48,6 +49,7 @@ export default function Shell() {
           <NavLink to="/hub"><Icon name="navHub" size={18} />Data hub</NavLink>
         </nav>
         <span className="spacer" />
+        <QuickSearch />
         {user ? (
           <div className="menu" ref={userRef}>
             <button type="button" className="user-btn" aria-label={`${user.name}, account menu`} aria-haspopup="menu" aria-expanded={userOpen} onClick={() => setUserOpen((v) => !v)}>
