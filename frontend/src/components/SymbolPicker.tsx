@@ -76,7 +76,7 @@ export function SymbolPicker({ value, onChange, motion = true, forMap = false, a
               onChange={(e) => { const n = Math.round(Number(e.target.value)); set({ size: e.target.value === "" ? undefined : Math.max(MIN_SIZE, Math.min(MAX_SIZE, n || MIN_SIZE)) }); }} />
             {value.size && <button type="button" className="link-btn" onClick={() => set({ size: undefined })}>Automatic</button>}
           </div>
-          <small className="meta">{forMap ? "Pixels on the map. Automatic follows the marker size." : "The text next to it keeps its size; a symbol that does not fit is scaled down to the space."}</small></div>
+          <small className="meta">{forMap ? "Pixels on the map. Automatic follows the marker size." : "The symbol sits in a fixed square box inside the element. If the element is too small for this size, the box shrinks so the symbol never goes past the element's edge. The text next to it keeps its size."}</small></div>
         <div className="field"><label htmlFor={`${id}-sh`}>Shape behind it</label>
           <select id={`${id}-sh`} value={value.shape ?? "plain"} onChange={(e) => set({ shape: e.target.value as SymbolShape })}>{SHAPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div className="field"><label htmlFor={`${id}-co`}>Colour</label>

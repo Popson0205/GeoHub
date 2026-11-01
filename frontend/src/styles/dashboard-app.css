@@ -605,15 +605,22 @@
 .dash-app .widget .widget-head, .dash-app .widget.t-kpi .widget-head, .dash-app .widget.t-map .widget-head, .is-fit .widget .widget-head, .is-fit .widget.t-kpi .widget-head { box-sizing: border-box; height: 32px; min-height: 32px; }
 .dash-app .widget .widget-head .btn, .is-fit .widget .widget-head .btn { height: 24px; min-height: 24px; padding: 0 8px; font-size: var(--fs-xs); line-height: 1; }
 
-/* ---- symbol beside an indicator: a fixed container ----------------------------------------------------------------------------
-   The symbol is a fixed square box (the author's size, never more than 40% of the row's width or 100% of its height). Whatever the
-   picture does inside it (spin, pulse, bounce, a big drawing) is clipped to the box, so it never spills out or covers the value.
-   On a gauge the dial takes the room that is left and shrinks to fit, instead of pushing the symbol out of the card. */
-.kpi-row { gap: 12px; }
-.kpi-row > .sym { flex: none; box-sizing: border-box; overflow: hidden; contain: paint; max-width: 40%; max-height: 100%; }
-.kpi-row > .sym img { width: 100%; height: 100%; object-fit: contain; }
-.kpi-row.is-gauge { justify-content: flex-start; }
-.kpi-row.is-gauge > :not(.sym) { flex: 1 1 0; min-width: 0; }
-.kpi-row.is-gauge .gauge { width: 100%; min-width: 0; }
-.kpi-row.is-gauge .gauge svg { max-width: 100%; }
-.kpi-row.is-gauge .gauge-value, .kpi-row.is-gauge .gauge-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* ---- symbols live in a fixed square box --------------------------------------------------------------------------------------------
+   .sym-slot is the box: as big as the author set (--sym-px), but never more than its share of the row (--sym-share) and never taller than
+   the space it is in, so a symbol cannot pass the edge of its element or push the value out. The picture scales to fit inside the box. */
+.sym-slot { flex: none; display: grid; place-items: center; box-sizing: border-box; min-width: 0; overflow: hidden; aspect-ratio: 1;
+  width: min(var(--sym-px, 32px), var(--sym-share, 100%)); max-height: 100%; }
+.sym-slot > .sym { width: 100%; height: 100%; }
+.sym-slot .sym img { width: 100%; height: 100%; object-fit: contain; }
+/* the row of an indicator: the symbol box, then the value, as one group in the middle */
+.kpi-row, .kpi-row.is-gauge { --sym-share: 36%; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.kpi-row > .sym { all: unset; }
+.kpi-main { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.kpi-row.is-gauge .kpi-main { flex: 1 1 0; max-width: 220px; height: 100%; }
+.kpi-row .kpi-value { flex: none; white-space: nowrap; }
+.kpi-row .gauge { flex: 1 1 auto; width: 100%; min-width: 0; white-space: normal; }
+/* list rows, the title bar and the selectors have their own limits */
+.il-row { --sym-share: 28%; }
+.widget-head > .sym-slot { --sym-share: 100%; align-self: center; }
+.ctl-slot { --sym-share: 100%; }
+.fdrop-icon .sym-slot { width: var(--sym-px); }

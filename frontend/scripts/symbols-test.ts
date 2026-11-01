@@ -178,3 +178,7 @@ import { SYMBOL_PX, hasContentSlot } from "../src/lib/symbols";
 ok(hasContentSlot("kpi") && hasContentSlot("gauge") && hasContentSlot("list") && !hasContentSlot("bar") && !hasContentSlot("table") && !hasContentSlot("map") && !hasContentSlot("details") && !hasContentSlot("rich_text"), "only numbers, gauges and lists can keep a symbol with their content; every other element uses the title bar");
 ok(cleanSymbolSpec({ icon: "bolt", place: "title" })?.place === "title" && !("place" in cleanSymbolSpec({ icon: "bolt", place: "content" })!) && !("place" in cleanSymbolSpec({ icon: "bolt", place: "sideways" })!), "a symbol's position is kept only when it is the title bar (content is the default)");
 ok(SYMBOL_PX.title < SYMBOL_PX.selector && SYMBOL_PX.selector < SYMBOL_PX.row && SYMBOL_PX.row < SYMBOL_PX.indicator && Object.values(SYMBOL_PX).every((n) => n >= 12 && n <= 160), "one size table: title bar < selector < list row < indicator");
+
+// symbols live in a fixed box: the box size is the author's size, capped, and the picture inside never passes it
+import { SYMBOL_PX as PX } from "../src/lib/symbols";
+ok(Math.min(cleanSymbolSpec({ icon: "bolt", size: 90 })!.size ?? PX.indicator, PX.title) === PX.title && Math.min(PX.indicator, 1e9) === PX.indicator, "a title-bar symbol is capped at the bar's own size; elsewhere the author's size is kept (the stylesheet then holds it to its share of the row)");

@@ -7,7 +7,7 @@ import { METRIC_LABEL, activeBuckets, defaultTitle, findField, fmt, isStatic, sl
 import { widgetStyleToProps } from "../../lib/dashboardThemes";
 import { cleanViewerStyle, emptyViewerStyle, statusLayer, type ViewerStyle } from "../../lib/symbology";
 import type { Widget } from "../../lib/types";
-import { SymbolIcon } from "../SymbolIcon";
+import { SymbolSlot } from "../SymbolIcon";
 import { SYMBOL_PX, hasContentSlot } from "../../lib/symbols";
 import { DataTable, DetailsList, EmbedFrame, EmptyNote, Gauge, ItemList, RichText } from "./Elements";
 
@@ -83,11 +83,11 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
         <div className={`kpi-value${onItem ? " is-clickable" : ""}`} {...(onItem ? { role: "button", tabIndex: 0, onClick: () => onItem("all"), onKeyDown: (e: { key: string }) => { if (e.key === "Enter" || e.key === " ") onItem("all"); } } : {})}>
           {d.value == null ? "–" : fmt(d.value)}{d.unit && d.value != null && <span className="kpi-unit">{d.unit}</span>}</div>);
       // A symbol sits beside the number, like the icon on an Esri indicator.
-      body = inBody ? <div className="kpi-row"><SymbolIcon spec={w.symbol} size={SYMBOL_PX.indicator} />{num}</div> : num; break;
+      body = inBody ? <div className="kpi-row"><SymbolSlot spec={w.symbol} size={SYMBOL_PX.indicator} /><div className="kpi-main">{num}</div></div> : num; break;
     }
     case "gauge": {
       const g = onItem ? <div className="is-clickable" role="button" tabIndex={0} onClick={() => onItem("all")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onItem("all"); }}><Gauge d={d} /></div> : <Gauge d={d} />;
-      body = inBody ? <div className="kpi-row is-gauge"><SymbolIcon spec={w.symbol} size={SYMBOL_PX.indicator} />{g}</div> : g; break;
+      body = inBody ? <div className="kpi-row is-gauge"><SymbolSlot spec={w.symbol} size={SYMBOL_PX.indicator} /><div className="kpi-main">{g}</div></div> : g; break;
     }
     case "slices": body = d.chart === "bar" ? <BarList data={d.slices} active={active} onPick={onPick} unit={d.unit} /> : d.chart === "pie" ? <Donut data={d.slices} active={active} onPick={onPick} /> : <LineChart data={d.slices} active={active} bucket={w.bucket} onPick={w.field ? onPick : undefined} />; break;
     case "table": body = <DataTable columns={d.columns} rows={d.rows} activeId={activeId} onPick={onItem && ((id, label) => onItem([id], label))} />; break;
@@ -106,7 +106,7 @@ export function WidgetCard({ w, span, height, col, row, dragging, onGrab, source
       style={style} {...own.attrs} aria-label={title} onClick={editing ? onSelect : undefined}>
       <div className={`widget-head${grab ? " is-grab" : ""}`} onPointerDown={grab ? (e) => grab("move", e) : undefined}>
         {grab && <span className="grip" aria-hidden="true">⋮⋮</span>}
-        {w.symbol && !inBody && <SymbolIcon spec={w.symbol} size={SYMBOL_PX.title} className="head-sym" />}
+        {w.symbol && !inBody && <SymbolSlot spec={w.symbol} size={SYMBOL_PX.title} max={SYMBOL_PX.title} className="head-sym" />}
         <h3>{title}</h3>
         {showSource && source && !isStatic(w.type) && !title.startsWith(source.form.name) && <small className="meta">{source.form.name}</small>}
         {!editing && d.kind === "slices" && <Button small variant="ghost" onClick={csv} aria-label={`Download ${title} as CSV`}>CSV</Button>}

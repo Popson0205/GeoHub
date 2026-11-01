@@ -16,7 +16,8 @@ function toHex(css: string): string | null {
  * it matches a number, a heading or a theme. `color` overrides that (a map legend passes the class colour).
  * Motion is a CSS class on the wrapper; people who ask their system for less motion get none (see the stylesheet).
  */
-export function SymbolIcon({ spec, size = 24, color, label, className }: { spec?: SymbolSpec; size?: number; color?: string; label?: string; className?: string }) {
+export function SymbolIcon({ spec, size = 24, color, label, className, fill = false }: { spec?: SymbolSpec; size?: number; color?: string; label?: string; className?: string;
+  /** Fill the box it is in (a SymbolSlot) instead of using its own pixel size. */ fill?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [inherited, setInherited] = useState<string | undefined>();
   const needs = !!spec && !isHex(spec.color) && !isHex(color);
@@ -27,12 +28,23 @@ export function SymbolIcon({ spec, size = 24, color, label, className }: { spec?
   if (!spec || (!spec.icon && !spec.svg)) return null;
   const motion = spec.motion && spec.motion !== "none" ? ` sym-m-${spec.motion}` : "";
   // The author's size wins over the size that suits the place (a title bar, a list row, an indicator).
-  const px = spec.size ?? size;
+  const px = fill ? "100%" : spec.size ?? size;
   const c = isHex(spec.color) ? spec.color : isHex(color) ? color : inherited;
   return (
-    <span ref={ref} className={`sym${motion}${className ? ` ${className}` : ""}`} style={{ width: px, height: px, "--sym-px": `${px}px`, ...(c ? { "--sym-c": c } : {}) } as CSSProperties}
+    <span ref={ref} className={`sym${motion}${className ? ` ${className}` : ""}`} style={{ width: px, height: px, ...(fill ? {} : { "--sym-px": `${px}px` }), ...(c ? { "--sym-c": c } : {}) } as CSSProperties}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}>
-      {uri && <img src={uri} alt="" width={px} height={px} draggable={false} />}
+      {uri && <img src={uri} alt="" width={fill ? undefined : px} height={fill ? undefined : px} draggable={false} />}
     </span>
   );
+}
+
+/**
+ * A symbol in a fixed square box. The box is the size the author set (or the usual size for the place), but never more than `max`
+ * pixels and never more than the share of the row that the stylesheet allows (--sym-share), so a symbol cannot spill over the edge of
+ * its element or push its neighbours out. The picture is scaled to fit inside the box.
+ */
+export function SymbolSlot({ spec, size, max, className = "", label }: { spec?: SymbolSpec; size: number; max?: number; className?: string; label?: string }) {
+  if (!spec || (!spec.icon && !spec.svg)) return null;
+  const px = Math.min(spec.size ?? size, max ?? Number.MAX_SAFE_INTEGER);
+  return <span className={`sym-slot ${className}`} style={{ "--sym-px": `${px}px` } as CSSProperties}><SymbolIcon spec={spec} fill label={label} /></span>;
 }

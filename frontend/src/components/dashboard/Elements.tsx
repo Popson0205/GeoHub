@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { parseRich, fmt, type WidgetData } from "../../lib/dashboard";
-import { SymbolIcon } from "../SymbolIcon";
+import { SymbolSlot } from "../SymbolIcon";
+import { SYMBOL_PX } from "../../lib/symbols";
 import type { SymbolSpec, WidgetType } from "../../lib/types";
 
 type Data<K extends WidgetData["kind"]> = Extract<WidgetData, { kind: K }>;
@@ -94,7 +95,7 @@ export function ItemList({ rows, labels = false, activeId, onPick, symbol }: { r
     {r.lines.map((l, i) => <small key={i}>{labels && <span className="il-label">{l.label}: </span>}{l.value}</small>)}
   </>);
   // With a symbol, each row is the picture and then the text beside it.
-  const body = (r: Data<"list">["rows"][number]) => (symbol ? <span className="il-row"><SymbolIcon spec={symbol} size={34} /><span className="il-text">{text(r)}</span></span> : text(r));
+  const body = (r: Data<"list">["rows"][number]) => (symbol ? <span className="il-row"><SymbolSlot spec={symbol} size={SYMBOL_PX.row} /><span className="il-text">{text(r)}</span></span> : text(r));
   return (
     <ul className="item-list" onScroll={onScroll} aria-label={`${rows.length} records`}>
       {rows.slice(0, shown).map((r) => {
