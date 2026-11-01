@@ -4,7 +4,7 @@ import CsvImportPanel from "../components/CsvImportPanel";
 import FormRenderer from "../components/FormRenderer";
 import { Icon } from "../components/icons";
 import ProjectNav, { ProjectNavSkeleton } from "../components/ProjectNav";
-import { Button, EmptyState, ErrorState, Loading, MoreMenu, useConfirm, useToast } from "../components/ui";
+import { Button, EmptyState, ErrorState, Loading, MoreMenu, useToast, useUndoable } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
 import { csvEscape, download } from "../lib/csv";
 import { columnFields } from "../lib/fieldSpec";
@@ -24,7 +24,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 export default function DataPage() {
   const { projectId = "" } = useParams();
   const toast = useToast();
-  const confirm = useConfirm();
+  const undoable = useUndoable();
   const project = useAsync((api) => api.getProject(projectId), [projectId]);
   const forms = useAsync((api) => api.listForms(projectId), [projectId]);
   const feats = useAsync((api) => api.listFeatures(projectId), [projectId]);
@@ -82,15 +82,23 @@ export default function DataPage() {
       toast(`${done.length} ${decision}.`, "success");
     } catch (e) { toast(e instanceof Error ? e.message : "Could not update.", "error"); void feats.reload(); }
   }
-  async function remove(ids: string[]) {
-    if (!(await confirm({ title: `Delete ${ids.length === 1 ? "this record" : `${ids.length} records`}?`, message: "They are removed from the project.", confirmLabel: "Delete", danger: true }))) return;
-    try {
-      const api = await loadApi();
-      await Promise.all(ids.map((id) => api.deleteFeature(id)));
-      feats.setData((feats.data ?? []).filter((f) => !ids.includes(f.id)));
-      setPicked(new Set());
-      toast("Deleted.", "success");
-    } catch (e) { toast(e instanceof Error ? e.message : "Could not delete.", "error"); void feats.reload(); }
+  /** Records leave the table at once; they are deleted on the server when the Undo window closes. */
+  function remove(ids: string[]) {
+    const before = feats.data ?? [];
+    const gone = before.filter((f) => ids.includes(f.id));
+    if (!gone.length) return;
+    undoable({
+      text: `${gone.length === 1 ? "Record" : `${gone.length} records`} deleted.`,
+      hide: () => { feats.setData((cur) => (cur ?? []).filter((f) => !ids.includes(f.id))); setPicked(new Set()); if (editing && ids.includes(editing.id)) setEditing(null); },
+      commit: async () => { const api = await loadApi(); await Promise.all(gone.map((f) => api.deleteFeature(f.id))); },
+      // Put them back where they were, not at the end of the table.
+      restore: () => feats.setData((cur) => {
+        const have = new Set((cur ?? []).map((f) => f.id));
+        const at = new Map(before.map((f, i) => [f.id, i]));
+        return [...(cur ?? []), ...gone.filter((f) => !have.has(f.id))].sort((a, b) => (at.get(a.id) ?? Infinity) - (at.get(b.id) ?? Infinity));
+      }),
+      failText: "Could not delete. The records have been put back.",
+    });
   }
 
   function exportCsv() {
