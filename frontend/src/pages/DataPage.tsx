@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import CsvImportPanel from "../components/CsvImportPanel";
 import FormRenderer from "../components/FormRenderer";
 import RecordTable, { cellText } from "../components/RecordTable";
+import { qualityFlags } from "../lib/quality";
 import ReviewPanel from "../components/ReviewPanel";
 import { Icon } from "../components/icons";
 import ProjectNav, { ProjectNavSkeleton } from "../components/ProjectNav";
@@ -31,7 +32,7 @@ export default function DataPage() {
   const feats = useAsync((api) => api.listFeatures(projectId), [projectId]);
   const [formId, setFormId] = useState("");
   const [importing, setImporting] = useState(false);
-  const [filter, setFilter] = useState<"all" | FeatureStatus>("all");
+  const [filter, setFilter] = useState<"all" | "flagged" | FeatureStatus>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Feature | null>(null);
   const [draft, setDraft] = useState<Props>({});
@@ -49,7 +50,10 @@ export default function DataPage() {
   const canManage = project.data?.role === "owner" || project.data?.role === "admin";
   const cols = useMemo(() => (form ? columnFields(form.fields) : []), [form]);
   const all = useMemo(() => (feats.data ?? []).filter((f) => f.form_id === formId), [feats.data, formId]);
-  const rows = useMemo(() => all.filter((f) => filter === "all" || f.status === filter), [all, filter]);
+  // Data quality hints, worked out from this form's records (poor GPS, placed by hand, possible duplicates).
+  const flags = useMemo(() => qualityFlags(all, form), [all, form]);
+  const flagged = useMemo(() => all.filter((f) => (flags.get(f.id) ?? []).some((x) => x.kind !== "manual")).length, [all, flags]);
+  const rows = useMemo(() => all.filter((f) => filter === "all" || (filter === "flagged" ? (flags.get(f.id) ?? []).some((x) => x.kind !== "manual") : f.status === filter)), [all, filter, flags]);
   const counts = useMemo(() => { const c: Record<string, number> = {}; for (const f of all) c[f.status] = (c[f.status] ?? 0) + 1; return c; }, [all]);
   const target = picked.size ? rows.filter((r) => picked.has(r.id)) : rows;
   const waitingAll = useMemo(() => (feats.data ?? []).filter((f) => f.status === "submitted").length, [feats.data]);
@@ -180,6 +184,11 @@ export default function DataPage() {
                   {s === "all" ? "All" : STATUS[s].label}<span className="filter-count">{s === "all" ? all.length : counts[s] ?? 0}</span>
                 </button>
               ))}
+              {(flagged > 0 || filter === "flagged") && (
+                <button type="button" className="filter-chip filter-chip-flag" aria-pressed={filter === "flagged"} onClick={() => { setFilter("flagged"); setPicked(new Set()); }} title="Poor GPS accuracy or a possible duplicate">
+                  <Icon name="search" size={14} />Needs a look<span className="filter-count">{flagged}</span>
+                </button>
+              )}
             </div>
             <div className="toolbar-actions">
               {canManage && (counts.submitted ?? 0) > 0 && <Button small variant="primary" onClick={startReview}><Icon name="check" size={16} />Review {counts.submitted} waiting</Button>}
@@ -212,7 +221,7 @@ export default function DataPage() {
             </section>
           )}
 
-          <RecordTable formId={formId} rows={rows} cols={cols} canManage={canManage} picked={picked} setPicked={setPicked}
+          <RecordTable formId={formId} rows={rows} cols={cols} canManage={canManage} picked={picked} setPicked={setPicked} flags={flags}
             onApprove={(id) => void review([id], "approved")} onReject={(id) => void review([id], "rejected")} onEdit={startEdit} onDelete={(id) => remove([id])}
             empty={<EmptyState icon={all.length ? "search" : "inbox"} title={all.length ? "Nothing matches this filter" : "No data collected yet"}
               action={!all.length && shareLink && canManage ? <Link className="btn btn-primary" to={shareLink}><Icon name="share" size={18} />Share the form</Link> : all.length ? <Button onClick={() => setFilter("all")}>Show all records</Button> : undefined}>

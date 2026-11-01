@@ -5,6 +5,7 @@ import { Button } from "./ui";
 import { dashboardFields, display } from "../lib/dashboard";
 import { allFields, isMedia } from "../lib/fieldSpec";
 import { loadApi } from "../lib/api";
+import { qualityFlags } from "../lib/quality";
 import type { Feature, Form, MediaItem } from "../lib/types";
 
 type Decision = "approved" | "rejected";
@@ -35,6 +36,8 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
   const done = items.length > 0 && waiting === 0;
 
   const defs = useMemo(() => dashboardFields(form), [form]);
+  const flags = useMemo(() => qualityFlags(features.filter((f) => f.form_id === form.id), form), [features, form]);
+  const curFlags = cur ? flags.get(cur.id) ?? [] : [];
   const media = useMemo(() => allFields(form.fields).filter((f) => isMedia(f.type)), [form]);
   // The current record's photos and files, fetched when it opens (links expire, so they are not kept).
   const [files_, setFiles] = useState<MediaItem[] | null>(null);
@@ -136,6 +139,16 @@ export default function ReviewPanel({ form, queue, features, onDecide, onEdit, o
                 <span className="grow" />
                 <span className="muted">Sent {new Date(cur.updated_at).toLocaleString()}</span>
               </div>
+              {curFlags.length > 0 && (
+                <ul className="review-flags" aria-label="Worth checking">
+                  {curFlags.map((f, i) => (
+                    <li key={i} className={`flag-row flag-${f.kind}`}>
+                      <strong>{f.label}</strong> <span>{f.detail}</span>
+                      {f.other && queue.includes(f.other) && <button type="button" className="link-btn" onClick={() => go(items.findIndex((x) => x.id === f.other))}>Open it</button>}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <dl className="review-answers">
                 {defs.map((d) => {
                   const v = display(cur, d);

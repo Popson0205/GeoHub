@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./icons";
 import { Button, MoreMenu } from "./ui";
+import type { QualityFlag } from "../lib/quality";
 import type { Feature, FeatureStatus, FormField } from "../lib/types";
 
 const STATUS: Record<FeatureStatus, { label: string; cls: string }> = {
@@ -45,8 +46,10 @@ function useHiddenColumns(formId: string) {
  * The records of one form: search, sort by any column, choose columns, and pages, so a project with
  * thousands of records stays quick to work through. Ticking rows hands them to the page's selection bar.
  */
-export default function RecordTable({ formId, rows, cols, canManage, picked, setPicked, onApprove, onReject, onEdit, onDelete, empty }: {
+export default function RecordTable({ formId, rows, cols, canManage, picked, setPicked, onApprove, onReject, onEdit, onDelete, empty, flags }: {
   formId: string;
+  /** Data quality hints per record (poor GPS, placed by hand, possible duplicate). */
+  flags?: Map<string, QualityFlag[]>;
   rows: Feature[];
   cols: FormField[];
   canManage: boolean;
@@ -132,7 +135,14 @@ export default function RecordTable({ formId, rows, cols, canManage, picked, set
               {shown.map((r) => (
                 <tr key={r.id} className={picked.has(r.id) ? "is-picked" : undefined}>
                   {canManage && <td className="check-col"><input type="checkbox" aria-label="Select record" checked={picked.has(r.id)} onChange={() => { const n = new Set(picked); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); setPicked(n); }} /></td>}
-                  <td className="cell-nowrap"><span className={STATUS[r.status].cls}>{STATUS[r.status].label}</span></td>
+                  <td className="cell-nowrap">
+                    <span className="status-cell">
+                      <span className={STATUS[r.status].cls}>{STATUS[r.status].label}</span>
+                      {(flags?.get(r.id) ?? []).map((f, i) => (
+                        <span key={i} className={`flag flag-${f.kind}`} title={f.detail}><Icon name={f.kind === "duplicate" ? "duplicate" : f.kind === "gps" ? "point" : "select"} size={13} />{f.label}<span className="sr-only">: {f.detail}</span></span>
+                      ))}
+                    </span>
+                  </td>
                   {shownCols.map((c) => <td key={c.id} className="cell-wrap">{cellText(r.properties[c.id])}</td>)}
                   <td className="cell-nowrap">{new Date(r.updated_at).toLocaleDateString()}</td>
                   {canManage && <td className="col-sticky-end">
