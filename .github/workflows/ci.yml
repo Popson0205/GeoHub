@@ -28,8 +28,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
-      - run: npm test
+      # build first: the service-worker test checks the built app (dist/sw.js)
       - run: npm run build
+      - run: npm test
 
   backend:
     name: Backend (pytest against PostGIS, Redis and S3)
