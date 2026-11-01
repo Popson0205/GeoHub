@@ -5,6 +5,7 @@ import { Icon } from "./icons";
 import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 import { Loading } from "./ui";
 import QuickSearch from "./QuickSearch";
+import ErrorBoundary from "./ErrorBoundary";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
   return (
@@ -85,7 +86,9 @@ export default function Shell() {
       </header>
       <main id="main" className="page" style={{ display: "flex", flexDirection: "column" }}>
         {/* Pages load on demand: keep the top bar while one arrives */}
-        <Suspense fallback={<div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>}><Outlet /></Suspense>
+        <ErrorBoundary resetKey={loc.pathname} inline>
+          <Suspense fallback={<div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>}><Outlet /></Suspense>
+        </ErrorBoundary>
       </main>
     </div>
   );

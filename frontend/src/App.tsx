@@ -1,6 +1,7 @@
 import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { lazy, Suspense, type ReactNode } from "react";
 import Shell from "./components/Shell";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { Loading } from "./components/ui";
 import { RequireAuth, useAuth } from "./lib/auth";
 import { isCollectorApp } from "./lib/pwa";
@@ -35,7 +36,11 @@ const CollectHomePage = lazy(() => import("./pages/CollectHomePage"));
 export function PageLoading() {
   return <div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>;
 }
-const Page = ({ children }: { children: ReactNode }) => <Suspense fallback={<PageLoading />}>{children}</Suspense>;
+/** Pages load on demand; a page that fails to draw shows a recovery screen instead of a blank one. */
+function Page({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return <ErrorBoundary resetKey={pathname}><Suspense fallback={<PageLoading />}>{children}</Suspense></ErrorBoundary>;
+}
 
 /** Signed in: your work. Signed out: what Geohub is. The introduction stays at /about for everyone. */
 function Home() {

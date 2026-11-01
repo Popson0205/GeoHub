@@ -36,3 +36,34 @@ def test_jobs_run_through_the_real_queue_and_worker(project, client, monkeypatch
     SimpleWorker([Queue("default", connection=redis)], connection=redis).work(burst=True)
     job = client.get(f"/jobs/{r.json()['id']}").json()
     assert job["status"] == "done" and job["progress"] == 100 and job["result"]["download_url"].startswith("http")
+
+
+def test_browser_errors_are_logged_and_sent_to_sentry(client, actor, monkeypatch):
+    import logging
+    import sentry_sdk
+    from app.config import settings as cfg
+    seen, sent = [], []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            seen.append(record)
+    h = Grab()
+    logging.getLogger("client").addHandler(h)
+    monkeypatch.setattr(cfg, "sentry_dsn", "https://key@sentry.example/1")
+    monkeypatch.setattr(sentry_sdk, "capture_message", lambda msg, level=None: sent.append((msg, level)))
+    try:
+        body = {"ref": "GH-7Q2K", "kind": "render", "name": "TypeError", "message": "x is undefined",
+                "stack": "at Foo (app.js:1:2)", "url": "https://geohub.example/collect/p1/data", "release": "abc123"}
+        a = actor("Reporter")
+        r = a.post("/client-errors", json=body)
+        assert r.status_code == 202 and r.json()["ref"] == "GH-7Q2K"
+        assert seen and seen[-1].ctx["ref"] == "GH-7Q2K" and seen[-1].ctx["user_id"] == str(a.id)
+        assert sent == [("TypeError: x is undefined", "error")]
+        # an expired or bad token never blocks the report
+        assert client.post("/client-errors", json=body, headers={"Authorization": "Bearer nonsense"}).status_code == 202
+        assert client.post("/client-errors", json={**body, "message": "x" * 5000}).status_code == 422
+        assert client.post("/client-errors", json={**body, "ref": "<script>"}).status_code == 422
+        codes = [client.post("/client-errors", json=body).status_code for _ in range(25)]
+        assert 429 in codes                                          # a crash loop cannot flood the logs
+    finally:
+        logging.getLogger("client").removeHandler(h)
