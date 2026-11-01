@@ -124,3 +124,21 @@
   .attention-row { flex-wrap: wrap; }
   .attention-row .btn { margin-left: 48px; }
 }
+
+/* ---- first-run guide (home) ---- */
+.guide { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-5); border: 1px solid var(--green-200); border-radius: var(--r-xl); background: linear-gradient(180deg, var(--green-50), var(--n-0) 70%); box-shadow: var(--sh-sm); }
+.guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.guide-head h2 { font-size: var(--fs-xl); }
+.guide-head p { font-size: var(--fs-sm); margin-top: 2px; }
+.guide-bar { height: 6px; border-radius: var(--r-full); background: var(--n-100); overflow: hidden; }
+.guide-bar span { display: block; height: 100%; border-radius: inherit; background: var(--green-600); transition: width var(--t-base); }
+.guide-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.guide-step { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) 0; border-top: 1px solid var(--line); }
+.guide-step:first-child { border-top: 0; }
+.guide-step .grow { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.guide-text { color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+.guide-mark { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--n-0); color: var(--n-600); font-size: var(--fs-sm); font-weight: 600; }
+.guide-step.is-done strong { color: var(--muted); font-weight: 500; text-decoration: line-through; text-decoration-color: var(--n-400); }
+.guide-step.is-done .guide-mark { border-color: var(--green-600); background: var(--green-600); color: #fff; }
+.guide-step.is-next .guide-mark { border-color: var(--green-600); color: var(--green-700); box-shadow: 0 0 0 4px var(--green-100); }
+@media (max-width: 600px) { .guide-step { flex-wrap: wrap; } .guide-step .grow { flex: 1 1 calc(100% - 44px); } .guide-step .btn { margin-left: 40px; } }

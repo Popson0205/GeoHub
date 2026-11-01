@@ -1,6 +1,7 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import FootprintThumb from "../components/FootprintThumb";
+import GettingStarted, { gettingStartedSteps } from "../components/GettingStarted";
 import { Icon, type IconName } from "../components/icons";
 import { CardSkeletons, ErrorState } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -8,6 +9,7 @@ import { useAsync } from "../lib/hooks";
 import type { Project, WorkMap } from "../lib/types";
 
 const DeviceQueue = lazy(() => import("../components/DeviceQueue"));
+const GUIDE_KEY = "geohub.guideHidden";
 
 type Recent = { kind: "map" | "project"; id: string; name: string; updated: string; to: string; stats: { icon: IconName; text: string }[] };
 
@@ -45,12 +47,20 @@ export default function HomePage() {
   const err = projects.error ?? maps.error;
   const empty = !loading && !err && !recent.length;
 
+  // First-run guide: worked out from the first project this person runs and its forms.
+  const ownId = (projects.data ?? []).find((p) => p.role === "owner" || p.role === "admin")?.id ?? "";
+  const ownForms = useAsync((api) => (ownId ? api.listForms(ownId) : Promise.resolve([])), [ownId]);
+  const [guideHidden, setGuideHidden] = useState(() => { try { return localStorage.getItem(GUIDE_KEY) === "1"; } catch { return false; } });
+  const steps = useMemo(() => gettingStartedSteps(projects.data ?? [], ownForms.data ?? []), [projects.data, ownForms.data]);
+  const showGuide = !loading && !err && !guideHidden && !(ownId && ownForms.loading && !ownForms.data) && steps.some((s) => !s.done);
+  const hideGuide = () => { setGuideHidden(true); try { localStorage.setItem(GUIDE_KEY, "1"); } catch { /* private mode */ } };
+
   return (
     <div className="container home" style={{ width: "100%" }}>
       <header className="home-head">
         <div>
           <p className="home-greeting">{greeting()}{first ? `, ${first}` : ""}</p>
-          <h1>{empty ? "Let's get you started" : "Pick up where you left off"}</h1>
+          <h1>{empty || showGuide ? "Let's get you started" : "Pick up where you left off"}</h1>
         </div>
         <div className="page-header-actions">
           <Link className="btn" to="/maps?new=1"><Icon name="navMap" size={18} />New map</Link>
@@ -60,7 +70,10 @@ export default function HomePage() {
 
       {err != null && <ErrorState error={err} onRetry={() => { void projects.reload(); void maps.reload(); }} />}
 
-      {!loading && !err && (
+      {showGuide && <GettingStarted steps={steps} onHide={hideGuide} />}
+
+      {/* While the guide is up and nothing is waiting, an empty "all caught up" box is only noise. */}
+      {!loading && !err && !(showGuide && !review.length) && (
         <section className="home-section" aria-labelledby="attention-title">
           <h2 id="attention-title">Needs your attention</h2>
           <ul className="attention">
@@ -80,13 +93,13 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="home-section" aria-labelledby="recent-title">
+      {!(empty && showGuide) && <section className="home-section" aria-labelledby="recent-title">
         <div className="home-section-head">
           <h2 id="recent-title">Recent</h2>
           {!empty && <span className="home-links"><Link to="/maps">All maps</Link><Link to="/collect">All projects</Link></span>}
         </div>
         {loading && <CardSkeletons count={3} />}
-        {empty && (
+        {empty && !showGuide && (
           <div className="state">
             <span className="state-icon" aria-hidden="true"><Icon name="navMap" size={24} /></span>
             <strong>Nothing here yet</strong>
@@ -108,7 +121,7 @@ export default function HomePage() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
 
       <section className="home-section home-more" aria-label="More">
         <Link className="home-tile" to="/dashboards"><Icon name="navDash" size={20} /><span><strong>Dashboards</strong><small>Charts and maps of what your projects collected</small></span></Link>
