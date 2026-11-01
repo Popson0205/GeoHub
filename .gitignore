@@ -12,3 +12,6 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+
+# Redis snapshot written by a local Redis; never part of the code
+dump.rdb
