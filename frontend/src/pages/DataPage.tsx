@@ -39,6 +39,7 @@ export default function DataPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [exporting, setExporting] = useState<"shp" | "gpkg" | "kml" | null>(null);
   // Review mode works through the records waiting for a decision. ?review=1 opens it directly (from a project card).
   const [params, setParams] = useSearchParams();
   const [queue, setQueue] = useState<string[] | null>(null);
@@ -146,6 +147,31 @@ export default function DataPage() {
     download(`${slug(form?.name ?? "data")}.geojson`, JSON.stringify(fc, null, 2), "application/geo+json");
   }
 
+  /** Shapefile, GeoPackage and KML are made on the server; this waits for the file, then downloads it. */
+  async function exportGis(format: "shp" | "gpkg" | "kml") {
+    if (!form || exporting) return;
+    const name = format === "shp" ? "Shapefile" : format === "gpkg" ? "GeoPackage" : "KML";
+    setExporting(format);
+    toast(`Preparing the ${name}…`, "info");
+    try {
+      const api = await loadApi();
+      // send the ids only when the table is narrowed, so a full download stays a small request
+      const narrowed = picked.size > 0 || filter !== "all";
+      let job = await api.exportRecords(projectId, { form_id: form.id, format, ids: narrowed ? target.map((r) => r.id) : undefined });
+      for (let i = 0; i < 90 && job.status !== "done" && job.status !== "failed"; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        job = await api.getJob(job.id);
+      }
+      if (job.status === "failed") throw new Error(job.error || `The ${name} could not be made.`);
+      if (job.status !== "done" || !job.download_url) throw new Error(`The ${name} is taking too long. Try again in a minute.`);
+      const a = document.createElement("a");
+      a.href = job.download_url; a.download = `${slug(form.name)}.${format === "shp" ? "zip" : format}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      toast(`${name} download started.`, "success");
+    } catch (e) { toast(e instanceof Error ? e.message : "Download failed.", "error"); }
+    finally { setExporting(null); }
+  }
+
   const shareLink = form && form.version > 0 ? `/collect/${projectId}/forms/${form.id}/share` : null;
   const picks = picked.size ? ` (${picked.size})` : "";
   return (
@@ -196,6 +222,9 @@ export default function DataPage() {
               <MoreMenu label="Download" text={`Download${picks}`} icon="download" items={[
                 { label: `CSV spreadsheet${picks}`, icon: "table", disabled: !target.length, onSelect: exportCsv },
                 { label: `GeoJSON for GIS${picks}`, icon: "navMap", disabled: !target.length, onSelect: exportGeoJson },
+                { label: `Shapefile (.zip)${picks}`, icon: "layers", disabled: !target.length || !!exporting || !form?.version, onSelect: () => void exportGis("shp") },
+                { label: `GeoPackage${picks}`, icon: "layers", disabled: !target.length || !!exporting || !form?.version, onSelect: () => void exportGis("gpkg") },
+                { label: `KML for Google Earth${picks}`, icon: "globe", disabled: !target.length || !!exporting || !form?.version, onSelect: () => void exportGis("kml") },
               ]} />
             </div>
           </div>

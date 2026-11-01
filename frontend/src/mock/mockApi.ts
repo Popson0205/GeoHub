@@ -1,10 +1,11 @@
+import { toKml } from "../lib/kml";
 import { ApiError, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
 import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem,
+import type { MediaItem, FeatureStatus,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -721,6 +722,21 @@ export class MockApi implements Api {
     };
     this.s.datasets.push(d); this.save();
     return { dataset: d, job: doneJob };
+  }
+  async exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }): Promise<Job> {
+    await wait(); this.auth();
+    const id = uuid();
+    const entry: { job: Job; polls: number; url?: string; error?: string } = { job: { id, kind: "export", status: "queued", progress: 0 }, polls: 0 };
+    if (input.format !== "kml") entry.error = "Shapefile and GeoPackage files are made by the Geohub server, so they are not available in demo mode. KML, CSV and GeoJSON work here.";
+    else {
+      const form = this.s.forms.find((f) => f.id === input.form_id);
+      const rows = this.s.features.filter((f) => f.project_id === projectId && f.form_id === input.form_id && !f.deleted
+        && (!input.ids || input.ids.includes(f.id)) && (!input.statuses || input.statuses.includes(f.status))).map((r) => this.strip(r));
+      const nameField = form?.fields.find((f) => f.type === "text")?.id;
+      entry.url = URL.createObjectURL(new Blob([toKml(form?.name ?? "Records", rows, nameField)], { type: "application/vnd.google-earth.kml+xml" }));
+    }
+    this.jobs.set(id, entry);
+    return entry.job;
   }
   async createExport(slug: string, format: ExportFormat): Promise<Job> {
     await wait();

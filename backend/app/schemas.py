@@ -449,6 +449,13 @@ class DatasetCreated(BaseModel):
     job: JobOut
 
 
+class ProjectExportIn(BaseModel):
+    form_id: UUID
+    format: Literal["gpkg", "shp", "kml"]
+    statuses: list[Literal["draft", "submitted", "approved", "rejected"]] | None = Field(None, description="Only records with these statuses")
+    ids: list[UUID] | None = Field(None, max_length=20000, description="Only these records (for example the ones ticked in the table)")
+
+
 class ExportIn(BaseModel):
     format: Literal["geojson", "gpkg", "shp", "csv"]
     version: int | None = Field(None, ge=1, description="Defaults to the latest version")

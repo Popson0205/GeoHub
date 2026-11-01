@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem,
+import type { MediaItem, FeatureStatus,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -123,6 +123,8 @@ export interface Api {
   /** Starts publishing. The snapshot is built by a background job: poll `job` with getJob before saying it worked. */
   publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<{ dataset: Dataset; job: Job }>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
+  /** One form's collected records as a GIS file, made in the background: poll the job for `download_url`. */
+  exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }): Promise<Job>;
   getJob(id: string): Promise<Job>;
 }
 
@@ -604,6 +606,9 @@ class HttpApi implements Api {
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
+  async exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }) {
+    return toJob(await this.req("POST", `/projects/${projectId}/exports`, input));
+  }
 }
 
 /** Backend slugs: lowercase letters, digits and hyphens, 2-63 chars, a short random suffix keeps them unique. */
