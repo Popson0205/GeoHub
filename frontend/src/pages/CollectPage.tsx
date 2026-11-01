@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
+import ConflictCard from "../components/ConflictCard";
 import FormRenderer, { type MediaCtx } from "../components/FormRenderer";
 import SignaturePad from "../components/SignaturePad";
 import MapView, { type Bbox, type MapFeature } from "../components/MapView";
@@ -293,11 +294,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
             {returnedList}
             <h2>My data</h2>
             {conflicts.map((c) => (
-              <div className="state state-error" key={c.id} role="alert">
-                <strong>Someone else changed this record</strong>
-                <span>Choose which version to keep.</span>
-                <div className="row"><Button small onClick={() => resolveConflict(c.id, "server")}>Keep their version</Button><Button small onClick={() => resolveConflict(c.id, "mine").then(() => sync(true))}>Keep mine</Button></div>
-              </div>
+              <ConflictCard key={c.id} row={c} form={forms?.find((f) => f.id === c.mine.form_id)} title={titleOf(c.mine)}
+                onResolve={(choice) => void resolveConflict(c.id, choice).then(() => { if (choice !== "server") void sync(true); })} />
             ))}
             {mine.length === 0 && !returned.length && <div className="state"><strong>Nothing collected yet</strong>Records you save appear here, even offline.</div>}
             {mine.map((f) => (

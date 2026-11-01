@@ -231,15 +231,19 @@ export async function syncPublic(token: string, key: string, opts: { collectOnly
   return report;
 }
 
-/** Resolve a conflict: keep the server's copy, or re-apply mine on top of it. */
-export async function resolveConflict(id: string, choice: "server" | "mine"): Promise<void> {
+/**
+ * Resolve a conflict: keep the server's copy, re-apply mine on top of it, or send a combination
+ * (some answers from each, chosen per question).
+ */
+export async function resolveConflict(id: string, choice: "server" | "mine" | { geometry: Geometry; properties: Props }): Promise<void> {
   const row = await db.conflicts.get(id);
   if (!row) return;
   await db.transaction("rw", db.features, db.queue, db.conflicts, async () => {
     if (choice === "server") {
       await db.features.put({ ...row.server, sync: "synced" });
     } else {
-      const f: LocalFeature = { ...row.mine, version: row.server.version, sync: "pending" };
+      const picked = typeof choice === "object" ? choice : null;
+      const f: LocalFeature = { ...row.mine, ...(picked ?? {}), version: row.server.version, sync: "pending" };
       await db.features.put(f);
       await db.queue.add({
         change_id: uuid(), id, project_id: row.project_id, op: "update", base_version: row.server.version,
