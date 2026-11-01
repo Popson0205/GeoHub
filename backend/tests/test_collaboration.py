@@ -123,9 +123,10 @@ def test_campaign_window_and_leaderboard(actor):
     assert [r["name"] for r in board["contributors"]][0] == "Ana" and rows["Ana"]["rank"] == 1 and rows["Ana"]["added"] == 3
     assert rows["Bob"]["added"] == 1 and rows["Bob"]["rejected"] == 1 and rows["Bob"]["pending"] == 1 and rows["Bob"]["rank"] == 2
     assert rows["Owner"]["added"] == 1 and rows["Owner"]["approved"] == 1 and rows["Owner"]["role"] == "owner"
-    assert board["totals"]["added"] == 5 and board["totals"]["rejected"] == 1 and sum(d["count"] for d in board["daily"]) == 7
+    # six features were drawn: five count as added, the rejected one does not, but every one is activity on its day
+    assert board["totals"]["added"] == 5 and board["totals"]["rejected"] == 1 and sum(d["count"] for d in board["daily"]) == 6
     acts = owner.get(f"/maps/{m['id']}/activity").json()
-    assert len(acts) == 7 and {a["name"] for a in acts} == {"Ana", "Bob", "Owner"}
+    assert len(acts) == 6 and {a["name"] for a in acts} == {"Ana", "Bob", "Owner"}
 
     # the campaign ends: contributors are locked out, the owner is not
     owner.patch(f"/maps/{m['id']}", json={"starts_at": (now - timedelta(days=3)).isoformat(), "ends_at": (now - timedelta(days=1)).isoformat()})
@@ -147,7 +148,7 @@ def test_publish_only_approved_features_to_the_hub(actor, client):
     ok1 = draw(ana, m, 3.0, {"Building": "yes", "addr:street": "Main St"}, area(3.0))
     ok2 = draw(ana, m, 3.1, {"building": "yes"}, area(3.1))
     waiting = draw(ana, m, 3.2, {"building": "yes"}, area(3.2))
-    draw(ana, m, 3.3, {"name": "a well"})                                         # a point: a separate dataset
+    well = draw(ana, m, 3.3, {"name": "a well"})                                  # a point: a separate dataset
     owner.post(f"/maps/{m['id']}/features/review", json={"ids": [ok1["id"], ok2["id"]], "status": "approved"})
 
     body = {"slug": f"buildings-{uuid.uuid4().hex[:6]}", "title": "Buildings", "description": "Mapathon buildings",
@@ -179,6 +180,7 @@ def test_publish_only_approved_features_to_the_hub(actor, client):
     assert client.get(f"/datasets/{slug}/features", params={"version": 1}).json()["features"].__len__() == 2
 
     # privacy: a private dataset is visible to map members only; credits can be switched off
+    owner.post(f"/maps/{m['id']}/features/review", json={"ids": [well["id"]], "status": "approved"})   # only approved features publish
     p = owner.post(f"/maps/{m['id']}/publish", json={**body, "slug": f"points-{uuid.uuid4().hex[:6]}", "geometry_type": "point",
                                                       "visibility": "private", "credit_contributors": False})
     assert p.status_code == 202, p.text
