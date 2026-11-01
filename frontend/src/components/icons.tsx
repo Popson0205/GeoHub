@@ -31,6 +31,21 @@ const ICONS = {
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   logout: <><path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4" /><path d="M16 8l4 4-4 4M20 12H9" /></>,
+  /* page actions */
+  plus: <path d="M12 5v14M5 12h14" />,
+  more: <>{dot(5.5, 12, 1.7)}{dot(12, 12, 1.7)}{dot(18.5, 12, 1.7)}</>,
+  arrowLeft: <path d="M19 12H5M11 18l-6-6 6-6" />,
+  download: <><path d="M12 4v11M7 10l5 5 5-5" /><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" /></>,
+  upload: <><path d="M12 15V4M7 9l5-5 5 5" /><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></>,
+  share: <><circle cx="18" cy="5.5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="18.5" r="2.5" /><path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1" /></>,
+  form: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" /></>,
+  layers: <><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 13l9 5 9-5" /></>,
+  users: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0" /><path d="M16 4.6a3.5 3.5 0 010 6.8M18.5 20a6.5 6.5 0 00-2.8-5.3" /></>,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" /></>,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  inbox: <><path d="M3 13h5l1.5 3h5l1.5-3h5" /><path d="M5.5 5.5h13L21 13v5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18v-5z" /></>,
+  link: <><path d="M10 14a4.5 4.5 0 006.4 0l3-3a4.5 4.5 0 00-6.4-6.4L11.5 6" /><path d="M14 10a4.5 4.5 0 00-6.4 0l-3 3a4.5 4.5 0 006.4 6.4l1.5-1.4" /></>,
 } satisfies Record<string, ReactNode>;
 export type IconName = keyof typeof ICONS;
 

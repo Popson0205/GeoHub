@@ -41,6 +41,65 @@
 .page-lede { margin: 0 0 var(--s-6); max-width: 66ch; color: var(--muted); font-size: var(--fs-lg); line-height: 1.55; }
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s-5); }
 
+/* ---- page header: way back, title, one line of purpose, actions on the right ---- */
+.page-header { display: flex; flex-direction: column; gap: var(--s-2); margin-bottom: var(--s-6); }
+.page-header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-4) var(--s-6); flex-wrap: wrap; }
+.page-header-text { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.page-header h1 { font-size: var(--fs-3xl); text-wrap: balance; }
+.page-header-lede { max-width: 66ch; color: var(--muted); font-size: var(--fs-lg); line-height: 1.5; }
+.page-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.page-back { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; min-height: 28px; padding: 0 var(--s-2) 0 2px; margin-left: -2px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-sm); font-weight: 500; text-decoration: none; transition: color var(--t-fast), background var(--t-fast); }
+.page-back:hover { color: var(--green-700); background: var(--n-100); }
+/* an inline panel that slides open under the header (new project, new map, join) */
+.inline-panel { max-width: 520px; margin-bottom: var(--s-6); box-shadow: var(--sh-md); animation: dialog-pop .16s ease-out; }
+.inline-panel h2 { font-size: var(--fs-lg); }
+.inline-panel .row { flex-wrap: wrap; }
+
+/* ---- project header with section tabs (every page inside a Data collection project) ---- */
+.project-nav { flex: none; background: var(--n-0); border-bottom: 1px solid var(--line); }
+.project-nav-in { max-width: 1200px; margin: 0 auto; padding: var(--s-5) var(--s-8) 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.project-nav-row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-3) var(--s-6); flex-wrap: wrap; }
+.project-nav-title { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.project-nav h1 { font-size: var(--fs-2xl); letter-spacing: -0.02em; text-wrap: balance; }
+.project-nav-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-4); color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.project-nav-meta > span:not(.badge) { display: inline-flex; align-items: center; gap: 5px; }
+.project-nav-meta svg { color: var(--n-500); }
+.project-nav-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.project-tabs { display: flex; gap: var(--s-1); margin-top: var(--s-2); overflow-x: auto; scrollbar-width: none; }
+.project-tabs::-webkit-scrollbar { display: none; }
+.project-tab { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 var(--s-3); border-radius: var(--r-md) var(--r-md) 0 0; color: var(--muted); font-weight: 500; text-decoration: none; white-space: nowrap; transition: color var(--t-fast), background var(--t-fast); }
+.project-tab svg { opacity: .8; }
+.project-tab:hover { color: var(--ink-900); background: var(--n-50); }
+.project-tab.is-active { color: var(--green-700); font-weight: 600; }
+.project-tab.is-active svg { opacity: 1; }
+.project-tab.is-active::after { content: ""; position: absolute; left: var(--s-2); right: var(--s-2); bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--green-600); }
+.project-tab:focus-visible { outline-offset: -2px; }
+.project-nav.is-compact .project-nav-in { max-width: none; padding: var(--s-3) var(--s-4) 0; gap: 2px; }
+.project-nav.is-compact h1 { font-size: var(--fs-xl); }
+.project-nav.is-compact .project-tabs { margin-top: 0; }
+.project-nav.is-compact .project-tab { min-height: 40px; }
+.project-nav + .container { padding-top: var(--s-6); }
+
+/* ---- cards in a gallery (projects, maps) ---- */
+/* not overflow: hidden, so a menu can open past the card's edge without scrolling the card */
+.item-card { gap: var(--s-3); padding: 0; }
+.item-card .thumb { height: 120px; border: 0; border-bottom: 1px solid var(--line); border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0; }
+.item-card-body { display: flex; flex-direction: column; gap: var(--s-2); padding: 0 var(--s-5); flex: 1; }
+.item-card h2 { font-size: var(--fs-xl); line-height: 1.25; }
+.item-card h2 a { color: var(--ink-900); text-decoration: none; }
+.item-card h2 a:hover { color: var(--green-700); text-decoration: underline; }
+/* the whole card is clickable through its title link; buttons and menus stay above that */
+.item-card { position: relative; }
+.item-card h2 a::after { content: ""; position: absolute; inset: 0; z-index: 0; }
+.item-card .btn, .item-card .menu, .item-card .badge { position: relative; z-index: 1; }
+.item-card:focus-within { border-color: var(--green-300); }
+.item-stats { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.item-stats span { display: inline-flex; align-items: center; gap: 5px; }
+.item-stats svg { color: var(--n-500); }
+.item-card-foot { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4) var(--s-4) var(--s-5); margin-top: auto; }
+.item-card-foot .grow { flex: 1; }
+.item-card-foot .btn-primary { min-width: 120px; }
+
 /* ---- map ---- */
 .map-wrap { position: relative; flex: 1; min-width: 0; background: #cfd8c4; }
 .map { position: absolute; inset: 0; }
@@ -138,6 +197,9 @@
 .collect-head strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--fs-md); }
 .collect-head a { color: #cdd9d3; }
 .collect .map-wrap { flex: 0 0 38%; min-height: 220px; }
+.collect.is-idle .map-wrap { flex: 1 1 auto; }
+.collect.is-idle .sheet { flex: 0 0 auto; padding-bottom: var(--s-4); }
+.collect.is-idle .sheet > .btn { min-height: 52px; font-size: var(--fs-lg); }
 .sheet { position: relative; flex: 1; display: flex; flex-direction: column; gap: var(--s-3); margin-top: -16px; padding: var(--s-5) var(--s-4) var(--s-2); overflow-y: auto; background: var(--n-0); border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: 0 -8px 24px rgba(16, 36, 31, .10); }
 .sheet h2 { font-size: var(--fs-xl); }
 .tabbar { display: flex; background: var(--n-0); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0); }
@@ -181,6 +243,26 @@
   .topbar .spacer { display: none; }
   .user-btn .user-name { display: none; }
   .map-bar { max-width: calc(100% - 62px); }
+  .project-nav-in { padding: var(--s-4) var(--s-4) 0; }
+  .project-nav-actions { width: 100%; }
+  .project-nav-actions > .btn { flex: 1 1 auto; }
+  /* four sections must fit a phone without scrolling: drop the icons, tighten the padding */
+  .project-tabs { margin-left: calc(var(--s-2) * -1); margin-right: calc(var(--s-4) * -1); gap: 0; }
+  .project-tab { padding: 0 var(--s-2); font-size: var(--fs-sm); }
+  .project-tab svg { display: none; }
+  .project-tab.is-active::after { left: var(--s-1); right: var(--s-1); }
+  .project-nav.is-compact .project-nav-actions { width: auto; position: absolute; top: var(--s-3); right: var(--s-4); }
+  .project-nav.is-compact .project-nav-in { position: relative; }
+  .project-nav.is-compact .project-nav-title { padding-right: 112px; }
+  .project-nav h1, .page-header h1 { font-size: var(--fs-2xl); }
+  .page-header { margin-bottom: var(--s-5); }
+  .page-header-lede { font-size: var(--fs-md); }
+  /* on a phone the main action spans the width so it is easy to reach */
+  .page-header-actions { width: 100%; }
+  .page-header-actions > .btn-primary { flex: 1; }
+  .toolbar-bar .toolbar-actions { margin-left: 0; width: 100%; }
+  .toolbar-bar .field { flex: 1 1 140px; }
+  .toolbar-bar .field select { min-width: 0; }
 }
 
 /* ---- editor: tool tiles, title, shortcuts ---- */
@@ -243,3 +325,24 @@ body.is-dnd * { cursor: grabbing !important; }
 .sym-classes { gap: 6px; }
 .sym-panel input[type="color"] { width: 44px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm, 4px); background: none; }
 @media (max-width: 760px) { .viewer-legend { max-width: 180px; } .viewer-table { max-height: none; } }
+
+/* ---- forms list (a project's Forms tab) ---- */
+.form-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.form-row { gap: var(--s-4); padding: var(--s-3) var(--s-4); transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.form-row:hover { border-color: var(--line-strong); box-shadow: var(--sh-sm); }
+.form-row-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: var(--r-md); background: var(--green-50); color: var(--green-600); }
+.form-row-title { display: block; color: var(--ink-900); font-weight: 600; text-decoration: none; }
+.form-row-title:hover { color: var(--green-700); text-decoration: underline; }
+.form-row-actions { display: flex; gap: var(--s-2); }
+@media (max-width: 600px) {
+  .form-row { flex-wrap: wrap; }
+  .form-row .grow { flex: 1 1 calc(100% - 120px); }
+  .form-row-actions { width: 100%; padding-left: 56px; }
+  .form-row-actions .btn { flex: 1; }
+}
+
+/* a heading for a sub-page inside a project tab (share a form, etc.) */
+.section-head { display: flex; flex-direction: column; gap: var(--s-2); margin-bottom: var(--s-6); }
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.section-head h2 { font-size: var(--fs-2xl); letter-spacing: -0.02em; }
+.section-head p { max-width: 66ch; }

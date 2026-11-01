@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import ProjectNav from "../components/ProjectNav";
 import MapViewer, { type ViewerImagery, type ViewerLayer } from "../components/MapViewer";
 import { ErrorState, Loading } from "../components/ui";
 import { loadApi } from "../lib/api";
@@ -42,14 +43,7 @@ export default function EditorPage() {
 
   return (
     <div className="viewer-page" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <h1 className="sr-only">Map of collected data</h1>
-      <div className="row" style={{ gap: 12, padding: "8px 16px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
-        <Link to="/collect" className="field-hint">← All projects</Link>
-        <strong className="grow">{data.project.name}</strong>
-        <Link className="btn btn-sm" to={`/collect/${projectId}/data`}>Collected data</Link>
-        <Link className="btn btn-sm" to={`/collect/${projectId}/forms`}>Forms</Link>
-        <Link className="btn btn-sm" to={`/dashboards?project=${projectId}`}>Dashboards</Link>
-      </div>
+      <ProjectNav projectId={projectId} project={data.project} compact />
       <MapViewer layers={layers} imagery={tiles} style={style} onStyleChange={change} label="Collected data map" fitKey={projectId} />
     </div>
   );

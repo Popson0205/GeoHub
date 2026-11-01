@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import DashAppBar from "../components/dashboard/DashAppBar";
 import { useActiveProject } from "../components/dashboard/useActiveProject";
+import { Icon } from "../components/icons";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { newPage } from "../lib/dashboard";
@@ -71,16 +72,19 @@ export default function DashboardApp() {
   let body;
   if (projects.loading && !projects.data) body = <Loading label="Loading…" />;
   else if (projects.error != null) body = <ErrorState error={projects.error} onRetry={() => void projects.reload()} />;
-  else if (!projects.data?.length) body = <EmptyState title="No projects yet" action={<Link className="btn btn-primary" to="/collect">Go to Data collection</Link>}>Create a project and collect some data first. Dashboards show what a project has collected.</EmptyState>;
+  else if (!projects.data?.length) body = <EmptyState icon="navCollect" title="No projects yet" action={<Link className="btn btn-primary" to="/collect">Go to Data collection</Link>}>Create a project and collect some data first. Dashboards show what a project has collected.</EmptyState>;
   else if (!active) body = <EmptyState title="No dashboards for you">Dashboards are for project administrators and viewers. You are a collector on your projects.</EmptyState>;
   else if (list.error != null) body = <ErrorState error={list.error} onRetry={() => void list.reload()} />;
   else if (list.loading && !list.data) body = <Loading label="Loading dashboards…" />;
   else {
     const items = list.data ?? [];
     body = (<>
-      <div className="dash-gallery-head"><span className="dash-gallery-filter">All dashboards</span><span className="dash-gallery-count">Count: {items.length}</span></div>
+      {items.length > 0 && <div className="dash-gallery-head"><span className="dash-gallery-filter">All dashboards</span><span className="dash-gallery-count">{items.length} {items.length === 1 ? "dashboard" : "dashboards"}</span></div>}
       {items.length === 0
-        ? <EmptyState title="No dashboards yet">{canEdit ? <>Use “+ New dashboard” above to start building one.</> : "An administrator has not created any dashboards for this project."}</EmptyState>
+        ? <EmptyState icon="navDash" title="No dashboards yet"
+            action={canEdit ? <Button variant="primary" onClick={() => void create()} disabled={creating}><Icon name="plus" size={18} />Create your first dashboard</Button> : undefined}>
+            {canEdit ? "A dashboard turns this project's records into charts, maps and counts that update as data comes in." : "An administrator has not created any dashboards for this project."}
+          </EmptyState>
         : <DashboardGallery dashboards={items} canEdit={canEdit} onDelete={(d) => void remove(d)} />}
     </>);
   }

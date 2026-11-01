@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
-import { Button, EmptyState, ErrorState, Loading, useToast } from "../components/ui";
+import { Link, useNavigate } from "react-router-dom";
+import { Icon } from "../components/icons";
+import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, thumbStyle, useToast, type MoreMenuItem } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { License, Project } from "../lib/types";
 
 export default function ProjectsPage() {
   const toast = useToast();
+  const nav = useNavigate();
   const { data, error, loading, reload } = useAsync((api) => api.listProjects(), []);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -25,41 +27,59 @@ export default function ProjectsPage() {
     finally { setBusy(false); }
   }
 
+  const newButton = <Button variant="primary" onClick={() => setCreating((v) => !v)} aria-expanded={creating}><Icon name="plus" size={18} />New project</Button>;
   return (
     <div className="container" style={{ width: "100%" }}>
-      <div className="page-head">
-        <h1>Data collection</h1><span className="grow" />
-        <Button variant="accent" onClick={() => setCreating((v) => !v)}>New project</Button>
-      </div>
+      <PageHeader title="Data collection" lede="Build a form, send collectors into the field with it, then review what comes back before you publish it." actions={newButton} />
 
       {creating && (
-        <form className="card" onSubmit={create} style={{ marginBottom: 20, maxWidth: 480 }}>
-          <div className="field"><label htmlFor="pname">Project name</label><input id="pname" required value={name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
+        <form className="card inline-panel" onSubmit={create} aria-label="New project">
+          <h2>New project</h2>
+          <div className="field"><label htmlFor="pname">Project name</label><input id="pname" required value={name} onChange={(e) => setName(e.target.value)} placeholder="For example, Water points survey" autoFocus /></div>
           <div className="row"><Button type="submit" variant="primary" busy={busy}>Create project</Button><Button onClick={() => setCreating(false)}>Cancel</Button></div>
         </form>
       )}
 
       {publishing && <PublishPanel project={publishing} onClose={() => setPublishing(null)} />}
-      {loading && <Loading label="Loading projects…" />}
+      {loading && <CardSkeletons />}
       {error != null && <ErrorState error={error} onRetry={reload} />}
-      {data && data.length === 0 && <EmptyState title="No projects yet">Create a project to build a form, invite collectors and start collecting.</EmptyState>}
+      {data && data.length === 0 && !creating && (
+        <EmptyState icon="navCollect" title="No projects yet" action={newButton}>
+          A project holds your forms, the people collecting with them, and everything they send back.
+        </EmptyState>
+      )}
       {data && data.length > 0 && (
         <div className="grid-cards">
-          {data.map((p) => (
-            <article className="card" key={p.id}>
-              <div className="thumb" aria-hidden="true" />
-              <h2>{p.name}</h2>
-              <div className="meta">{p.collector_count} collectors · {p.feature_count} features · updated {new Date(p.updated_at).toLocaleDateString()}</div>
-              <div className="actions">
-                <Link className="btn btn-primary" to={`/collect/${p.id}`}>Collect</Link>
-                {(p.role === "owner" || p.role === "admin") && <Link className="btn" to={`/collect/${p.id}/forms`}>Forms</Link>}
-                <Link className="btn" to={`/collect/${p.id}/data`}>Collected data</Link>
-                {p.role !== "collector" && <Link className="btn" to={`/dashboards?project=${p.id}`}>Dashboards</Link>}
-                <Link className="btn" to={`/collect/${p.id}/review`}>Map viewer</Link>
-                {(p.role === "owner" || p.role === "admin") && <Button onClick={() => setPublishing(p)}>Publish</Button>}
-              </div>
-            </article>
-          ))}
+          {data.map((p) => {
+            const manage = p.role === "owner" || p.role === "admin";
+            // A collector's job is collecting; everyone else lands on the data the project has gathered.
+            const home = p.role === "collector" ? `/collect/${p.id}` : `/collect/${p.id}/data`;
+            const more: MoreMenuItem[] = [
+              { label: "Open map", icon: "navMap", onSelect: () => nav(`/collect/${p.id}/review`) },
+              ...(manage ? [{ label: "Edit forms", icon: "form" as const, onSelect: () => nav(`/collect/${p.id}/forms`) }] : []),
+              ...(p.role !== "collector" ? [{ label: "Dashboards", icon: "navDash" as const, onSelect: () => nav(`/dashboards?project=${p.id}`) }] : []),
+              ...(manage ? [{ label: "Publish to data hub", icon: "globe" as const, onSelect: () => setPublishing(p) }] : []),
+            ];
+            return (
+              <article className="card item-card" key={p.id}>
+                <div className="thumb" style={thumbStyle(p.id)} aria-hidden="true" />
+                <div className="item-card-body">
+                  <h2><Link to={home}>{p.name}</Link></h2>
+                  <div className="item-stats">
+                    <span><Icon name="point" size={15} />{p.feature_count} {p.feature_count === 1 ? "record" : "records"}</span>
+                    <span><Icon name="users" size={15} />{p.collector_count} {p.collector_count === 1 ? "collector" : "collectors"}</span>
+                    <span>Updated {new Date(p.updated_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div className="item-card-foot">
+                  <Link className="btn btn-primary" to={`/collect/${p.id}`}><Icon name="navCollect" size={18} />Collect</Link>
+                  {p.role !== "collector" && <Link className="btn" to={`/collect/${p.id}/data`}>View data</Link>}
+                  <span className="grow" />
+                  <MoreMenu label={`More for ${p.name}`} items={more} />
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>
@@ -99,7 +119,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
     finally { setBusy(false); setStatus(""); }
   }
   return (
-    <form className="card" onSubmit={submit} style={{ marginBottom: 20, maxWidth: 560 }} aria-label="Publish dataset">
+    <form className="card inline-panel" onSubmit={submit} style={{ maxWidth: 560 }} aria-label="Publish dataset">
       <h2>Publish to the data hub</h2>
       <p className="meta" style={{ margin: 0 }}>This takes a snapshot of the project's features. Later changes need a new version.</p>
       {!formsLoading && !published.length && <div className="state"><span>This project has no published form yet. Publish a form first; a dataset is built from one form.</span></div>}
