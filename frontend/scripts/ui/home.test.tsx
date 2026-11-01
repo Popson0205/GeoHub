@@ -39,7 +39,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   ok(screen.getByRole("link", { name: "New project" }).getAttribute("href") === "/collect?new=1", "New project opens the create panel directly");
   ok(screen.getByRole("link", { name: /About Geohub/ }).getAttribute("href") === "/about", "the introduction is still reachable");
   const { waitFor } = await import("@testing-library/react");
-  await waitFor(() => { if (!document.querySelector(".thumb-footprint .fp-area")) throw new Error("not drawn yet"); }, { timeout: 3000 }).catch(() => undefined);
+  await waitFor(() => { if (!document.querySelector(".thumb-footprint .fp-area") || document.querySelectorAll(".thumb-footprint .fp-point").length < 14) throw new Error("not drawn yet"); }, { timeout: 5000 }).catch(() => undefined);
   ok(document.querySelectorAll(".thumb-footprint .fp-point").length >= 14 && document.querySelectorAll(".thumb-footprint .fp-area").length > 0, "cards draw the real records (points) and map features (areas), not a placeholder");
   cleanup();
 })();
