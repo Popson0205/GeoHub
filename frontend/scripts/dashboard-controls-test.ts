@@ -140,3 +140,56 @@ const dw = widgetData(W("details", { columns: [] }) as never, src, true);
 ok(dw.kind === "details" && typeof dw.id === "string" && dw.id.length > 0, "the details card knows which record it shows");
 let tk = 0; const mon = templateWidgets("monitor", form, () => `t${tk++}`), mapW = mon.find((x) => x.type === "map"), listW = mon.find((x) => x.type === "list");
 ok(!!listW && listW.actions?.zoom?.[0] === mapW?.id && listW.show_labels === true && (listW.subtitle_fields?.length ?? 0) >= 1 && mon.find((x) => x.type === "table")?.actions?.zoom?.[0] === mapW?.id, "on the Monitoring board a click in the list or table zooms the map");
+
+// ---- linked selectors and starting values ----
+import { hasFilterParams, pruneNarrowed, startFilters } from "../src/lib/dashboard";
+const lform = { id: "f", project_id: "p", name: "LGAs", geometry_type: "Point", version: 1, status: "published", fields: [
+  { id: "state", label: "State", type: "choice", choices: ["Osun", "Oyo", "Ogun"] }, { id: "lga", label: "LGA", type: "choice", choices: ["Ife", "Ede", "Ibadan", "Ogbomoso", "Abeokuta"] },
+  { id: "ward", label: "Ward", type: "text" }] } as unknown as Form;
+const ldefs = dashboardFields(lform);
+const lrec = (state: string, lga: string, ward = "W1"): Feature => ({ id: `l${n++}`, project_id: "p", form_id: "f", form_version: 1, geometry: { type: "Point", coordinates: [0, 0] }, properties: { state, lga, ward }, status: "approved", version: 1, updated_at: "2026-10-01T00:00:00Z" });
+const ldata = [lrec("Osun", "Ife", "A"), lrec("Osun", "Ede", "B"), lrec("Oyo", "Ibadan", "C"), lrec("Oyo", "Ogbomoso", "C"), lrec("Ogun", "Abeokuta", "D")];
+const stateC: DashControl = { id: "st", kind: "category", label: "State", field: "state" };
+const lgaC: DashControl = { id: "lg", kind: "category", label: "LGA", field: "lga", narrow_by: "st" };
+const wardC: DashControl = { id: "wd", kind: "category", label: "Ward", field: "ward", narrow_by: "lg" };
+const pick = (f: Filters, c: DashControl, v: string): Filters => toggleEquals(f, { field: c.field!, value: v, label: `${c.label}: ${v}`, src: c.id });
+const vals = (f: Filters, c: DashControl) => controlValues(f, c).join();
+
+let lf = pick(noFilters(), stateC, "Osun");
+lf = pick(lf, lgaC, "Ife");
+ok(vals(pruneNarrowed(lf, [stateC, lgaC], ldata, ldefs), lgaC) === "Ife", "a child pick that occurs with the parent's pick is kept");
+const switched = pick(pick(noFilters(), stateC, "Oyo"), lgaC, "Ife");
+ok(vals(pruneNarrowed(switched, [stateC, lgaC], ldata, ldefs), lgaC) === "" && vals(pruneNarrowed(switched, [stateC, lgaC], ldata, ldefs), stateC) === "Oyo", "changing the parent lets go of a child pick that no longer fits, and keeps the parent");
+const two = pick(pick(pick(noFilters(), stateC, "Osun"), stateC, "Oyo"), lgaC, "Ife");
+ok(vals(pruneNarrowed(two, [stateC, lgaC], ldata, ldefs), lgaC) === "Ife", "with two parent picks, a child value that fits either one stays");
+ok(vals(pruneNarrowed(pick(noFilters(), lgaC, "Ife"), [stateC, lgaC], ldata, ldefs), lgaC) === "Ife", "with no parent pick nothing is narrowed, so nothing is let go");
+let chain = pick(pick(pick(noFilters(), stateC, "Osun"), lgaC, "Ife"), wardC, "A");
+chain = pick(toggleEquals(chain, { field: "state", value: "Osun", label: "x", src: "st" }), stateC, "Ogun");   // swap Osun for Ogun
+const tidy = pruneNarrowed(chain, [stateC, lgaC, wardC], ldata, ldefs);
+ok(vals(tidy, stateC) === "Ogun" && vals(tidy, lgaC) === "" && vals(tidy, wardC) === "A", "a chain settles: the LGA goes, and the ward (whose own parent has no pick now) is left alone");
+const chain2 = pick(pick(pick(noFilters(), stateC, "Oyo"), lgaC, "Ibadan"), wardC, "A");   // ward A does not occur in Ibadan
+ok(vals(pruneNarrowed(chain2, [stateC, lgaC, wardC], ldata, ldefs), wardC) === "", "a pick that fits its parent's field but not the parent's pick is let go");
+ok(JSON.stringify(pruneNarrowed(noFilters(), [stateC, lgaC], ldata, ldefs)) === JSON.stringify(noFilters()), "no filters stay no filters");
+const unrelated = toggleEquals(lf, { field: "ward", value: "A", label: "Ward: A", src: "other" });
+ok(pruneNarrowed(unrelated, [stateC, lgaC], ldata, ldefs).equals.some((e) => e.field === "ward"), "other filters are never touched");
+
+// cleaning: narrow_by must point at an earlier category selector; starting values are cleaned
+const cl = cleanControls([
+  { id: "st", kind: "category", field: "state", label: "", start: ["Osun", "Osun", "", 5, "x".repeat(300)] },
+  { id: "lg", kind: "category", field: "lga", label: "", narrow_by: "st" },
+  { id: "lg2", kind: "category", field: "lga", label: "", narrow_by: "lg3" },           // parent comes later
+  { id: "lg3", kind: "category", field: "lga", label: "", narrow_by: "lg3" },           // itself
+  { id: "dt", kind: "date", label: "", start_days: 30, narrow_by: "st" },
+  { id: "one", kind: "category", field: "state", label: "", multi: false, start: ["Osun", "Oyo"] },
+]);
+ok(cl[0].start?.join() === "Osun" && cl[1].narrow_by === "st" && cl[2].narrow_by === undefined && cl[3].narrow_by === undefined, "a control narrows only by an earlier selector; starting values are cleaned");
+ok(cl.find((c) => c.id === "dt")?.start_days === 30 && cl.find((c) => c.id === "dt")?.narrow_by === undefined && cl.find((c) => c.id === "one")?.start?.join() === "Osun", "the date filter keeps its starting range; a one-value selector starts on one value");
+ok(cleanControls([{ id: "d", kind: "date", label: "", start_days: -1 }])[0].start_days === undefined && cleanControls([{ id: "d", kind: "date", label: "", start_days: 99999 }])[0].start_days === undefined && cleanControls([{ id: "d", kind: "date", label: "", start_days: 0 }])[0].start_days === 0, "a starting range of 0 (today) is kept; out-of-range ones are dropped");
+
+// starting filters
+const sf = startFilters([{ ...stateC, start: ["Osun", "Oyo"] }, { id: "dt", kind: "date", label: "When", start_days: 7 }, { ...lgaC, start: undefined }], ldefs);
+ok(controlValues(sf, stateC).join() === "Osun,Oyo" && sf.last?.days === 7 && sf.last?.src === "dt" && sf.equals.every((e) => e.src === "st" && e.label.startsWith("State: ")), "starting values become filters, tagged with their selector");
+ok(startFilters([stateC, lgaC], ldefs).equals.length === 0 && startFilters([{ id: "dt", kind: "date", label: "", start_days: 0 }], ldefs).last?.days === 0, "no starting values means no filters; Today counts as a starting range");
+ok(hasFilterParams(new URLSearchParams("eq=a%7Cb")) && hasFilterParams(new URLSearchParams("last=7")) && hasFilterParams(new URLSearchParams("rec=a1%7Cx")) && !hasFilterParams(new URLSearchParams("page=p1")) && !hasFilterParams(new URLSearchParams("")), "a link already carrying a filter is told apart from a plain one");
+const npc = normalizeConfig({ pages: [{ id: "p", title: "P", widgets: [], controls: [{ id: "st", kind: "category", field: "state", label: "", start: ["Osun"] }, { id: "lg", kind: "category", field: "lga", label: "", narrow_by: "st" }] }] });
+ok(npc.pages[0].controls?.[0].start?.[0] === "Osun" && npc.pages[0].controls?.[1].narrow_by === "st", "narrowing and starting values survive loading a saved dashboard");

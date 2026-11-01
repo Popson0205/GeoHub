@@ -643,6 +643,9 @@ class DashboardControl(BaseModel):
     source: DashboardControlSource | None = None
     multi: bool = True
     symbol: SymbolSpec | None = None
+    narrow_by: str | None = Field(None, min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$", description="Id of an earlier category selector this one is narrowed by")
+    start: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(default_factory=list, max_length=20, description="Values picked when the dashboard is opened without filters in its link")
+    start_days: int | None = Field(None, ge=0, le=3650, description="Date filter: Today (0) or the last N days when the dashboard is opened")
 
 
 class DashboardPage(BaseModel):

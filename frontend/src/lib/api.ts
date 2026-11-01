@@ -227,6 +227,7 @@ function toWireConfig(c: DashboardConfig) {
       id: p.id, title: p.title, form_id: p.form_id ?? null,
       controls: (p.controls ?? []).map((c) => ({
         id: c.id, kind: c.kind, label: c.label, field: c.field ?? null, multi: c.multi !== false, symbol: c.symbol ?? null,
+        narrow_by: c.narrow_by ?? null, start: c.start ?? [], start_days: c.start_days ?? null,
         source: c.source?.type === "form" ? { type: "form", form_id: c.source.form_id, field: c.source.field }
           : c.source?.type === "url" ? { type: "url", url: c.source.url, column: c.source.column ?? null } : null,
       })),

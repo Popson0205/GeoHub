@@ -11,7 +11,7 @@ import { Button, ErrorState, Loading, useConfirm, useToast } from "../components
 import { loadApi } from "../lib/api";
 import {
   actionsOf, clickKind, display, isFilterable, recordsOfSlice, toggleRecord,
-  MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, controlLabel, controlProblem, dashboardFields, defaultTitle, filterFeatures, filtersFromParams, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isPicker, isScoped, isStatic,
+  MAX_PAGES, MAX_WIDGETS_PER_PAGE, GRID_COLUMNS, arrangeRects, buildSources, controlLabel, controlProblem, dashboardFields, defaultTitle, filterFeatures, filtersFromParams, hasFilterParams, pruneNarrowed, startFilters, filtersToParams, findField, inSidebar, isFiltered, isManualLayout, isPicker, isScoped, isStatic,
   layoutRects, newPage, newWidget, noFilters, pageFormIds, placeAll, resetRects, scopeFilters, setRegion, setWidgetRect, settle, starterWidgets, timeLabel, timeRange, toggleEquals, toggleRange, bucketRange, withRects, withTimeRange, withoutField,
   type Filters, type Rect, type Slice, type Source,
 } from "../lib/dashboard";
@@ -93,7 +93,9 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
     return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, [page.id, page.widgets.length === 0]);   // eslint-disable-line react-hooks/exhaustive-deps
   const filters = useMemo(() => filtersFromParams(params), [params]);
-  const setFilters = (n: Filters | ((f: Filters) => Filters)) => setParams(filtersToParams(typeof n === "function" ? n(filters) : n, params), { replace: true });
+  // Linked selectors keep themselves tidy: after any change, picks that no longer occur with their parent's picks are let go.
+  const tidy = useRef<(f: Filters) => Filters>((f) => f);
+  const setFilters = (n: Filters | ((f: Filters) => Filters)) => setParams(filtersToParams(tidy.current(typeof n === "function" ? n(filters) : n), params), { replace: true });
   const pageSearch = (id: string) => { const q = new URLSearchParams(params); q.set("page", id); return `?${q.toString()}`; };
   const goPage = (id: string) => { const q = new URLSearchParams(params); q.set("page", id); setParams(q); };
   useEffect(() => { setSelected(null); setSettingsId(null); }, [page.id]);
@@ -142,6 +144,19 @@ export function DashboardView({ projectId, dashboard, forms, features, canEdit, 
   const controlState = useMemo(() => (page.controls ?? []).map((c) => ({ c, problem: controlProblem(c, pageDefs, forms) })), [page.controls, pageDefs, forms]);
   const workingControls = useMemo(() => controlState.filter((x) => !x.problem).map((x) => x.c), [controlState]);
   const unfinishedControls = useMemo(() => controlState.filter((x) => x.problem).map((x) => ({ id: x.c.id, label: controlLabel(x.c, pageDefs), message: x.problem! })), [controlState, pageDefs]);
+  tidy.current = (f) => (pageSource && workingControls.some((c) => c.narrow_by) ? pruneNarrowed(f, workingControls, pageSource.base, pageSource.defs) : f);
+  // A dashboard opened with nothing filtered in its address starts on the selectors' and date filter's starting values. Once per page; after
+  // that the viewer is in charge, and "Clear all" really clears.
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    const key = `${dashboard.id}:${page.id}`;
+    if (started.current.has(key) || !pageSource) return;
+    started.current.add(key);
+    if (hasFilterParams(params)) return;
+    const f = startFilters(workingControls, pageSource.defs);
+    if (isFiltered(f)) setFilters(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboard.id, page.id, !!pageSource]);
   const titleOf = (w: Widget) => defaultTitle(w, sources.get(w.form_id ?? page.form_id ?? "")?.defs ?? []);
 
   // ---- editing ----

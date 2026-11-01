@@ -624,3 +624,10 @@
 .widget-head > .sym-slot { --sym-share: 100%; align-self: center; }
 .ctl-slot { --sym-share: 100%; }
 .fdrop-icon .sym-slot { width: var(--sym-px); }
+
+/* Starting values in the Filters panel: a plain list of small checkboxes, like the element settings. */
+.ctl-edit fieldset.start-values { margin: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); min-width: 0; }
+.ctl-edit fieldset.start-values legend { padding: 0 6px; font-weight: 600; font-size: var(--fs-sm); }
+.ctl-edit .act-targets { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.ctl-edit .act-targets label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-weight: 400; text-align: left; }
+.ctl-edit .act-targets input[type="checkbox"] { width: 16px; height: 16px; flex: none; margin: 0; padding: 0; accent-color: var(--green-600); }

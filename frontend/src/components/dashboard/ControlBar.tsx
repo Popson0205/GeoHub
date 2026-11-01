@@ -14,16 +14,24 @@ import type { DashControl, Form, Feature } from "../../lib/types";
 type SetFilters = (n: Filters | ((f: Filters) => Filters)) => void;
 
 /** One category selector. Its values come from the page's records, another form, or a web address. */
-function CategoryControl({ c, source, forms, features, filters, effective, now, setFilters }:
-  { c: DashControl; source: Source; forms: Form[]; features: Feature[]; filters: Filters; effective: Filters; now: Date; setFilters: SetFilters }) {
+function CategoryControl({ c, source, forms, features, filters, effective, now, setFilters, narrowed, below = [] }:
+  { /** Another selector narrows this one and has a pick: list only the values that occur with it. */ narrowed?: boolean;
+    /** Ids of the selectors narrowed by this one (and theirs). Their picks do not limit this list, or a pick below would lock the one above. */ below?: string[];
+    c: DashControl; source: Source; forms: Form[]; features: Feature[]; filters: Filters; effective: Filters; now: Date; setFilters: SetFilters }) {
   const def = findField(source.defs, c.field)!;
   const src = c.source;
   const web = useExternalValues(src);
   const fromForm = useMemo(() => (src?.type === "form" ? formValues(features, forms.find((f) => f.id === src.form_id), src.field) : []), [src, forms, features]);
   // Counts follow every other filter but not this field's own, so a second value can always be added.
-  const rows = useMemo(() => filterFeatures(source.base, withoutField(effective, def.id), source.defs, now), [source, effective, def.id, now]);
+  const rows = useMemo(() => {
+    const f = withoutField(effective, def.id);
+    return filterFeatures(source.base, below.length ? { ...f, equals: f.equals.filter((e) => !below.includes(e.src ?? "")) } : f, source.defs, now);
+  }, [source, effective, def.id, now, below.join("|")]);
   const label = controlLabel(c, source.defs), selected = controlValues(filters, c);
-  const { options, listed } = controlOptions(c, def, source.base, rows, src?.type === "url" ? web.values : fromForm, selected);
+  const all = controlOptions(c, def, source.base, rows, src?.type === "url" ? web.values : fromForm, selected);
+  const listed = all.listed;
+  // Rows already follow the parent's pick, so a value with no records is one that does not occur with it.
+  const options = narrowed ? all.options.filter((o) => o.count > 0 || selected.includes(o.key)) : all.options;
   const entry = (o: { key: string; label: string }) => ({ field: def.id, value: o.key, label: `${label}: ${o.label}`, src: c.id });
   const own = (e: Filters["equals"][number]) => e.field === def.id && (e.src === c.id || e.src === undefined);
   const toggle = (o: { key: string; label: string }) => setFilters((f) => (c.multi === false ? { ...f, equals: [...f.equals.filter((e) => !own(e)), entry(o)] } : toggleEquals(f, entry(o))));
@@ -33,6 +41,15 @@ function CategoryControl({ c, source, forms, features, filters, effective, now, 
 }
 
 type Common = { filters: Filters; setFilters: SetFilters };
+/** The selectors narrowed by `id`, directly or through others. */
+function belowOf(controls: DashControl[], id: string): string[] {
+  const out: string[] = [];
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const c of controls) if (c.narrow_by && (c.narrow_by === id || out.includes(c.narrow_by)) && !out.includes(c.id) && c.id !== id) { out.push(c.id); grew = true; }
+  }
+  return out;
+}
 
 export interface HeaderControlsProps extends Common {
   controls: DashControl[]; source?: Source; forms: Form[]; features: Feature[]; effective: Filters; now: Date;
@@ -49,7 +66,7 @@ export function HeaderControls({ controls, source, forms, features, filters, eff
       {controls.map((c) => c.kind === "date"
         ? <DateSelect key={c.id} icon={c.symbol ? <SymbolSlot spec={c.symbol} size={SYMBOL_PX.selector} max={40} className="ctl-slot" /> : undefined} id={`ctl-${c.id}`} label={controlLabel(c, [])} days={filters.last?.days ?? null}
             onChange={(days) => setFilters((f) => ({ ...f, last: days == null ? undefined : { days, src: c.id, ...(c.field && c.field !== UPDATED_ID ? { field: c.field } : {}) } }))} />
-        : source && <CategoryControl key={c.id} c={c} source={source} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters} />)}
+        : source && <CategoryControl key={c.id} below={belowOf(controls, c.id)} narrowed={!!c.narrow_by && c.narrow_by !== c.id && controlValues(filters, controls.find((p) => p.id === c.narrow_by) ?? c).length > 0} c={c} source={source} forms={forms} features={features} filters={filters} effective={effective} now={now} setFilters={setFilters} />)}
       {editing && unfinished.map((u) => <button key={u.id} type="button" className="dash-control-todo" onClick={onEdit} title={u.message}>{u.label}: finish setting up</button>)}
       {editing && !controls.length && !unfinished.length && <button type="button" className="dash-control-add" onClick={onEdit}>+ Add a filter</button>}
     </div>

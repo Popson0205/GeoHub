@@ -721,12 +721,16 @@ export function cleanControls(raw: unknown, legacy?: unknown): DashControl[] {
     const field = typeof c.field === "string" && c.field ? c.field.slice(0, 80) : undefined;
     if (c.kind === "date") {
       if (out.some((o) => o.kind === "date")) continue;
-      const symbol = cleanSymbolSpec(c.symbol);
-      out.push({ id: c.id, kind: "date", label, ...(field ? { field } : {}), ...(symbol ? { symbol } : {}) });
+      const symbol = cleanSymbolSpec(c.symbol), days = cleanDays(c.start_days);
+      out.push({ id: c.id, kind: "date", label, ...(field ? { field } : {}), ...(symbol ? { symbol } : {}), ...(days != null ? { start_days: days } : {}) });
     } else if (c.kind === "category") {
       const source = cleanSource(c.source);
       const symbol = cleanSymbolSpec(c.symbol);
-      out.push({ id: c.id, kind: "category", label, ...(field ? { field } : {}), ...(source ? { source } : {}), ...(c.multi === false ? { multi: false } : {}), ...(symbol ? { symbol } : {}) });
+      // Narrowing only works down the list: the parent must be a category selector that comes before this one.
+      const parent = typeof c.narrow_by === "string" && out.some((o) => o.id === c.narrow_by && o.kind === "category") ? c.narrow_by : undefined;
+      const start = Array.isArray(c.start) ? [...new Set(c.start.filter((v): v is string => typeof v === "string" && v.length > 0 && v.length <= 200))].slice(0, 20) : [];
+      out.push({ id: c.id, kind: "category", label, ...(field ? { field } : {}), ...(source ? { source } : {}), ...(c.multi === false ? { multi: false } : {}), ...(symbol ? { symbol } : {}),
+        ...(parent ? { narrow_by: parent } : {}), ...(start.length ? { start: c.multi === false ? start.slice(0, 1) : start } : {}) });
     } else continue;
     seen.add(c.id);
   }
@@ -788,6 +792,48 @@ export function normalizeConfig(raw: unknown): DashboardConfig {
 // Filters sit in the page address, so a view can be sent as a link, survives a refresh, and carries from page to page.
 const STATUSES = ["draft", "submitted", "approved", "rejected"];
 const FILTER_KEYS = ["status", "from", "to", "eq", "rg", "last", "rec"];
+/** True when the address already carries a filter (so a dashboard opened from a shared, filtered link is not given its starting values). */
+export const hasFilterParams = (p: URLSearchParams): boolean => FILTER_KEYS.some((k) => p.has(k));
+
+/** The filters a dashboard opens with: each selector's starting values and the date filter's starting range. */
+export function startFilters(controls: DashControl[], defs: FieldDef[]): Filters {
+  let f = noFilters();
+  for (const c of controls) {
+    if (c.kind === "date" && c.start_days != null) f = { ...f, last: { days: c.start_days, src: c.id, ...(c.field && c.field !== UPDATED_ID ? { field: c.field } : {}) } };
+    if (c.kind === "category" && c.field && c.start?.length) {
+      const label = controlLabel(c, defs);
+      for (const v of c.start) f = toggleEquals(f, { field: c.field, value: v, label: `${label}: ${v}`, src: c.id });
+    }
+  }
+  return f;
+}
+
+/**
+ * Linked selectors. A selector "narrowed by" another lists only the values that occur with the other's picks (State, then the LGAs of
+ * that State). When the parent's picks change, anything this one had picked that no longer occurs with them is let go, so the filters can
+ * never describe records that do not exist. Runs on every change; a chain (A narrows B narrows C) settles in a few passes.
+ */
+export function pruneNarrowed(f: Filters, controls: DashControl[], base: Feature[], defs: FieldDef[]): Filters {
+  let cur = f;
+  for (let pass = 0; pass < controls.length; pass++) {
+    let changed = false;
+    for (const c of controls) {
+      if (c.kind !== "category" || !c.narrow_by || !c.field) continue;
+      const parent = controls.find((p) => p.id === c.narrow_by);
+      const pd = parent && findField(defs, parent.field), cd = findField(defs, c.field);
+      if (!parent || !pd || !cd) continue;
+      const picked = controlValues(cur, parent), mine = controlValues(cur, c);
+      if (!picked.length || !mine.length) continue;
+      const valid = new Set<string>();
+      for (const r of base) if (categories(r, pd, null).some((k) => picked.includes(k.key))) for (const k of categories(r, cd, null)) valid.add(k.key);
+      if (mine.every((v) => valid.has(v))) continue;
+      cur = { ...cur, equals: cur.equals.filter((e) => !(e.field === c.field && (e.src === c.id || e.src === undefined) && !valid.has(e.value))) };
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return cur;
+}
 export function filtersToParams(f: Filters, into: URLSearchParams = new URLSearchParams()): URLSearchParams {
   const out = new URLSearchParams(into);
   FILTER_KEYS.forEach((k) => out.delete(k));

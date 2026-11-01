@@ -335,6 +335,12 @@ export interface DashControl {
   source?: OptionSource;     // category only. Missing = records
   multi?: boolean;           // category only. false = one value at a time. Missing = several
   symbol?: SymbolSpec;       // shown beside the selector's name in the bar
+  /** category: the id of an earlier category selector this one is narrowed by. While that one has a pick, this lists only the values found with it. */
+  narrow_by?: string;
+  /** category: values picked when the dashboard is opened without any filter in its address. */
+  start?: string[];
+  /** date: "Today" (0) or the last N days, applied when the dashboard is opened without any filter in its address. */
+  start_days?: number;
 }
 export interface DashPage {
   id: string; title: string; form_id?: string; widgets: Widget[];

@@ -4,7 +4,7 @@ import { PanelShell } from "./Panels";
 import { SymbolPicker } from "../SymbolPicker";
 import { SYMBOL_PX } from "../../lib/symbols";
 import {
-  MAX_CONTROLS, UPDATED_ID, controlFields, controlLabel, controlProblem, dashboardFields, dateFields, filtersOthers, isFilterable, newControl,
+  LAST_PRESETS, MAX_CONTROLS, STATUS_LABEL, UPDATED_ID, controlFields, controlLabel, lastLabel, controlProblem, dashboardFields, dateFields, filtersOthers, isFilterable, newControl,
   type Exclude, type FieldDef,
 } from "../../lib/dashboard";
 import type { DashControl, DashPage, Form, OptionSource, Widget } from "../../lib/types";
@@ -13,8 +13,18 @@ type SourceKind = "records" | "form" | "url";
 const SOURCE_LABEL: Record<SourceKind, string> = { records: "This page’s records", form: "Another form in this project", url: "A web address (JSON or CSV)" };
 
 /** One filter in the bar, set up by the author. */
-function ControlEditor({ c, defs, forms, onChange, onRemove }: { c: DashControl; defs: FieldDef[]; forms: Form[]; onChange: (c: DashControl) => void; onRemove: () => void }) {
+/** The values a field can start on, when they are a short fixed list; null when the author has to type them. */
+function startChoices(d?: FieldDef): [string, string][] | null {
+  if (!d) return null;
+  if (d.type === "status") return Object.entries(STATUS_LABEL);
+  if (d.type === "boolean") return [["true", d.true_label || "Yes"], ["false", d.false_label || "No"]];
+  return d.type === "choice" && d.choices?.length ? d.choices.slice(0, 60).map((v): [string, string] => [v, v]) : null;
+}
+
+function ControlEditor({ c, defs, forms, earlier, onChange, onRemove }: { c: DashControl; defs: FieldDef[]; forms: Form[]; /** Category selectors above this one: the ones it can be narrowed by. */ earlier: DashControl[]; onChange: (c: DashControl) => void; onRemove: () => void }) {
   const id = useId();
+  const field = controlFields(defs).find((d) => d.id === c.field), choices = startChoices(field), start = c.start ?? [];
+  const setStart = (v: string[]) => onChange({ ...c, start: v.length ? v : undefined });
   const problem = controlProblem(c, defs, forms);
   const kind: SourceKind = c.source?.type ?? "records";
   const lookup = c.source?.type === "form" ? forms.find((f) => f.id === (c.source as Extract<OptionSource, { type: "form" }>).form_id) : undefined;
@@ -45,6 +55,15 @@ function ControlEditor({ c, defs, forms, onChange, onRemove }: { c: DashControl;
             {dateFields(defs).map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
           </select>
           <small className="meta">Viewers choose All time, Today, or the last number of days they type.</small></div>
+      ) : null}
+      {c.kind === "date" ? (
+        <div className="field"><label htmlFor={`${id}-sd`}>Starts on</label>
+          <select id={`${id}-sd`} value={c.start_days == null ? "" : String(c.start_days)} onChange={(e) => onChange({ ...c, start_days: e.target.value === "" ? undefined : Number(e.target.value) })}>
+            <option value="">All time</option>
+            {LAST_PRESETS.map((p) => <option key={p.days} value={String(p.days)}>{p.label}</option>)}
+            {c.start_days != null && !LAST_PRESETS.some((p) => p.days === c.start_days) && <option value={String(c.start_days)}>{lastLabel(c.start_days)}</option>}
+          </select>
+          <small className="meta">What the dashboard shows when it is opened. Viewers can change it.</small></div>
       ) : (<>
         <div className="field"><label htmlFor={`${id}-f`}>Field it filters</label>
           <select id={`${id}-f`} value={c.field ?? ""} onChange={(e) => setField(e.target.value)}>
@@ -75,7 +94,26 @@ function ControlEditor({ c, defs, forms, onChange, onRemove }: { c: DashControl;
             <small className="meta">A CSV needs a header row; without a column, the first one is used. The address has to allow other websites to read it.</small></div>
         </>)}
         {kind !== "records" && <small className="meta">Records are kept when the field equals a picked value exactly.</small>}
-        <label className="check-row"><input type="checkbox" checked={c.multi !== false} onChange={(e) => onChange({ ...c, multi: e.target.checked ? undefined : false })} /> Allow picking several values</label>
+        <label className="check-row"><input type="checkbox" checked={c.multi !== false} onChange={(e) => onChange({ ...c, multi: e.target.checked ? undefined : false, start: e.target.checked ? c.start : c.start?.slice(0, 1) })} /> Allow picking several values</label>
+        {earlier.length > 0 && (
+          <div className="field"><label htmlFor={`${id}-nb`}>Narrowed by</label>
+            <select id={`${id}-nb`} value={c.narrow_by ?? ""} onChange={(e) => onChange({ ...c, narrow_by: e.target.value || undefined })}>
+              <option value="">Nothing: list every value</option>
+              {earlier.map((e) => <option key={e.id} value={e.id}>{controlLabel(e, defs)}</option>)}
+            </select>
+            <small className="meta">While that selector has a pick, this one lists only the values found with it (the LGAs of the chosen State). A pick that no longer fits is let go.</small></div>)}
+        <fieldset className="field start-values"><legend>Starts on</legend>
+          {choices && c.multi === false ? (
+            <select aria-label="Starting value" value={start[0] ?? ""} onChange={(e) => setStart(e.target.value ? [e.target.value] : [])}>
+              <option value="">Nothing picked</option>{choices.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          ) : choices ? (
+            <div className="act-targets">{choices.map(([v, l]) => <label key={v}><input type="checkbox" checked={start.includes(v)} onChange={(e) => setStart(e.target.checked ? [...start, v] : start.filter((x) => x !== v))} />{l}</label>)}</div>
+          ) : (
+            <input aria-label="Starting values, separated by commas" key={start.join("|")} defaultValue={start.join(", ")} placeholder="Value, another value" maxLength={400}
+              onBlur={(e) => setStart(e.target.value.split(",").map((x) => x.trim()).filter(Boolean).slice(0, c.multi === false ? 1 : 20))} />)}
+          <small className="meta">Picked when the dashboard is opened without a filter in its link. Viewers can change or clear it.</small>
+        </fieldset>
       </>)}
       <details className="sym-marker" open={!!c.symbol}>
         <summary>Symbol{c.symbol ? " (set)" : ""}</summary>
@@ -100,7 +138,8 @@ export function FiltersPanel({ page, defs, forms, canEdit, titleOf, onControls, 
   const hasDate = controls.some((c) => c.kind === "date");
   const mk = (kind: DashControl["kind"]) => onControls([...controls, newControl(kind, defs)]);
   const set = (c: DashControl) => onControls(controls.map((x) => (x.id === c.id ? c : x)));
-  const drop = (c: DashControl) => { onControls(controls.filter((x) => x.id !== c.id)); if (exclude?.[c.id]) onExclude(without(exclude, c.id)); };
+  // Taking a selector away also frees any selector that was narrowed by it.
+  const drop = (c: DashControl) => { onControls(controls.filter((x) => x.id !== c.id).map((x) => (x.narrow_by === c.id ? { ...x, narrow_by: undefined } : x))); if (exclude?.[c.id]) onExclude(without(exclude, c.id)); };
 
   const targets = page.widgets.filter(isFilterable);
   const sources: { id: string; name: string; hint: string }[] = [
@@ -118,7 +157,7 @@ export function FiltersPanel({ page, defs, forms, canEdit, titleOf, onControls, 
       {!canEdit ? <p className="meta">Read-only for your role.</p> : (<>
         <p className="builder-hint">Filters sit in a bar under the title. Viewers pick values there, and the elements below change to match.</p>
         {!page.form_id && <p className="hint">Choose the form this page shows first (View, Pages).</p>}
-        {controls.map((c) => <ControlEditor key={c.id} c={c} defs={defs} forms={forms} onChange={set} onRemove={() => drop(c)} />)}
+        {controls.map((c, i) => <ControlEditor key={c.id} c={c} defs={defs} forms={forms} earlier={controls.slice(0, i).filter((x) => x.kind === "category")} onChange={set} onRemove={() => drop(c)} />)}
         <div className="ctl-add">
           <Button small onClick={() => mk("category")} disabled={!page.form_id || controls.length >= MAX_CONTROLS}>+ Category selector</Button>
           <Button small onClick={() => mk("date")} disabled={!page.form_id || hasDate || controls.length >= MAX_CONTROLS}>+ Date filter</Button>
