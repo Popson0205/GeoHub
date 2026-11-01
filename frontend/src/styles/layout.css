@@ -462,3 +462,11 @@ body.is-dnd * { cursor: grabbing !important; }
 .lang-pick select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; color: inherit; font: 500 var(--fs-sm) var(--font-ui); padding: 0 2px; max-width: 92px; cursor: pointer; }
 .lang-pick select option { color: #10241f; background: #fff; }
 .lang-pick:focus-within { outline: 2px solid #9ec2ff; outline-offset: 2px; }
+
+/* project map: filters floating over the map, and the numbers on point clusters */
+.map-filters { position: absolute; z-index: 6; top: var(--s-3); left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100% - 110px);
+  padding: 5px 6px 5px 6px; background: var(--n-0); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-md); }
+.map-filters .input { min-height: 34px; padding: 0 30px 0 10px; font-size: var(--fs-sm); width: auto; }
+.map-filters-count { padding: 0 6px; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cluster-count { pointer-events: none; color: #fff; font: 700 13px/1 var(--font-ui); text-shadow: 0 1px 2px rgba(0, 0, 0, .35); font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .map-filters { left: var(--s-2); right: 60px; transform: none; max-width: none; } .map-filters label { flex: 1 1 40%; } .map-filters .input { width: 100%; } }
