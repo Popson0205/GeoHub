@@ -84,12 +84,19 @@ async def _apply(conn, project_id, user_id, role, ch, ip) -> dict:
         if ex:
             raise Reject("ALREADY_EXISTS", "A feature with this id already exists.")
         res = await _create(conn, project_id, user_id, ch)
+        if res["status"] == "applied":
+            await audit(conn, "feature.create", actor_id=user_id, project_id=project_id, target_type="feature",
+                        target_id=fid, ip=ip, form_id=str(ch.get("form_id")) if ch.get("form_id") else None,
+                        public=user_id is None)
     else:
         if not ex:
             raise Reject("NOT_FOUND", "Feature not found.")
         if role == "collector" and ex["created_by"] != user_id:
             raise Reject("FORBIDDEN", "Collectors can change only their own features.")
         res = await (_delete if ch["op"] == "delete" else _update)(conn, project_id, user_id, ch, ex, ip)
+        if ch["op"] == "update" and res["status"] == "applied":
+            await audit(conn, "feature.edit", actor_id=user_id, project_id=project_id, target_type="feature",
+                        target_id=fid, ip=ip, form_id=str(ex["form_id"]))
 
     if ch.get("change_id") and res["status"] in ("applied", "conflict"):
         await conn.execute(
@@ -282,5 +289,5 @@ async def review_feature(conn, project_id, feature_id, user_id, decision: str, n
         (decision, note, user_id, seq, user_id, feature_id))
     await _history(conn, feature_id, "review", user_id)
     await audit(conn, "feature.review", actor_id=user_id, project_id=project_id, target_type="feature",
-                target_id=feature_id, ip=ip, decision=decision)
+                target_id=feature_id, ip=ip, decision=decision, **({"note": note} if note else {}))
     return await fetch_feature(conn, feature_id)

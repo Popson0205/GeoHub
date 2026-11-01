@@ -269,8 +269,76 @@ def _flat(v):
     return "; ".join(map(str, v)) if isinstance(v, list) else v
 
 
+def _write_gis(t: Path, base: str, layer: str, fmt: str, feats, ids: list[str], gtype: str, readme: str) -> tuple[Path, str]:
+    """Write features as a GeoPackage, a zipped Shapefile (with field_mapping.csv and README.txt) or KML."""
+    names = shapefile_names(ids) if fmt == "shp" else {i: i for i in ids}
+    src = t / "in.geojson"
+    with src.open("w") as fh:
+        fh.write('{"type":"FeatureCollection","features":[')
+        for i, (fid, geom, props) in enumerate(feats):
+            row = {"feature_id": str(fid)}
+            row.update({names[k]: _flat(props.get(k)) for k in ids})
+            fh.write(("," if i else "") + json.dumps({"type": "Feature", "geometry": geom, "properties": row}))
+        fh.write("]}")
+    nlt = [] if gtype == "point" else ["-nlt", "PROMOTE_TO_MULTI"]
+    if fmt == "gpkg":
+        out = t / f"{base}.gpkg"
+        _run(["ogr2ogr", "-f", "GPKG", str(out), str(src), "-nln", layer, "-a_srs", "EPSG:4326", *nlt])
+        return out, "application/geopackage+sqlite3"
+    if fmt == "kml":
+        out = t / f"{base}.kml"
+        _run(["ogr2ogr", "-f", "KML", str(out), str(src), "-nln", layer])
+        return out, "application/vnd.google-earth.kml+xml"
+    sd = t / "shp"
+    sd.mkdir()
+    _run(["ogr2ogr", "-f", "ESRI Shapefile", str(sd / f"{base}.shp"), str(src), "-nln", base, "-a_srs", "EPSG:4326", "-lco", "ENCODING=UTF-8", *nlt])
+    with (sd / "field_mapping.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["field_id", "shapefile_name"])
+        w.writerow(["feature_id", "feature_id"])
+        for i in ids:
+            w.writerow([i, names[i]])
+    (sd / "README.txt").write_text(readme + "\nShapefile field names are limited to 10 characters. field_mapping.csv maps every\n"
+                                   "field id to its name in the .dbf. Multi-choice values are joined with '; '.\n")
+    out = t / f"{base}.zip"
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(sd.iterdir()):
+            z.write(f, f.name)
+    return out, "application/zip"
+
+
+def export_project(conn, job) -> dict:
+    """A download of one form's collected records (not a published dataset): GeoPackage, Shapefile or KML."""
+    p = job["params"]
+    pid, form_id, fmt = p["project_id"], p["form_id"], p["format"]
+    form = conn.execute("SELECT f.name, v.geometry_type, v.fields FROM forms f JOIN form_versions v ON v.form_id = f.id AND v.version = f.version "
+                        "WHERE f.id = %s AND f.project_id = %s", (form_id, pid)).fetchone()
+    if not form:
+        raise ValueError("The form has no published version.")
+    ids = [f["id"] for f in column_fields(form["fields"])] + ["status"]
+    where, params = ["project_id = %s", "form_id = %s", "deleted_at IS NULL"], [pid, form_id]
+    if p.get("statuses"):
+        where.append("status = ANY(%s)"); params.append(p["statuses"])
+    if p.get("ids"):
+        where.append("id = ANY(%s::uuid[])"); params.append(p["ids"])
+    rows = conn.execute(f"SELECT id, ST_AsGeoJSON(geom, 7) AS g, properties, status FROM features WHERE {' AND '.join(where)} ORDER BY seq",
+                        params).fetchall()
+    if not rows:
+        raise ValueError("There are no records to export.")
+    slug = re.sub(r"[^a-z0-9]+", "-", form["name"].lower()).strip("-") or "records"
+    feats = ((r["id"], json.loads(r["g"]), {**r["properties"], "status": r["status"]}) for r in rows)
+    with tempfile.TemporaryDirectory() as t:
+        out, ctype = _write_gis(Path(t), slug, re.sub(r"\W", "_", slug), fmt, feats, ids, form["geometry_type"],
+                                f"{form['name']}: {len(rows)} records exported from Geohub")
+        key = f"exports/projects/{pid}/{job['id']}/{out.name}"
+        storage.internal.upload_file(str(out), B, key, ExtraArgs={"ContentType": ctype})
+        return {"storage_key": key, "filename": out.name, "format": fmt, "size": out.stat().st_size, "count": len(rows)}
+
+
 def export(conn, job) -> dict:
     p = job["params"]
+    if "project_id" in p:                       # collected data, not a published dataset
+        return export_project(conn, job)
     did, version, fmt = p["dataset_id"], p["version"], p["format"]
     cached = conn.execute("SELECT storage_key, filename, size FROM dataset_exports WHERE dataset_id = %s AND version = %s "
                           "AND format = %s", (did, version, fmt)).fetchone()

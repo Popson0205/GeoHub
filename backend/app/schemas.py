@@ -449,6 +449,13 @@ class DatasetCreated(BaseModel):
     job: JobOut
 
 
+class ProjectExportIn(BaseModel):
+    form_id: UUID
+    format: Literal["gpkg", "shp", "kml"]
+    statuses: list[Literal["draft", "submitted", "approved", "rejected"]] | None = Field(None, description="Only records with these statuses")
+    ids: list[UUID] | None = Field(None, max_length=20000, description="Only these records (for example the ones ticked in the table)")
+
+
 class ExportIn(BaseModel):
     format: Literal["geojson", "gpkg", "shp", "csv"]
     version: int | None = Field(None, ge=1, description="Defaults to the latest version")
@@ -458,9 +465,11 @@ class AuditOut(BaseModel):
     id: int
     at: datetime
     actor_id: UUID | None
+    actor_name: str | None = None
     action: str
     target_type: str | None
     target_id: str | None
+    target_name: str | None = Field(None, description="The form, person, dashboard or dataset's current name; for a record, its form's name")
     details: dict[str, Any]
 
 

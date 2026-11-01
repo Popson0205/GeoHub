@@ -85,7 +85,7 @@ def test_only_plain_https_pages_can_be_embedded(url):
         DashboardConfig(pages=[{**PAGE, "widgets": [{"id": "e", "type": "embedded", "url": url}]}])
 
 
-@pytest.mark.parametrize("bad", [{"target": 0}, {"target": -5}, {"region": "footer"}, {"content": "x" * 4001}, {"subtitle_fields": ["a"] * 7}])
+@pytest.mark.parametrize("bad", [{"target": 0}, {"target": -5}, {"region": "footer"}, {"content": "x" * 4001}, {"subtitle_fields": ["a"] * 61}])
 def test_bad_element_settings_are_refused(bad):
     with pytest.raises(ValidationError):
         DashboardConfig(pages=[{**PAGE, "widgets": [{"id": "g", "type": "gauge", **bad}]}])
@@ -270,7 +270,7 @@ def test_locations_are_sent_only_when_the_dashboard_has_a_map(project):
 
 
 def test_photos_are_never_public_even_if_a_table_asks_for_them(project):
-    _record(project, {"type": "Clinic", "photos": ["abc"]})
+    _record(project, {"type": "Clinic", "photos": [str(uuid.uuid4())]})
     _, token = _shared_dashboard(project, [{"id": "t", "type": "table", "columns": ["type", "photos"]}])
     body = project.owner.c.get(f"/public/dashboards/{token}").json()
     assert body["features"][0]["properties"] == {"type": "Clinic"}

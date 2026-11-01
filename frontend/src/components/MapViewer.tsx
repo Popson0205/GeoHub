@@ -19,7 +19,11 @@ const TABLE_ROWS = 200;
  * It never edits records: collecting and correcting data happens in the forms and in Collected data.
  * Without `onStyleChange` the styling controls are hidden (public and read-only views).
  */
-export default function MapViewer({ layers, imagery = [], style, onStyleChange, label = "Map", fitKey, compact = false, footer, focus, onPickFeature }: {
+export default function MapViewer({ layers, imagery = [], style, onStyleChange, label = "Map", fitKey, compact = false, footer, focus, onPickFeature, cluster = false, toolbar }: {
+  /** Group nearby points when zoomed out. */
+  cluster?: boolean;
+  /** Controls shown above the map (filters). */
+  toolbar?: ReactNode;
   layers: ViewerLayer[]; imagery?: ViewerImagery[]; style: ViewerStyle; onStyleChange?: (next: ViewerStyle) => void;
   label?: string; fitKey?: string;
   /** A small map with no side panel (a dashboard element): just the map, its legend and the pop-up. */
@@ -129,7 +133,8 @@ export default function MapViewer({ layers, imagery = [], style, onStyleChange, 
 
   const map = (
     <MapView features={mapFeatures} selectedId={picked} onSelect={pick} imagery={shownImagery} basemap={basemap}
-      flyTo={fly} fitKey={fitKey} label={label} geolocate={!compact}>
+      flyTo={fly} fitKey={fitKey} label={label} geolocate={!compact} cluster={cluster}>
+      {toolbar}
       {legend}
       {popup}
     </MapView>

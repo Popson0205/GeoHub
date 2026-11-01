@@ -1,4 +1,5 @@
 import { GPS_KEYS } from "./gps";
+import { t } from "./i18n";
 import { TYPE_SPECS, allFields, hasChoices, slugifyFieldId, topLevelFields, walk } from "./fieldSpec";
 import { calcRefs, conditionRefs, generateId, isEmpty, isGenerated, resolve } from "./logic";
 import type { FieldType, Form, FormField, Props } from "./types";
@@ -24,38 +25,38 @@ function checkValue(f: FormField, v: unknown): string {
       return "";
     }
     case "number": {
-      if (typeof v !== "number" || !Number.isFinite(v)) return `${L} must be a number.`;
-      if (f.integer && !Number.isInteger(v)) return `${L} must be a whole number.`;
-      if (typeof f.min === "number" && v < f.min) return `${L} must be at least ${f.min}.`;
-      if (typeof f.max === "number" && v > f.max) return `${L} must be at most ${f.max}.`;
+      if (typeof v !== "number" || !Number.isFinite(v)) return t("val.number", { label: L });
+      if (f.integer && !Number.isInteger(v)) return t("val.whole", { label: L });
+      if (typeof f.min === "number" && v < f.min) return t("val.min", { label: L, n: f.min });
+      if (typeof f.max === "number" && v > f.max) return t("val.max", { label: L, n: f.max });
       return "";
     }
     case "date": case "time": case "datetime": {
       const ok = f.type === "date" ? typeof v === "string" && DATE_RE.test(v) && !Number.isNaN(Date.parse(v))
         : f.type === "time" ? typeof v === "string" && TIME_RE.test(v)
         : typeof v === "string" && !Number.isNaN(Date.parse(v));
-      if (!ok) return `${L} must be a valid ${f.type === "date" ? "date" : f.type === "time" ? "time" : "date and time"}.`;
+      if (!ok) return f.type === "date" ? t("val.date", { label: L }) : `${L} must be a valid ${f.type === "time" ? "time" : "date and time"}.`;
       if (typeof f.min === "string" && (v as string) < f.min) return `${L} cannot be before ${f.min}.`;
       if (typeof f.max === "string" && (v as string) > f.max) return `${L} cannot be after ${f.max}.`;
       return "";
     }
-    case "choice": return f.choices?.includes(String(v)) ? "" : "Choose one of the listed options.";
+    case "choice": return f.choices?.includes(String(v)) ? "" : t("val.choice");
     case "multi_choice": case "ranking": {
-      if (!Array.isArray(v) || new Set(v).size !== v.length || v.some((x) => !f.choices?.includes(String(x)))) return "Choose only from the listed options.";
+      if (!Array.isArray(v) || new Set(v).size !== v.length || v.some((x) => !f.choices?.includes(String(x)))) return t("val.choices");
       if (f.type === "ranking" && v.length !== f.choices?.length) return `Rank every option in ${L}.`;
-      if (f.min_items !== undefined && v.length < f.min_items) return `Choose at least ${f.min_items}.`;
-      if (f.max_items !== undefined && v.length > f.max_items) return `Choose at most ${f.max_items}.`;
+      if (f.min_items !== undefined && v.length < f.min_items) return t("val.atLeast", { n: f.min_items });
+      if (f.max_items !== undefined && v.length > f.max_items) return t("val.atMost", { n: f.max_items });
       return "";
     }
     case "boolean": {
-      if (typeof v !== "boolean") return `${L} must be yes or no.`;
-      return f.must_be_true && !v ? `${L} must be accepted to continue.` : "";
+      if (typeof v !== "boolean") return t("val.yesNo", { label: L });
+      return f.must_be_true && !v ? t("val.accept", { label: L }) : "";
     }
     case "photo": case "audio": case "video": case "file": case "signature": {
       if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `${L} holds an unreadable attachment.`;
       const cap = f.max_items ?? (f.type === "photo" ? 20 : f.type === "signature" ? 1 : 10);
-      if (v.length > cap) return `${L} can have at most ${cap}.`;
-      if (f.min_items !== undefined && v.length < f.min_items) return `${L} needs at least ${f.min_items}.`;
+      if (v.length > cap) return t("val.filesMax", { label: L, n: cap });
+      if (f.min_items !== undefined && v.length < f.min_items) return t("val.filesMin", { label: L, n: f.min_items });
       return "";
     }
     case "calculation": return typeof v === "number" || typeof v === "string" ? "" : `${L} could not be calculated.`;
@@ -85,7 +86,7 @@ export function validateProperties(form: Pick<Form, "fields">, props: Props): Re
         rows.forEach((row, i) => check(f.children ?? [], row, `${f.id}.${i}.`));
         continue;
       }
-      if (isEmpty(v)) { if (required.has(key) && f.type !== "calculation") errors[key] = `${f.label} is required.`; continue; }
+      if (isEmpty(v)) { if (required.has(key) && f.type !== "calculation") errors[key] = t("val.required", { label: f.label }); continue; }
       const msg = checkValue(f, v);
       if (msg) errors[key] = msg;
     }

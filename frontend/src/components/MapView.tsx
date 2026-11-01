@@ -88,6 +88,8 @@ interface Props_ {
   label?: string;
   /** A small, static map for thumbnails: no controls, no panning or zooming, no editing. */
   preview?: boolean;
+  /** Group nearby points into numbered circles when zoomed out (for viewing many records; not for editing). */
+  cluster?: boolean;
   /** Extra overlays drawn on top of the map (for example a toolbar). */
   children?: ReactNode;
 }
@@ -101,7 +103,7 @@ const STYLE: StyleSpecification = {
   },
   layers: [{ id: "base", type: "raster", source: "base" }, { id: "base-light", type: "raster", source: "base-light", layout: { visibility: "none" } }],
 };
-const FEATURE_LAYERS = ["features-fill", "features-line", "features-point", "features-icon"];
+const FEATURE_LAYERS = ["features-fill", "features-line", "features-point", "features-icon", "cluster-point", "cluster-icon"];
 const empty = { type: "FeatureCollection", features: [] };
 const GREEN = "#1f6b52";
 const ORANGE = "#b8431a";
@@ -129,9 +131,57 @@ function asFC(features: MapFeature[]) {
   };
 }
 
-export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, basemap = "streets", editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", preview = false, children }: Props_) {
+/**
+ * Clustering for the viewer: points go to their own source, which MapLibre groups when they would overlap.
+ * A group is a green circle sized by how many it holds; its number is a small HTML label (the base map has
+ * no fonts to draw text with). Clicking a group zooms in until it splits.
+ */
+function addClusters(map: MLMap) {
+  const empty = { type: "FeatureCollection", features: [] };
+  map.addSource("clusters", { type: "geojson", data: empty as never, cluster: true, clusterRadius: 44, clusterMaxZoom: 16 });
+  map.addLayer({ id: "cluster-circle", type: "circle", source: "clusters", filter: ["has", "point_count"],
+    paint: { "circle-color": "#17634c", "circle-opacity": 0.9, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3,
+      "circle-radius": ["step", ["get", "point_count"], 15, 10, 19, 100, 25, 1000, 31] as never } });
+  map.addLayer({ id: "cluster-point", type: "circle", source: "clusters", filter: ["!", ["has", "point_count"]],
+    paint: { "circle-radius": ["case", ["has", "_i"], 0, own("_s", 8)] as never, "circle-color": own("_c", byState()), "circle-stroke-color": own("_o", "#fff"), "circle-stroke-width": ["case", ["has", "_i"], 0, 2.5] as never, "circle-opacity": own("_a", 1) } });
+  map.addLayer({ id: "cluster-icon", type: "symbol", source: "clusters", filter: ["all", ["!", ["has", "point_count"]], ["has", "_i"]],
+    layout: { "icon-image": ["get", "_i"], "icon-size": own("_is", 0.8), "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-anchor": "center" } });
+
+  const labels = new Map<number, maplibregl.Marker>();
+  const update = () => {
+    if (!map.getSource("clusters")) return;
+    const seen = new Set<number>();
+    for (const f of map.querySourceFeatures("clusters", { filter: ["has", "point_count"] as never })) {
+      const id = f.properties?.cluster_id as number;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (!labels.has(id)) {
+        const el = document.createElement("span");
+        el.className = "cluster-count";
+        el.setAttribute("aria-hidden", "true");
+        el.textContent = String(f.properties?.point_count_abbreviated ?? f.properties?.point_count);
+        labels.set(id, new maplibregl.Marker({ element: el }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(map));
+      }
+    }
+    for (const [id, m] of labels) if (!seen.has(id)) { m.remove(); labels.delete(id); }
+  };
+  map.on("moveend", update);
+  map.on("sourcedata", (e) => { if (e.sourceId === "clusters" && e.isSourceLoaded) update(); });
+  map.on("click", "cluster-circle", (e) => {
+    const f = e.features?.[0];
+    if (!f) return;
+    (map.getSource("clusters") as GeoJSONSource).getClusterExpansionZoom(f.properties?.cluster_id as number)
+      .then((z) => map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom: z + 0.5 }))
+      .catch(() => undefined);
+  });
+  map.on("mouseenter", "cluster-circle", () => { map.getCanvas().style.cursor = "zoom-in"; });
+  map.on("mouseleave", "cluster-circle", () => { map.getCanvas().style.cursor = ""; });
+}
+
+export default function MapView({ features, selectedId, selectedIds, snap = false, moveMode = false, onMove, pickMode = false, onPick, hint, drawMode, onDraw, onCancelDraw, onSelect, imagery = [], showBase = true, basemap = "streets", editGeometry = null, onGeometryChange, flyTo, fitKey, geolocate, label = "Map", preview = false, cluster = false, children }: Props_) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
+  const clusterRef = useRef(cluster);   // read once, when the map is built
   const [ready, setReady] = useState(false);
   const [vertices, setVertices] = useState<Position[]>([]);
   const [measureText, setMeasure] = useState("");
@@ -195,6 +245,7 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
         // A point drawn as a picture (it has _i) gets no dot; the picture goes in the "features-icon" layer below.
         paint: { "circle-radius": ["case", ["has", "_i"], 0, own("_s", 8)] as never, "circle-color": own("_c", byState()), "circle-stroke-color": own("_o", "#fff"), "circle-stroke-width": ["case", ["has", "_i"], 0, 2.5] as never, "circle-opacity": own("_a", 1) },
       });
+      if (clusterRef.current) addClusters(map);
       map.addLayer({ id: "sel-fill", type: "fill", source: "selected", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ORANGE, "fill-opacity": 0.3 } });
       map.addLayer({ id: "sel-line", type: "line", source: "selected", filter: ["!=", ["geometry-type"], "Point"], paint: { "line-color": ORANGE, "line-width": 4 } });
       map.addLayer({ id: "sel-point", type: "circle", source: "selected", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 11, "circle-color": ORANGE, "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
@@ -416,7 +467,14 @@ export default function MapView({ features, selectedId, selectedIds, snap = fals
   // Features
   useEffect(() => {
     if (!ready) return;
-    (mapRef.current!.getSource("features") as GeoJSONSource).setData(asFC(features) as never);
+    const map = mapRef.current!;
+    if (clusterRef.current && map.getSource("clusters")) {
+      // Points go to the clustering source; lines and areas are drawn as usual.
+      (map.getSource("features") as GeoJSONSource).setData(asFC(features.filter((f) => f.geometry.type !== "Point")) as never);
+      (map.getSource("clusters") as GeoJSONSource).setData(asFC(features.filter((f) => f.geometry.type === "Point")) as never);
+    } else {
+      (map.getSource("features") as GeoJSONSource).setData(asFC(features) as never);
+    }
   }, [features, ready]);
 
   // Selection highlight

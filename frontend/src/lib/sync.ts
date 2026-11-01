@@ -55,7 +55,9 @@ export async function saveFeatureLocal(input: SaveInput): Promise<LocalFeature> 
     form_version: input.form.version,
     geometry: input.geometry,
     properties: input.properties,
-    status: existing?.status ?? "submitted",
+    // A record a reviewer returned goes back for review once it is fixed (the server does the same).
+    status: existing?.status === "rejected" ? "submitted" : existing?.status ?? "submitted",
+    review_note: existing?.status === "rejected" ? undefined : existing?.review_note,
     version: existing?.version ?? 0,
     updated_at: now,
     sync: "pending",
@@ -167,7 +169,17 @@ export async function syncProject(projectId: string, opts: { collectOnly?: boole
   }
 
   // 3. pull (a collect-only device never receives other people's records)
-  if (opts.collectOnly) { await purgeSent(projectId); return report; }
+  if (opts.collectOnly) {
+    await purgeSent(projectId);
+    // A collect-only phone keeps nothing it has sent, except records a reviewer returned for changes.
+    try {
+      for (const f of await api.listReturned(projectId)) {
+        const local = await db.features.get(f.id);
+        if (!local || local.sync === "synced") await db.features.put({ ...f, sync: "synced" });
+      }
+    } catch { /* offline or an older server: try again next sync */ }
+    return report;
+  }
   let cursor = (await db.meta.get(cursorKey(projectId)))?.value ?? "";
   for (;;) {
     const page = await api.syncPull(projectId, cursor);
@@ -219,15 +231,19 @@ export async function syncPublic(token: string, key: string, opts: { collectOnly
   return report;
 }
 
-/** Resolve a conflict: keep the server's copy, or re-apply mine on top of it. */
-export async function resolveConflict(id: string, choice: "server" | "mine"): Promise<void> {
+/**
+ * Resolve a conflict: keep the server's copy, re-apply mine on top of it, or send a combination
+ * (some answers from each, chosen per question).
+ */
+export async function resolveConflict(id: string, choice: "server" | "mine" | { geometry: Geometry; properties: Props }): Promise<void> {
   const row = await db.conflicts.get(id);
   if (!row) return;
   await db.transaction("rw", db.features, db.queue, db.conflicts, async () => {
     if (choice === "server") {
       await db.features.put({ ...row.server, sync: "synced" });
     } else {
-      const f: LocalFeature = { ...row.mine, version: row.server.version, sync: "pending" };
+      const picked = typeof choice === "object" ? choice : null;
+      const f: LocalFeature = { ...row.mine, ...(picked ?? {}), version: row.server.version, sync: "pending" };
       await db.features.put(f);
       await db.queue.add({
         change_id: uuid(), id, project_id: row.project_id, op: "update", base_version: row.server.version,

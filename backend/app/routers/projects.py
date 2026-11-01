@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
@@ -224,15 +225,42 @@ async def remove_member(project_id: UUID, user_id: UUID, request: Request, user=
     return Response(status_code=204)
 
 
+# Groups of actions the activity page filters by. Each is a list of LIKE patterns on audit_log.action.
+AUDIT_KINDS = {
+    "records": ["feature.%", "features.%"],
+    "forms": ["form.%"],
+    "people": ["member.%"],
+    "publishing": ["dataset.%", "export.%"],
+    "dashboards": ["dashboard.%"],
+    "project": ["project.%", "imagery.%"],
+}
+
+
 @router.get("/projects/{project_id}/audit", response_model=Page[AuditOut], tags=["audit"])
 async def audit_log(project_id: UUID, limit: int = Query(50, ge=1, le=200), cursor: str | None = None,
+                    kind: Literal["records", "forms", "people", "publishing", "dashboards", "project"] | None = None,
+                    actor: UUID | None = None,
                     user=Depends(current_user), conn=Depends(get_conn)):
+    """The project's activity, newest first, with who did it and what it was done to, by name where it still exists."""
     await require_role(conn, project_id, user["id"], "admin")
     before = decode_cursor(cursor).get("b")
+    patterns = AUDIT_KINDS[kind] if kind else None
     cur = await conn.execute(
-        "SELECT id, at, actor_id, action, target_type, target_id, details FROM audit_log "
-        "WHERE project_id = %s AND (%s::bigint IS NULL OR id < %s) ORDER BY id DESC LIMIT %s",
-        (project_id, before, before, limit + 1))
+        "SELECT a.id, a.at, a.actor_id, u.name AS actor_name, a.action, a.target_type, a.target_id, a.details, "
+        "  CASE a.target_type "
+        "    WHEN 'form' THEN (SELECT name FROM forms WHERE id::text = a.target_id) "
+        "    WHEN 'user' THEN (SELECT name FROM users WHERE id::text = a.target_id) "
+        "    WHEN 'dashboard' THEN (SELECT name FROM dashboards WHERE id::text = a.target_id) "
+        "    WHEN 'dataset' THEN (SELECT title FROM datasets WHERE id::text = a.target_id OR slug = a.target_id LIMIT 1) "
+        "    WHEN 'project' THEN (SELECT name FROM projects WHERE id::text = a.target_id) "
+        "    WHEN 'feature' THEN (SELECT fo.name FROM features f JOIN forms fo ON fo.id = f.form_id WHERE f.id::text = a.target_id) "
+        "  END AS target_name "
+        "FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
+        "WHERE a.project_id = %s AND (%s::bigint IS NULL OR a.id < %s) "
+        "  AND (%s::text[] IS NULL OR a.action LIKE ANY(%s::text[])) "
+        "  AND (%s::uuid IS NULL OR a.actor_id = %s) "
+        "ORDER BY a.id DESC LIMIT %s",
+        (project_id, before, before, patterns, patterns, actor, actor, limit + 1))
     rows = await cur.fetchall()
     more = len(rows) > limit
     rows = rows[:limit]

@@ -57,6 +57,14 @@ Dockerfile) and `PUBLIC_BASE_URL=https://your-domain/api`.
 - **Frontend**: Cloudflare Pages (or any static host). Root directory `frontend`, build command `npm run build`,
   output directory `dist`, and set `VITE_USE_MOCK=false` and `VITE_API_URL=https://your-api`.
 
+## Error reporting
+
+When a page fails, people see a recovery screen with a short reference (such as `GH-7Q2KX`) instead of a blank page.
+The browser sends the error to `POST /client-errors`, which logs it with the request's other details and, when the
+server has `SENTRY_DSN` set, passes it to Sentry tagged `source=browser`, together with server errors. Nothing extra is
+needed in the frontend. Share tokens and query strings are removed from the address first. Set `VITE_RELEASE`
+(for example to the commit) at build time so reports say which version failed. Demo mode only logs to the console.
+
 ## CI
 
 `.github/workflows/ci.yml` runs the backend test suite and the frontend build plus offline-sync tests on every push.

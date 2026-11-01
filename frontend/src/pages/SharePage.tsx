@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import ProjectNav from "../components/ProjectNav";
+import ShareOptions from "../components/ShareOptions";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
@@ -96,6 +97,7 @@ export default function SharePage() {
               </div>
             </div>
             <div className="row"><a className="btn btn-sm" href={url} target="_blank" rel="noreferrer">Open</a><Button small onClick={renew}>Create new link</Button></div>
+            <ShareOptions url={url} formName={form.data.name} />
           </section>
 
           <section className="card" style={{ maxWidth: 640, marginBottom: 20 }} aria-label="Who can use the link">

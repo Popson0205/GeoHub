@@ -4,6 +4,7 @@ import ProjectNav from "../components/ProjectNav";
 import MapViewer, { type ViewerImagery, type ViewerLayer } from "../components/MapViewer";
 import { ErrorState, Loading } from "../components/ui";
 import { loadApi } from "../lib/api";
+import type { FeatureStatus } from "../lib/types";
 import { useAsync } from "../lib/hooks";
 import { loadViewerStyle, saveViewerStyle, type ViewerStyle } from "../lib/symbology";
 
@@ -23,7 +24,15 @@ export default function EditorPage() {
   useEffect(() => { setStyle(loadViewerStyle(projectId)); }, [projectId]);
   const change = (next: ViewerStyle) => { setStyle(next); saveViewerStyle(projectId, next); };
 
-  const layers = useMemo<ViewerLayer[]>(() => (data?.forms ?? []).map((f) => ({ id: f.id, name: f.name, form: f, features: (data?.features ?? []).filter((x) => x.form_id === f.id) })), [data]);
+  // Filters: review status and when the record last changed.
+  const [status, setStatus] = useState<"all" | FeatureStatus>("all");
+  const [days, setDays] = useState<number | null>(null);
+  const shown = useMemo(() => {
+    const since = days == null ? "" : new Date(Date.now() - days * 86400000).toISOString();
+    return (data?.features ?? []).filter((f) => !f.deleted && (status === "all" || f.status === status) && (!since || f.updated_at >= since));
+  }, [data, status, days]);
+  const total = useMemo(() => (data?.features ?? []).filter((f) => !f.deleted).length, [data]);
+  const layers = useMemo<ViewerLayer[]>(() => (data?.forms ?? []).map((f) => ({ id: f.id, name: f.name, form: f, features: shown.filter((x) => x.form_id === f.id) })), [data, shown]);
 
   // Imagery tiles come with signed addresses, so they are asked for once the list is known.
   const [tiles, setTiles] = useState<ViewerImagery[]>([]);
@@ -44,7 +53,23 @@ export default function EditorPage() {
   return (
     <div className="viewer-page" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <ProjectNav projectId={projectId} project={data.project} compact />
-      <MapViewer layers={layers} imagery={tiles} style={style} onStyleChange={change} label="Collected data map" fitKey={projectId} />
+      <MapViewer layers={layers} imagery={tiles} style={style} onStyleChange={change} label="Collected data map" fitKey={projectId} cluster
+        toolbar={
+          <div className="map-filters" role="group" aria-label="Show on the map">
+            <label><span className="sr-only">Review status</span>
+              <select className="input" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Review status">
+                <option value="all">All records</option><option value="submitted">Waiting for review</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="draft">Drafts</option>
+              </select>
+            </label>
+            <label><span className="sr-only">Changed</span>
+              <select className="input" value={days ?? ""} onChange={(e) => setDays(e.target.value ? Number(e.target.value) : null)} aria-label="Changed">
+                <option value="">Any time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+              </select>
+            </label>
+            <span className="map-filters-count" aria-live="polite">{shown.length === total ? `${total} records` : `${shown.length} of ${total} records`}</span>
+            {(status !== "all" || days != null) && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setStatus("all"); setDays(null); }}>Clear</button>}
+          </div>
+        } />
     </div>
   );
 }

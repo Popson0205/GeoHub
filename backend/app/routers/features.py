@@ -13,7 +13,8 @@ from ..errors import Problem
 from ..jobs import create_job, dispatch
 from ..logging_setup import client_ip
 from ..pagination import Page, decode_cursor, encode_cursor
-from ..schemas import (FeatureCreate, FeatureOut, FeaturePatch, FeatureVersionOut, JobOut, ReviewIn)
+from ..schemas import (FeatureCreate, FeatureOut, FeaturePatch, FeatureVersionOut, JobOut, ProjectExportIn, ReviewIn)
+from .jobs import job_out
 from ..services import features as svc
 from ..services.media import media_for_feature
 
@@ -44,6 +45,7 @@ async def list_features(
         status: str | None = Query(None, pattern="^(draft|submitted|approved|rejected)$"),
         form_id: UUID | None = None, updated_since: datetime | None = None,
         include_deleted: bool = Query(False, description="Admins only"),
+        mine: bool = Query(False, description="Only records the caller created (a collector's own, e.g. those returned for changes)"),
         limit: int = Query(100, ge=1, le=1000), cursor: str | None = None,
         user=Depends(current_user), conn=Depends(get_conn)):
     await require_role(conn, project_id, user["id"])
@@ -63,6 +65,8 @@ async def list_features(
         where.append("f.status = %s"); params.append(status)
     if form_id:
         where.append("f.form_id = %s"); params.append(form_id)
+    if mine:
+        where.append("f.created_by = %s"); params.append(user["id"])
     if updated_since:
         where.append("f.updated_at > %s"); params.append(updated_since)
     cur = await conn.execute(f"SELECT {svc.FEATURE_SELECT} FROM features f WHERE {' AND '.join(where)} "
@@ -200,3 +204,22 @@ async def import_features(
     await dispatch(conn, job)
     cur = await conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],))
     return await cur.fetchone()
+
+
+@router.post("/projects/{project_id}/exports", response_model=JobOut, status_code=202)
+async def export_records(project_id: UUID, body: ProjectExportIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    """Download one form's collected records as GeoPackage, zipped Shapefile or KML (CSV and GeoJSON are made in the app).
+    Poll GET /jobs/{id}; when done it carries a signed `download_url`."""
+    await require_role(conn, project_id, user["id"])
+    cur = await conn.execute("SELECT 1 FROM forms WHERE id = %s AND project_id = %s AND version > 0", (body.form_id, project_id))
+    if not await cur.fetchone():
+        raise Problem(404, "That form is not published in this project.", code="not_found")
+    params = {"project_id": str(project_id), "form_id": str(body.form_id), "format": body.format,
+              "statuses": body.statuses, "ids": [str(i) for i in body.ids] if body.ids else None}
+    job = await create_job(conn, "export", params, project_id=project_id, created_by=user["id"])
+    await audit(conn, "export.request", actor_id=user["id"], project_id=project_id, target_type="form", target_id=body.form_id,
+                ip=client_ip(request), format=body.format)
+    await dispatch(conn, job)
+    await conn.commit()
+    cur = await conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],))
+    return job_out(await cur.fetchone())

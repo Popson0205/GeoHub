@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TYPE_SPECS, defaultAppearance } from "../lib/fieldSpec";
 import { newRow } from "../lib/forms";
@@ -122,7 +123,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
         case "barcode":
           return simple(
             <div className="num-row">
-              <input id={id} {...aria} type="text" readOnly={ro} placeholder={f.placeholder ?? "Scan or type the code"} value={String(v ?? "")} onChange={(e) => set(f.id, e.target.value)} />
+              <input id={id} {...aria} type="text" readOnly={ro} placeholder={f.placeholder ?? t("form.scan")} value={String(v ?? "")} onChange={(e) => set(f.id, e.target.value)} />
               <ScanButton disabled={ro} label={f.label} onCode={(c) => set(f.id, c)} />
             </div>,
           );
@@ -133,7 +134,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
           if (kind === "dropdown") {
             return simple(
               <select id={id} {...aria} disabled={ro} value={String(v ?? "")} onChange={(e) => set(f.id, e.target.value)}>
-                <option value="">Choose…</option>
+                <option value="">{t("form.choose")}</option>
                 {opts.map((o) => <option key={o}>{o}</option>)}
               </select>,
             );
@@ -171,7 +172,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
         }
 
         case "boolean": {
-          const yes = f.true_label || "Yes", no = f.false_label || "No";
+          const yes = f.true_label || t("form.yes"), no = f.false_label || t("form.no");
           if (app === "checkbox") {
             return (
               <div className="field" key={key}>
@@ -217,7 +218,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
                   </li>
                 ))}
               </ol>
-              {!ranked && !ro && <Button small onClick={() => set(f.id, [...opts])}>Keep this order</Button>}
+              {!ranked && !ro && <Button small onClick={() => set(f.id, [...opts])}>{t("form.keepOrder")}</Button>}
             </>,
           );
         }
@@ -276,7 +277,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
                   <Button small variant="danger" disabled={ro} onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove {f.label.toLowerCase()} {i + 1}</Button>
                 </fieldset>
               ))}
-              {rows.length === 0 && <span className="field-hint">None added yet.</span>}
+              {rows.length === 0 && <span className="field-hint">{t("form.noneYet")}</span>}
               <Button small disabled={ro || full} onClick={() => setRows([...rows, newRow(f)])}>Add {f.label.toLowerCase()}</Button>
               {msg}
             </section>
@@ -293,9 +294,9 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
       <p className="page-step" aria-live="polite">Page {pageIndex + 1} of {pages.length}{cur?.title ? ` · ${cur.title}` : ""}</p>
       {cur && level(cur.items, values, emit, "")}
       <div className="row">
-        <Button disabled={pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>Back</Button>
+        <Button disabled={pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>{t("form.back")}</Button>
         <span className="grow" />
-        <Button variant="primary" disabled={pageIndex >= pages.length - 1} onClick={() => setPage(pageIndex + 1)}>Next</Button>
+        <Button variant="primary" disabled={pageIndex >= pages.length - 1} onClick={() => setPage(pageIndex + 1)}>{t("form.next")}</Button>
       </div>
     </div>
   );

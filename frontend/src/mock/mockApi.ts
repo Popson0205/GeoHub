@@ -1,10 +1,11 @@
+import { toKml } from "../lib/kml";
 import { ApiError, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
 import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type {
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -21,6 +22,7 @@ interface State {
   maps?: MockMap[]; mapFeatures?: MockFeat[];
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
+  audit?: (AuditEvent & { project_id: string })[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
@@ -51,6 +53,46 @@ export class MockApi implements Api {
     return { ...p, feature_count: mine.length, waiting_count: mine.filter((f) => f.status === "submitted").length };
   }
   private strip(r: Row): Feature { const { seq: _s, ...f } = r; return f; }
+  /** The project's history, like the server's audit log. Seeded with a believable past the first time it is read. */
+  private get auditLog() {
+    if (!this.s.audit) {
+      const day = 86400000, now = Date.now();
+      const people = [{ id: "u-ada", name: "Ada Okafor" }, { id: "u-musa", name: "Musa Bello" }, { id: "u-tolu", name: "Tolu Adeyemi" }];
+      const seed: (AuditEvent & { project_id: string })[] = [];
+      let id = 1;
+      const add = (at: number, a: Omit<AuditEvent, "id" | "at">, pid = "p1") => seed.push({ id: id++, at: new Date(at).toISOString(), project_id: pid, ...a });
+      add(now - 20 * day, { actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, action: "project.create", target_type: "project", target_id: "p1", target_name: this.s.projects.find((p) => p.id === "p1")?.name, details: {} });
+      add(now - 19 * day, { actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, action: "form.publish", target_type: "form", target_id: "f1", target_name: this.s.forms.find((x) => x.id === "f1")?.name, details: { version: 1 } });
+      for (const p of people) add(now - 18 * day, { actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, action: "member.add", target_type: "user", target_id: p.id, target_name: p.name, details: { role: "collector" } });
+      const rows = this.s.features.filter((r) => r.project_id === "p1" && !r.deleted);
+      rows.forEach((r, i) => {
+        const who = people[Math.floor(i / 4) % 3]!, at = now - (16 - Math.floor(i / 4)) * day + (i % 4) * 600000;   // each collector adds a few at a time
+        add(at, { actor_id: who.id, actor_name: who.name, action: "feature.create", target_type: "feature", target_id: r.id, target_name: this.s.forms.find((x) => x.id === r.form_id)?.name, details: { form_id: r.form_id } });
+        if (r.status === "approved" || r.status === "rejected")
+          add(at + day / 2, { actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, action: "feature.review", target_type: "feature", target_id: r.id, target_name: this.s.forms.find((x) => x.id === r.form_id)?.name, details: { decision: r.status } });
+      });
+      this.s.audit = seed.sort((a, b) => a.at.localeCompare(b.at)).map((e, i) => ({ ...e, id: i + 1 }));
+    }
+    return this.s.audit;
+  }
+  private log(projectId: string, action: string, target_type: string, target_id: string, details: Record<string, unknown> = {}) {
+    const l = this.auditLog;
+    const target_name = target_type === "feature" ? this.s.forms.find((x) => x.id === this.s.features.find((r) => r.id === target_id)?.form_id)?.name
+      : target_type === "form" ? this.s.forms.find((x) => x.id === target_id)?.name
+      : target_type === "user" ? (this.memberList(projectId).find((m) => m.id === target_id)?.name ?? this.memberList(projectId).find((m) => m.id === target_id)?.email)
+      : target_type === "dashboard" ? this.dashboards.find((d) => d.id === target_id)?.name : undefined;
+    l.push({ id: (l[l.length - 1]?.id ?? 0) + 1, at: new Date().toISOString(), project_id: projectId, actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, action, target_type, target_id, target_name, details });
+  }
+  async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
+    await wait(); this.auth();
+    const prefix: Record<AuditKind, string[]> = { records: ["feature."], forms: ["form."], people: ["member."], publishing: ["dataset.", "export."], dashboards: ["dashboard."], project: ["project.", "imagery."] };
+    const before = opts.cursor ? Number(opts.cursor) : Infinity;
+    const all = this.auditLog.filter((e) => e.project_id === projectId && e.id < before
+      && (!opts.kind || prefix[opts.kind].some((p) => e.action.startsWith(p))) && (!opts.actor || e.actor_id === opts.actor))
+      .sort((a, b) => b.id - a.id);
+    const items = all.slice(0, 50).map(({ project_id: _p, ...e }) => e);
+    return { items, next_cursor: all.length > 50 ? String(items[items.length - 1]!.id) : null };
+  }
 
   async login(email: string, password: string): Promise<Session> {
     await wait();
@@ -101,7 +143,7 @@ export class MockApi implements Api {
     await wait(); this.auth();
     const f = await this.getForm(id);
     if (!f.fields.length) throw new ApiError(422, "Add at least one field before publishing.");
-    f.version += 1; f.status = "published"; this.save();
+    f.version += 1; f.status = "published"; this.log(f.project_id, "form.publish", "form", f.id, { version: f.version }); this.save();
     return f;
   }
 
@@ -150,6 +192,8 @@ export class MockApi implements Api {
       forms: this.s.forms.filter((f) => f.project_id === d.project_id), features: this.s.features.filter((f) => f.project_id === d.project_id).map((r) => this.strip(r)) });
   }
 
+  /** Mock: everyone is the demo user, so every rejected record counts as "mine". */
+  async listReturned(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted && f.status === "rejected").map((r) => this.strip(r)); }
   async listFeatures(projectId: string) { await wait(); this.auth(); return this.s.features.filter((f) => f.project_id === projectId && !f.deleted).map((r) => this.strip(r)); }
   async createFeature(nf: NewFeature) {
     await wait(); this.auth();
@@ -159,7 +203,7 @@ export class MockApi implements Api {
       if (Object.keys(errors).length) throw new ApiError(422, "Some fields need attention.", errors);
     }
     const row: Row = { ...nf, status: "submitted", version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq };
-    this.s.features.push(row); this.save();
+    this.s.features.push(row); this.log(nf.project_id, "feature.create", "feature", row.id, { form_id: nf.form_id }); this.save();
     return this.strip(row);
   }
   async updateFeature(id: string, patch: { geometry?: Geometry; properties?: Props; base_version: number }) {
@@ -169,19 +213,19 @@ export class MockApi implements Api {
     if (patch.base_version !== r.version) throw new ApiError(409, "Someone else changed this feature. Reload to see their version.");
     if (patch.geometry) r.geometry = patch.geometry;
     if (patch.properties) r.properties = patch.properties;
-    r.version += 1; r.seq = ++this.s.seq; r.updated_at = new Date().toISOString(); this.save();
+    r.version += 1; r.seq = ++this.s.seq; r.updated_at = new Date().toISOString(); this.log(r.project_id, "feature.edit", "feature", r.id); this.save();
     return this.strip(r);
   }
   async deleteFeature(id: string) {
     await wait(); this.auth();
     const r = this.s.features.find((f) => f.id === id);
-    if (r) { r.deleted = true; r.seq = ++this.s.seq; r.version += 1; this.save(); }
+    if (r) { r.deleted = true; r.seq = ++this.s.seq; r.version += 1; this.log(r.project_id, "feature.delete", "feature", r.id); this.save(); }
   }
-  async reviewFeature(id: string, decision: "approved" | "rejected", _note?: string) {
+  async reviewFeature(id: string, decision: "approved" | "rejected", note?: string) {
     await wait(); this.auth();
     const r = this.s.features.find((f) => f.id === id);
     if (!r || r.deleted) throw new ApiError(404, "Feature not found.");
-    r.status = decision; r.version += 1; r.seq = ++this.s.seq; this.save();
+    r.status = decision; r.review_note = note || undefined; r.version += 1; r.seq = ++this.s.seq; this.log(r.project_id, "feature.review", "feature", r.id, note ? { decision, note } : { decision }); this.save();
     return this.strip(r);
   }
 
@@ -216,20 +260,20 @@ export class MockApi implements Api {
     const e = email.trim().toLowerCase();
     if (list.some((m) => m.email.toLowerCase() === e)) throw new ApiError(409, "That person is already on this project.");
     const m: ProjectMember = { id: uuid(), email: e, role, status: "invited" };
-    list.push(m); this.save();
+    list.push(m); this.log(projectId, "member.invite", "user", m.id, { role, email: e }); this.save();
     return m;
   }
   async setProjectMemberRole(projectId: string, memberId: string, role: Role) {
     await wait(); this.auth();
     const m = this.memberList(projectId).find((x) => x.id === memberId);
     if (!m) throw new ApiError(404, "Member not found.");
-    m.role = role; this.save();
+    m.role = role; this.log(projectId, "member.role_change", "user", m.id, { role }); this.save();
   }
   async removeProjectMember(projectId: string, memberId: string) {
     await wait(); this.auth();
     const list = this.memberList(projectId);
     const i = list.findIndex((x) => x.id === memberId);
-    if (i >= 0) list.splice(i, 1);
+    if (i >= 0) { this.log(projectId, "member.remove", "user", list[i]!.id); list.splice(i, 1); }
     this.save();
   }
   private formByToken(token: string): { form: Form; mode: ShareMode } {
@@ -284,6 +328,7 @@ export class MockApi implements Api {
           properties: c.properties ?? {}, status: "submitted", version: 1, updated_at: new Date().toISOString(), seq: ++this.s.seq,
         });
         out.push({ change_id: c.change_id, id: c.id, status: "applied", version: 1 });
+        this.log(projectId, "feature.create", "feature", c.id, { form_id: c.form_id });
       } else if (!cur || cur.deleted) {
         out.push({ change_id: c.change_id, id: c.id, status: "rejected", errors: { _: "Feature no longer exists." } });
       } else if (c.op === "delete") {
@@ -292,13 +337,16 @@ export class MockApi implements Api {
       } else if (c.base_version === cur.version) {
         if (c.geometry) cur.geometry = c.geometry;
         if (c.properties) cur.properties = c.properties;
+        if (cur.status === "approved" || cur.status === "rejected") { cur.status = "submitted"; cur.review_note = undefined; }   // edited after review: needs a fresh review, as on the server
         cur.version += 1; cur.seq = ++this.s.seq; cur.updated_at = new Date().toISOString();
         out.push({ change_id: c.change_id, id: c.id, status: "applied", version: cur.version });
+        this.log(projectId, "feature.edit", "feature", c.id);
       } else if (c.geometry && JSON.stringify(c.geometry) !== JSON.stringify(cur.geometry)) {
         out.push({ change_id: c.change_id, id: c.id, status: "conflict", server: this.strip(cur) });
       } else {
         // Stale base but the shape did not change: merge properties (contract rule 4).
         cur.properties = { ...cur.properties, ...(c.properties ?? {}) };
+        if (cur.status === "approved" || cur.status === "rejected") { cur.status = "submitted"; cur.review_note = undefined; }
         cur.version += 1; cur.seq = ++this.s.seq;
         out.push({ change_id: c.change_id, id: c.id, status: "applied", version: cur.version, merged: true });
       }
@@ -313,7 +361,17 @@ export class MockApi implements Api {
     const page = rows.slice(0, 500);
     return { changes: page.map((r) => this.strip(r)), cursor: String(page.length ? page[page.length - 1].seq : since), has_more: rows.length > page.length };
   }
-  async uploadMedia() { await wait(200); }
+  /** Mock: photos live in memory for this visit, so review mode can show them. */
+  private media = new Map<string, { feature_id: string; field_id?: string; kind: string; url: string }>();
+  async uploadMedia(_projectId: string, featureId: string, mediaId: string, blob: Blob, fieldId?: string) {
+    await wait(200);
+    const url = typeof URL !== "undefined" && typeof URL.createObjectURL === "function" ? URL.createObjectURL(blob) : "";
+    this.media.set(mediaId, { feature_id: featureId, field_id: fieldId, kind: blob.type.startsWith("image/") ? "photo" : blob.type.split("/")[0] || "file", url });
+  }
+  async getFeatureMedia(featureId: string): Promise<MediaItem[]> {
+    await wait(); this.auth();
+    return [...this.media.entries()].filter(([, m]) => m.feature_id === featureId && m.url).map(([id, m]) => ({ id, field_id: m.field_id, kind: m.kind, url: m.url }));
+  }
 
   async listImagery(projectId: string) { await wait(60); this.auth(); return this.s.imagery.filter((i) => i.project_id === projectId); }
   async getImagery(id: string) { await wait(40); const a = this.s.imagery.find((i) => i.id === id); if (!a) throw new ApiError(404, "Imagery not found."); return a; }
@@ -707,6 +765,21 @@ export class MockApi implements Api {
     };
     this.s.datasets.push(d); this.save();
     return { dataset: d, job: doneJob };
+  }
+  async exportRecords(projectId: string, input: { form_id: string; format: "gpkg" | "shp" | "kml"; ids?: string[]; statuses?: FeatureStatus[] }): Promise<Job> {
+    await wait(); this.auth();
+    const id = uuid();
+    const entry: { job: Job; polls: number; url?: string; error?: string } = { job: { id, kind: "export", status: "queued", progress: 0 }, polls: 0 };
+    if (input.format !== "kml") entry.error = "Shapefile and GeoPackage files are made by the Geohub server, so they are not available in demo mode. KML, CSV and GeoJSON work here.";
+    else {
+      const form = this.s.forms.find((f) => f.id === input.form_id);
+      const rows = this.s.features.filter((f) => f.project_id === projectId && f.form_id === input.form_id && !f.deleted
+        && (!input.ids || input.ids.includes(f.id)) && (!input.statuses || input.statuses.includes(f.status))).map((r) => this.strip(r));
+      const nameField = form?.fields.find((f) => f.type === "text")?.id;
+      entry.url = URL.createObjectURL(new Blob([toKml(form?.name ?? "Records", rows, nameField)], { type: "application/vnd.google-earth.kml+xml" }));
+    }
+    this.jobs.set(id, entry);
+    return entry.job;
   }
   async createExport(slug: string, format: ExportFormat): Promise<Job> {
     await wait();
