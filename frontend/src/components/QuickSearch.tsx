@@ -149,7 +149,7 @@ export default function QuickSearch() {
                 </li>
               ))}
             </ul>
-            <div className="qs-foot" aria-live="polite">
+            <div className={`qs-foot${results.length && !failed && (items !== null || !user) ? " has-keys" : ""}`} aria-live="polite">
               {results.length === 0 ? (items === null && !failed && user ? "Looking…" : `Nothing called “${q}”.`)
                 : failed ? "Some of your work could not be loaded, so only pages are shown."
                 : items === null && user ? "Loading your maps and projects…"

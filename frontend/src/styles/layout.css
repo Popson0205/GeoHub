@@ -498,7 +498,7 @@ body.is-dnd * { cursor: grabbing !important; }
   .topbar .search-btn ~ .menu, .topbar .search-btn ~ .signin { margin-left: var(--s-2); }
   .qs-backdrop { padding: var(--s-3); }
   .qs { max-height: calc(100vh - 24px); }
-  .qs-field kbd, .qs-foot kbd, .qs-kind { display: none; }
+  .qs-field kbd, .qs-kind, .qs-foot.has-keys { display: none; }   /* phones have no arrow keys */
 }
 
 /* ---- project activity (audit log) ---- */
@@ -506,7 +506,7 @@ body.is-dnd * { cursor: grabbing !important; }
 .project-nav-meta .project-nav-link:hover { text-decoration: underline; }
 .project-nav-meta .project-nav-link svg { color: currentColor; }
 .project-nav-meta .project-nav-link.is-active { color: var(--ink-900); text-decoration: underline; text-underline-offset: 4px; }
-.activity { max-width: 880px; }
+.activity .page-head, .activity .toolbar-bar, .activity-day, .activity-more { max-width: 880px; }
 .activity .toolbar-bar { align-items: flex-end; }
 .activity-person { margin-left: auto; min-width: 200px; }
 .activity-day { margin-top: var(--s-6); }
@@ -538,4 +538,5 @@ body.is-dnd * { cursor: grabbing !important; }
 .crash > p { margin: 0 auto; color: var(--muted); max-width: 46ch; }
 .crash-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin: var(--s-6) 0 var(--s-4); }
 .crash .crash-ref { font-size: var(--fs-sm); }
+.crash .crash-ref .mono { white-space: nowrap; }
 .crash .link-btn { border: 0; background: none; padding: 0; color: var(--link); font: 600 var(--fs-sm) var(--font-ui); text-decoration: underline; cursor: pointer; }
