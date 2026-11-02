@@ -61,6 +61,21 @@ are already set by the Dockerfile. `VITE_RELEASE` defaults to the commit Railway
 - **Frontend**: Cloudflare Pages (or any static host). Root directory `frontend`, build command `npm run build`,
   output directory `dist`, and set `VITE_USE_MOCK=false` and `VITE_API_URL=https://your-api`.
 
+## GPS accuracy
+
+A phone's own GPS manages about 3 to 5 m in open sky. The collector gets as close to that as it can:
+
+- it keeps the GPS warm while a record is about to be captured, so the first readings are already good;
+- it averages readings until five agree within ±5 m (up to 45 seconds), and drops readings that jump away;
+- it restarts if the collector walks off, and gives tips when a reading is poor.
+
+The accuracy saved with each record (`gps_hacc_m`) is never better than the readings really were. Reviewers see
+records worse than 30 m flagged.
+
+For better than a metre, pair the phone with an external GNSS receiver (for example Emlid Reach, Garmin GLO 2 or
+Bad Elf). On Android, use the receiver's app or "Bluetooth GNSS" and turn on its mock-location option. On iPhone,
+pair an MFi receiver. The browser then reports the receiver's position, so Geohub needs no change.
+
 ## Error reporting
 
 When a page fails, people see a recovery screen with a short reference (such as `GH-7Q2KX`) instead of a blank page.

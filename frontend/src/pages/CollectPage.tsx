@@ -11,7 +11,9 @@ import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useToast, useUndoable } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { LANGS, setLang, t, useLang, type Lang } from "../lib/i18n";
-import { combineFixes, gpsProps, viewAround, withoutGps, type Fix } from "../lib/gps";
+import { combineFixes, gpsProps, isMoving, POOR_M, quality, TARGET_M, viewAround, withoutGps, type Fix } from "../lib/gps";
+import { gpsAllowed, useGpsWarmup } from "../lib/useGpsWarmup";
+import { listenGps } from "../lib/gpsStream";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
 import { topLevelFields } from "../lib/fieldSpec";
 import { applyDefaults, pruneProperties, uuid, validateProperties } from "../lib/forms";
@@ -46,6 +48,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const [placing, setPlacing] = useState(false);
   const [locating, setLocating] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  /** The capture in progress or just finished: how many readings were used, and whether the person moved. */
+  const [reading, setReading] = useState<{ used: number; moved: boolean } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [report, setReport] = useState<SyncReport | null>(null);
   const [syncError, setSyncError] = useState("");
@@ -112,31 +116,42 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   // Capturing watches the GPS for a few seconds and averages the good readings, instead of trusting a single one.
   const [flyTo, setFlyTo] = useState<{ bounds: Bbox; key: number } | null>(null);
   const showOnMap = useCallback((lon: number, lat: number, hacc: number) => setFlyTo({ bounds: viewAround(lon, lat, hacc), key: Date.now() }), []);
-  const watchRef = useRef<number | null>(null);
+  const watchRef = useRef<(() => void) | null>(null);
   const timerRef = useRef<number | null>(null);
   const stopWatch = useCallback(() => {
-    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+    watchRef.current?.();
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
     watchRef.current = timerRef.current = null;
     setLocating(false);
   }, []);
   useEffect(() => stopWatch, [stopWatch]);
+  // Keep the GPS warm while someone is about to capture, so the first readings are already good.
+  const warm = useGpsWarmup(tab === "collect" && !!form && form.geometry_type === "Point" && !locating && (!draft || !draft.geometry));
 
+  /**
+   * Watch the GPS and average the readings, dropping ones that jump away, until the result is good (±5 m from
+   * at least five readings) or 45 seconds pass. The person can stop sooner with "Use this location". If they
+   * walk off, averaging starts again from where they now stand.
+   */
   function capture() {
     if (!navigator.geolocation) { toast(t("gps.noDevice"), "error"); return; }
-    stopWatch(); setLocating(true); setAccuracy(null);
-    const fixes: Fix[] = [];
-    const GOOD = 3, MAX_FIXES = 12, MAX_MS = 15000;
-    watchRef.current = navigator.geolocation.watchPosition(
+    stopWatch(); setLocating(true); setAccuracy(null); setReading(null);
+    let fixes: Fix[] = [];
+    const MIN_FIXES = 5, MAX_FIXES = 60, MAX_MS = 45000;
+    watchRef.current = listenGps(
       (pos) => {
         const c = pos.coords;
-        fixes.push({ lon: c.longitude, lat: c.latitude, acc: c.accuracy, alt: c.altitude, altAcc: c.altitudeAccuracy });
+        gpsAllowed();
+        fixes.push({ lon: c.longitude, lat: c.latitude, acc: c.accuracy, alt: c.altitude, altAcc: c.altitudeAccuracy, speed: c.speed });
+        let moved = false;
+        if (isMoving(fixes)) { fixes = fixes.slice(-1); moved = true; }
         const r = combineFixes(fixes);
         setAccuracy(Math.round(r.hacc));
+        setReading((cur) => ({ used: r.used, moved: moved || (!!cur?.moved && fixes.length < 3) }));
         setDraft((d) => d && { ...d, geometry: { type: "Point", coordinates: [r.lon, r.lat] }, props: { ...withoutGps(d.props), ...gpsProps(r) } });
-        const settled = (fixes.length >= 3 && r.hacc <= GOOD) || fixes.length >= MAX_FIXES;
+        const settled = (fixes.length >= MIN_FIXES && r.hacc <= TARGET_M) || fixes.length >= MAX_FIXES;
         // Zoom to the first reading, and again when the reading has settled. In between the map is left alone, so it does not fight the person panning it.
-        if (fixes.length === 1 || settled) showOnMap(r.lon, r.lat, r.hacc);
+        if (fixes.length === 1 || moved || settled) showOnMap(r.lon, r.lat, r.hacc);
         if (settled) stopWatch();
       },
       (err) => {
@@ -144,7 +159,6 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         if (fixes.length) return;   // a reading was already taken; keep it
         toast(err.code === 1 ? t("gps.denied") : t("gps.noFix"), "error");
       },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
     timerRef.current = window.setTimeout(() => { if (fixes.length) { const r = combineFixes(fixes); showOnMap(r.lon, r.lat, r.hacc); stopWatch(); } }, MAX_MS);
   }
@@ -283,15 +297,32 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
           <>
             <h2>{t("collect.new", { name: form?.name.toLowerCase() ?? "" })}</h2>
             <span className="field-hint">{t("collect.step1")}{locating && accuracy != null ? ` ${t("collect.holdStill", { m: accuracy })}` : ""}</span>
+            {form?.geometry_type === "Point" && !locating && warm.on && (
+              <span className={`gps-ready is-${warm.accuracy == null ? "wait" : quality(warm.accuracy)}`} role="status">
+                <span className="gps-dot" aria-hidden="true" />{warm.accuracy == null ? t("gps.finding") : t("gps.ready", { m: warm.accuracy })}
+              </span>
+            )}
             {form?.geometry_type === "Point" && <Button variant="accent" busy={locating} onClick={capture}>{t("collect.capture")}</Button>}
             <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? t("collect.place") : t("collect.draw")}</Button>
             <Button variant="ghost" onClick={cancelDraft}>{t("cancel")}</Button>
           </>
         ) : form && (
           <>
-            <div className="row"><h2 className="grow">{t(draft.existing ? "collect.edit" : "collect.new", { name: form.name.toLowerCase() })}</h2>{accuracy != null && <span className="gps">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${draft.props.gps_elev_m} m elev.` : ""}{locating ? " · averaging…" : ""}</span>}</div>
+            <div className="row"><h2 className="grow">{t(draft.existing ? "collect.edit" : "collect.new", { name: form.name.toLowerCase() })}</h2>{accuracy != null && <span className={`gps is-${quality(accuracy)}`} role="status">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${t("gps.elev", { m: draft.props.gps_elev_m })}` : ""}{locating ? ` · ${t("gps.averaging")}${reading && reading.used > 1 ? ` (${t("gps.readings", { n: reading.used })})` : ""}` : ""}</span>}</div>
+            {locating && draft.geometry?.type === "Point" && (
+              <div className="gps-panel" aria-live="polite">
+                <span>{reading?.moved ? t("gps.moved") : t("gps.standStill")}</span>
+                <Button small onClick={stopWatch}>{t("gps.useNow")}</Button>
+              </div>
+            )}
+            {!locating && accuracy != null && accuracy > POOR_M && draft.props.gps_src === "gps" && (
+              <div className="gps-panel is-poor" role="note">
+                <span>{t("gps.tip")}</span>
+                <Button small onClick={capture}>{t("gps.again")}</Button>
+              </div>
+            )}
             <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
-            <div className="row" style={{ position: "sticky", bottom: 0, background: "#fff", padding: "8px 0" }}>
+            <div className="row" style={{ position: "sticky", bottom: 0, background: "var(--n-0)", padding: "8px 0" }}>
               <Button onClick={cancelDraft}>{t("cancel")}</Button>
               <Button className="grow" variant="accent" onClick={save}>{online ? t("collect.saveOnline") : t("collect.saveOffline")}</Button>
             </div>
