@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ApiError, loadApi, tokens } from "./api";
-import type { User } from "./types";
+import type { Session, User } from "./types";
 import { Loading } from "../components/ui";
 
 interface AuthState {
@@ -11,8 +11,10 @@ interface AuthState {
   logout(): Promise<void>;
   /** Read the signed-in person again, e.g. after their organization was renamed. */
   refresh(): Promise<void>;
+  /** Start a session someone else signed in for us (setting a password from an emailed link). */
+  adopt(s: Session): void;
 }
-const Ctx = createContext<AuthState>({ user: null, ready: false, login: async () => {}, register: async () => {}, logout: async () => {}, refresh: async () => {} });
+const Ctx = createContext<AuthState>({ user: null, ready: false, login: async () => {}, register: async () => {}, logout: async () => {}, refresh: async () => {}, adopt: () => {} });
 export const useAuth = () => useContext(Ctx);
 
 // The signed-in person is remembered on the device so the app still opens with no connection.
@@ -54,7 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = async () => {
     try { const u = await (await loadApi()).me(); setUser(u); cacheUser(u); } catch { /* keep what we have */ }
   };
-  return <Ctx.Provider value={{ user, ready, login, register, logout, refresh }}>{children}</Ctx.Provider>;
+  const adopt = (s: Session) => { setUser(s.user); cacheUser(s.user); };
+  return <Ctx.Provider value={{ user, ready, login, register, logout, refresh, adopt }}>{children}</Ctx.Provider>;
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -62,5 +65,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const loc = useLocation();
   if (!ready) return <Loading label="Checking your session…" />;
   if (!user) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
+  // signed in with a temporary password: nothing else until they choose their own
+  if (user.must_change_password && loc.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   return <>{children}</>;
 }

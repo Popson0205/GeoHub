@@ -5,7 +5,7 @@ import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -23,7 +23,7 @@ interface State {
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
   audit?: (AuditEvent & { project_id: string })[];
-  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"] };
+  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null };
   orgMembers?: OrgMember[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
@@ -32,6 +32,11 @@ type MockFeat = GeoFeature & { map_id: string; created_by: string; author: strin
 const KIND_NAME = { point: "point", line: "line", area: "polygon" } as const;
 const GEOM_KIND = (g: Geometry): "point" | "line" | "area" => (g.type === "Point" ? "point" : g.type === "LineString" ? "line" : "area");
 
+const PLAN_NAMES: Record<string, string> = { individual: "Individual", standard: "Organization Standard", advanced: "Organization Advanced", custom: "Custom" };
+const PLAN_CAPS: Record<string, Org["caps"]> = {
+  individual: { seats: 1, collectors: 5, viewers: 5 }, standard: { seats: 10, collectors: 50, viewers: 50 },
+  advanced: { seats: 30, collectors: 300, viewers: null }, custom: { seats: null, collectors: null, viewers: null },
+};
 const KEY = "geohub.mock.v1";
 const wait = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,12 +64,15 @@ export class MockApi implements Api {
   private get orgState() {
     if (!this.s.org) {
       const day = 86400000, at = (d: number) => new Date(Date.now() - d * day).toISOString();
-      this.s.org = { id: "org1", name: "Osogbo Field Team", slug: "osogbo-field-team", plan: "free", limits: {} };
+      const y = new Date().getFullYear();
+      this.s.org = { id: "org1", name: "Osogbo Field Team", slug: "osogbo-field-team", plan: "standard", limits: {},
+        subscription_starts: `${y}-01-15`, subscription_ends: `${y + 1}-01-14` };
       this.s.orgMembers = [
         { id: DEMO_USER.id, user_id: DEMO_USER.id, email: DEMO_USER.email, name: DEMO_USER.name, role: "owner", status: "active", joined_at: at(30) },
         { id: "u-ada", user_id: "u-ada", email: "ada@example.com", name: "Ada Okafor", role: "admin", status: "active", joined_at: at(20) },
         { id: "u-musa", user_id: "u-musa", email: "musa@example.com", name: "Musa Bello", role: "member", status: "active", joined_at: at(18) },
-        { id: "u-tolu", user_id: "u-tolu", email: "tolu@example.com", name: "Tolu Adeyemi", role: "member", status: "active", joined_at: at(18) },
+        { id: "u-tolu", user_id: "u-tolu", email: "tolu@example.com", name: "Tolu Adeyemi", role: "collector", status: "active", joined_at: at(18) },
+        { id: "u-femi", user_id: "u-femi", email: "femi@example.com", name: "Femi Ojo", role: "viewer", status: "active", joined_at: at(9) },
         { id: "inv-1", user_id: null, email: "kemi@example.com", name: null, role: "member", status: "invited", joined_at: at(2) },
       ];
     }
@@ -73,14 +81,18 @@ export class MockApi implements Api {
   private me_(): User {
     const { org, members } = this.orgState;
     const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role } };
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan }, must_change_password: false };
   }
   async getOrg(): Promise<Org> {
     await wait(); this.auth();
     const { org, members } = this.orgState;
     const me = this.me_().org!;
-    return { ...org, role: me.role, single_org: false,
-      usage: { seats: members.length, projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
+    const kind = (r: OrgRole) => (r === "collector" ? "collectors" : r === "viewer" ? "viewers" : "seats");
+    const count = (k: string) => members.filter((m) => kind(m.role) === k).length;
+    return { ...org, role: me.role, single_org: false, plan_name: PLAN_NAMES[org.plan] ?? org.plan,
+      caps: { ...(PLAN_CAPS[org.plan] ?? PLAN_CAPS.individual), ...org.limits } as Org["caps"],
+      usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"),
+        projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
   }
   private orgAdmin() { const r = this.me_().org!.role; if (r === "member") throw new ApiError(403, "This needs an organization admin."); return r; }
   async renameOrg(name: string) { await wait(); this.auth(); this.orgAdmin(); this.orgState.org.name = name.trim(); this.save(); return this.getOrg(); }
@@ -124,6 +136,38 @@ export class MockApi implements Api {
     const i = members.findIndex((x) => x.id === invitationId && x.status === "invited");
     if (i < 0) throw new ApiError(404, "Invitation not found.");
     members.splice(i, 1); this.save();
+  }
+  async createAccount(input: AccountInput): Promise<AccountResult> {
+    await wait(); this.auth();
+    if (this.orgAdmin() !== "owner" && input.role === "admin") throw new ApiError(403, "Only an owner can add administrators.");
+    const { members } = this.orgState;
+    const e = input.email.trim().toLowerCase();
+    if (members.some((m) => m.email === e)) throw new ApiError(409, "That person is already in your organization.");
+    const o = await this.getOrg();
+    const k = input.role === "collector" ? "collectors" : input.role === "viewer" ? "viewers" : "seats";
+    const cap = o.caps[k];
+    if (cap != null && o.usage[k] >= cap) throw new ApiError(402, `Your plan (${o.plan_name}) includes ${cap} ${k === "seats" ? "team seats" : k === "collectors" ? "field collectors" : "viewers"}, and all are in use. Remove someone first, or contact GeoEstate to add more.`);
+    const id = uuid();
+    const m: OrgMember = { id, user_id: id, email: e, name: input.name.trim(), role: input.role, status: "active", joined_at: new Date().toISOString() };
+    members.push(m); this.save();
+    const temp = input.delivery === "temporary" ? "Kp7d-Qm3x-Ta9e" : null;
+    return { member: m, temporary_password: temp, email_sent: !temp };
+  }
+  async sendSignInLink(userId: string) { await wait(); this.auth(); this.orgAdmin(); if (!this.orgState.members.some((m) => m.user_id === userId)) throw new ApiError(404, "That person is not in your organization."); }
+  async passwordLink(token: string): Promise<PasswordLink> {
+    await wait();
+    if (token !== "demo-link") throw new ApiError(404, "This link is not valid. Ask for a new one.");
+    return { email: DEMO_USER.email, name: DEMO_USER.name, purpose: "set", org_name: this.orgState.org.name };
+  }
+  async setPassword(token: string, _password: string): Promise<Session> {
+    await this.passwordLink(token);
+    return this.login(DEMO_USER.email, "demo");
+  }
+  async forgotPassword(_email: string) { await wait(); }
+  async changePassword(current: string, next: string) {
+    await wait(); this.auth();
+    if (current !== "demo") throw new ApiError(422, "The current password is not right.", { current_password: "not right" });
+    if (next.length < 8) throw new ApiError(422, "Use at least 8 characters.", { new_password: "too short" });
   }
   async checkEmail(): Promise<EmailCheck> {
     await wait(600); this.auth(); this.orgAdmin();

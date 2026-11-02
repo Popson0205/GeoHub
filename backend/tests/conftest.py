@@ -56,14 +56,27 @@ def uid() -> str:
     return uuid.uuid4().hex[:10]
 
 
+def set_plan(org_id, plan, **limits):
+    """Put an organization on a plan (as GeoEstate does by hand), with optional one-off caps."""
+    import json
+    import psycopg
+    with psycopg.connect(settings.database_url, autocommit=True) as c:
+        c.execute("UPDATE organizations SET plan = %s, limits = %s WHERE id = %s", (plan, json.dumps(limits), org_id))
+
+
 class Actor:
-    def __init__(self, client, name="Tester"):
+    def __init__(self, client, name="Tester", plan="advanced"):
+        """A signed-up account. Sign-up gives the free Individual plan; most tests act as a team, so the account's
+        organization is moved to `plan` (pass plan=None to keep Individual)."""
         self.c, self.email, self.password = client, f"{uid()}@example.com", "correct-horse-battery"
         r = client.post("/auth/register", json={"email": self.email, "password": self.password, "name": name})
         assert r.status_code == 201, r.text
         self.tokens = r.json()
         self.id = self.tokens["user"]["id"]
+        self.org_id = self.tokens["user"]["org"]["id"]
         self.h = {"Authorization": f"Bearer {self.tokens['access_token']}"}
+        if plan:
+            set_plan(self.org_id, plan)
 
     def get(self, url, **kw): return self.c.get(url, headers=self.h, **kw)
     def post(self, url, **kw): return self.c.post(url, headers=self.h, **kw)
@@ -74,8 +87,8 @@ class Actor:
 
 @pytest.fixture
 def actor(client):
-    def make(name="Tester"):
-        return Actor(client, name)
+    def make(name="Tester", plan="advanced"):
+        return Actor(client, name, plan)
     return make
 
 

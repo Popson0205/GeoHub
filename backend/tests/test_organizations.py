@@ -24,7 +24,9 @@ def test_sign_up_creates_an_organization_the_person_owns(client):
     me = client.get("/me", headers=h).json()
     assert me["org"]["id"] == org["id"]
     o = client.get("/org", headers=h).json()
-    assert o["usage"] == {"seats": 1, "projects": 0, "records": 0} and o["limits"] == {} and o["single_org"] is False
+    assert o["usage"] == {"seats": 1, "collectors": 0, "viewers": 0, "projects": 0, "records": 0}
+    assert o["limits"] == {} and o["single_org"] is False and o["plan"] == "individual"
+    assert o["caps"] == {"seats": 1, "collectors": 5, "viewers": 5}
 
 
 def test_invitations_people_and_roles(actor, client):

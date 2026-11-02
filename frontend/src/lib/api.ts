@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -31,6 +31,15 @@ export interface Api {
   leaveOrg(): Promise<void>;
   /** Send yourself a test email and get each step's result (organization admins). */
   checkEmail(): Promise<EmailCheck>;
+  /** An admin creates someone's account; they get a set-password email, or a temporary password returned once. */
+  createAccount(input: AccountInput): Promise<AccountResult>;
+  sendSignInLink(userId: string): Promise<void>;
+  // ---- passwords
+  passwordLink(token: string): Promise<PasswordLink>;
+  /** Set a password from a one-time link; signs in. */
+  setPassword(token: string, password: string): Promise<Session>;
+  forgotPassword(email: string): Promise<void>;
+  changePassword(current: string, next: string): Promise<void>;
   logout(): Promise<void>;
   me(): Promise<User>;
 
@@ -628,6 +637,16 @@ class HttpApi implements Api {
   async cancelOrgInvite(invitationId: string) { await this.req("DELETE", `/org/invitations/${invitationId}`); }
   async leaveOrg() { await this.req("POST", "/org/leave"); }
   checkEmail() { return this.req<EmailCheck>("POST", "/org/email-check"); }
+  createAccount(input: AccountInput) { return this.req<AccountResult>("POST", "/org/accounts", input); }
+  async sendSignInLink(userId: string) { await this.req("POST", `/org/members/${userId}/send-link`); }
+  passwordLink(token: string) { return this.req<PasswordLink>("GET", `/auth/password-link/${encodeURIComponent(token)}`); }
+  async setPassword(token: string, password: string) {
+    const s = await this.req<Session>("POST", "/auth/set-password", { token, password });
+    tokens.set(s);
+    return s;
+  }
+  async forgotPassword(email: string) { await this.req("POST", "/auth/forgot-password", { email }); }
+  async changePassword(current: string, next: string) { await this.req("POST", "/auth/change-password", { current_password: current, new_password: next }); }
   async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
     const q = new URLSearchParams({ limit: "50" });
     if (opts.kind) q.set("kind", opts.kind);

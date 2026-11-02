@@ -293,7 +293,7 @@ async def list_maps(user=Depends(current_user), conn=Depends(get_conn)):
 
 @router.post("/maps", response_model=MapOut, status_code=201)
 async def create_map(body: MapIn, user=Depends(current_user), conn=Depends(get_conn)):
-    org = await orgs.require_membership(conn, user)
+    org = await orgs.require_builder(conn, user)
     cur = await conn.execute("INSERT INTO workspace_maps (owner_id, name, description, org_id) VALUES (%s, %s, %s, %s) RETURNING id",
                              (user["id"], body.name.strip(), body.description, org["org_id"]))
     return await _map_out(conn, (await cur.fetchone())["id"], user["id"])
@@ -526,6 +526,7 @@ async def list_members(map_id: UUID, user=Depends(current_user), conn=Depends(ge
 @router.patch("/maps/{map_id}/members/{user_id}", response_model=MemberOut)
 async def change_member(map_id: UUID, user_id: UUID, body: MemberPatch, user=Depends(current_user), conn=Depends(get_conn)):
     await require_map(conn, map_id, user["id"], "owner")
+    await orgs.check_map_role(conn, user_id, body.role)
     cur = await conn.execute("UPDATE map_members SET role = %s WHERE map_id = %s AND user_id = %s RETURNING user_id",
                              (body.role, map_id, user_id))
     if not await cur.fetchone():
@@ -573,6 +574,7 @@ async def join_map(code: str, user=Depends(current_user), conn=Depends(get_conn)
     m = await _by_code(conn, code, user["id"])
     if m["campaign_status"] == "ended":
         raise Problem(409, "This campaign has ended.", code="campaign_closed")
+    await orgs.check_map_role(conn, user["id"], "contributor")
     await conn.execute("INSERT INTO map_members (map_id, user_id, role) SELECT %s, %s, 'contributor' "
                        "WHERE NOT EXISTS (SELECT 1 FROM workspace_maps WHERE id = %s AND owner_id = %s) "
                        "ON CONFLICT DO NOTHING", (m["id"], user["id"], m["id"], user["id"]))

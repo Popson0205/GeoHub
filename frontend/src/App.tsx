@@ -9,6 +9,9 @@ import { isCollectorApp } from "./lib/pwa";
 // Each page loads when it is first opened, so the first visit downloads only what that page needs.
 // The service worker still caches every file, so the installed app works offline as before.
 const LoginPage = lazy(() => import("./pages/LoginPage"));
+const SetPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.SetPasswordPage })));
+const ForgotPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ForgotPasswordPage })));
+const ChangePasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ChangePasswordPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
 const EditorPage = lazy(() => import("./pages/EditorPage"));
 const FormsPage = lazy(() => import("./pages/FormsPage"));
@@ -78,6 +81,9 @@ function CollectorRoutes() {
   return (
     <Page><Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
@@ -91,6 +97,9 @@ export default function App() {
   return (
     <Page><Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
       {/* A dashboard shared by link: read-only, no sign-in */}

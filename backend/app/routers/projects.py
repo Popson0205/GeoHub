@@ -35,7 +35,7 @@ PROJECT_SQL = (
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)
 async def create_project(body: ProjectIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
-    org = await orgs.require_membership(conn, user)
+    org = await orgs.require_builder(conn, user)
     await orgs.check_limit(conn, org["org_id"], "projects")
     cur = await conn.execute("INSERT INTO projects (name, description, created_by, org_id) VALUES (%s, %s, %s, %s) RETURNING id",
                              (body.name, body.description, user["id"], org["org_id"]))
@@ -136,10 +136,12 @@ async def add_member(project_id: UUID, body: MemberIn, request: Request, user=De
         cur = await conn.execute("SELECT 1 FROM members WHERE project_id = %s AND user_id = %s", (project_id, target["id"]))
         if await cur.fetchone():
             raise Problem(409, "That person is already a member.", code="already_member")
-        # projects are shared within an organization; a fresh sign-up is brought into it
-        if project_org and await orgs.bring_into(conn, target["id"], project_org):
+        # projects are shared within an organization; a fresh sign-up is brought into it, in the matching kind
+        join_as = {"collector": "collector", "viewer": "viewer"}.get(body.role, "member")
+        if project_org and await orgs.bring_into(conn, target["id"], project_org, join_as):
             await audit(conn, "org.member_join", actor_id=user["id"], project_id=project_id, target_type="user",
                         target_id=target["id"], ip=ip, via="project")
+        await orgs.check_project_role(conn, target["id"], body.role)
         await conn.execute("INSERT INTO members (project_id, user_id, role, assigned_area) "
                            "VALUES (%s, %s, %s, geom_from_json(%s))", (project_id, target["id"], body.role, area))
         await audit(conn, "member.add", actor_id=user["id"], project_id=project_id, target_type="user",
@@ -206,6 +208,7 @@ async def update_member(project_id: UUID, user_id: UUID, body: MemberPatch, requ
         raise Problem(409, "A project needs at least one owner.", code="last_owner")
     area = await _area(conn, body.assigned_area)
     if body.role:
+        await orgs.check_project_role(conn, user_id, body.role)
         await conn.execute("UPDATE members SET role = %s WHERE project_id = %s AND user_id = %s",
                            (body.role, project_id, user_id))
         await audit(conn, "member.role_change", actor_id=user["id"], project_id=project_id, target_type="user",

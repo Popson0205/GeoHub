@@ -11,19 +11,31 @@ export type GeometryType = Geometry["type"];
 export const GEOMETRY_LABEL: Record<GeometryType, string> = { Point: "point", LineString: "line", Polygon: "polygon" };
 
 export type Role = "owner" | "admin" | "collector" | "viewer";
-export type OrgRole = "owner" | "admin" | "member";
+/** Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own counts. */
+export type OrgRole = "owner" | "admin" | "member" | "collector" | "viewer";
+export type AddableRole = Exclude<OrgRole, "owner">;
+export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
-export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole }
-export interface User { id: string; email: string; name: string; org?: OrgBrief | null }
-/** Plan caps; a missing key means unlimited. */
-export interface OrgLimits { seats?: number; projects?: number; records?: number }
+export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string }
+export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean }
+/** One-off caps set by hand; a missing key means the plan's number. */
+export interface OrgLimits { seats?: number; collectors?: number; viewers?: number; projects?: number; records?: number }
+export type PeopleKind = "seats" | "collectors" | "viewers";
 export interface Org extends OrgBrief {
-  plan: string;
+  plan: PlanId | string;
+  plan_name: string;
+  /** How many people of each kind the plan includes; null = unlimited. */
+  caps: Record<PeopleKind, number | null>;
   limits: OrgLimits;
-  usage: { seats: number; projects: number; records: number };
+  usage: Record<PeopleKind, number> & { projects: number; records: number };
+  subscription_starts?: string | null;
+  subscription_ends?: string | null;
   /** This deployment is a private copy for one organization. */
   single_org: boolean;
 }
+export interface AccountInput { name: string; email: string; role: AddableRole; delivery: "email" | "temporary"; projects?: { project_id: string; role?: "admin" | "collector" | "viewer" }[] }
+export interface AccountResult { member: OrgMember; temporary_password: string | null; email_sent: boolean }
+export interface PasswordLink { email: string; name: string; purpose: "set" | "reset"; org_name?: string | null }
 /** The result of the email check: each step and whether it passed. */
 export interface EmailCheck { ok: boolean; provider: string; steps: { status: "ok" | "warn" | "fail" | "info"; name: string; detail: string }[] }
 export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }

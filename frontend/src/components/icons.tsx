@@ -45,6 +45,7 @@ const ICONS = {
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" /></>,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   inbox: <><path d="M3 13h5l1.5 3h5l1.5-3h5" /><path d="M5.5 5.5h13L21 13v5a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18v-5z" /></>,
+  key: <><circle cx="8" cy="14" r="4" /><path d="M11 11l8-8" /><path d="M16 6l3 3" /><path d="M14 8l2 2" /></>,
   link: <><path d="M10 14a4.5 4.5 0 006.4 0l3-3a4.5 4.5 0 00-6.4-6.4L11.5 6" /><path d="M14 10a4.5 4.5 0 00-6.4 0l-3 3a4.5 4.5 0 006.4 6.4l1.5-1.4" /></>,
 } satisfies Record<string, ReactNode>;
 export type IconName = keyof typeof ICONS;
