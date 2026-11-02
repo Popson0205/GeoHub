@@ -21,6 +21,8 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   </ConfirmProvider></ToastProvider></AuthProvider></MemoryRouter>);
   const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 400)); });
   const text = () => document.body.textContent ?? "";
+  // wait for something to happen, rather than a fixed time (CI machines are slower)
+  const until = async (cond: () => boolean, ms = 5000) => { for (let t = 0; t < ms && !cond(); t += 100) await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); };
 
   mount();
   await screen.findByRole("heading", { name: "Osogbo Field Team", level: 1 }, { timeout: 4000 });
@@ -35,7 +37,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "Bola@Example.com" } });
   ok(/49 left/.test(screen.getByRole("radio", { name: /Field collector/ }).closest("label")?.textContent ?? ""), "each role says how many places of its kind are left");
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add person" })); });
-  await settle();
+  await until(() => /bola@example.com has been emailed/.test(text()));
   ok(/bola@example.com has been emailed a link to set their password/.test(text()), "an emailed link is the default way in");
   ok(api.s.orgMembers.some((m: any) => m.email === "bola@example.com" && m.role === "collector"), "the account is made at once, as a field collector");
 
@@ -44,7 +46,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "desk@example.com" } });
   await act(async () => { fireEvent.click(screen.getByRole("radio", { name: /Viewer/ })); fireEvent.click(screen.getByRole("radio", { name: /Give them a temporary password/ })); });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add person" })); });
-  await settle();
+  await until(() => /Kp7d-Qm3x-Ta9e/.test(text()));
   ok(/Kp7d-Qm3x-Ta9e/.test(text()) && /will not be shown again/.test(text()), "a temporary password is shown once, to hand over");
 
   // send a fresh sign-in link
