@@ -63,7 +63,8 @@ async def create_org(conn, name: str, owner_id, plan: str = "individual") -> dic
 async def membership(conn, user_id) -> dict | None:
     """The person's organization and their role in it: {org_id, role, name, slug, plan, limits}."""
     cur = await conn.execute(
-        "SELECT om.org_id, om.role, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends "
+        "SELECT om.org_id, om.role, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, "
+        "  o.brand_color, o.logo_updated_at, o.email_sender_name, o.email_reply_to "
         "FROM org_members om "
         "JOIN organizations o ON o.id = om.org_id WHERE om.user_id = %s", (user_id,))
     return await cur.fetchone()
@@ -196,7 +197,9 @@ async def join_on_signup(conn, user: dict, org_name: str | None, email_verified:
 
 
 def org_out(m: dict | None) -> dict | None:
-    return {"id": m["org_id"], "name": m["name"], "slug": m["slug"], "role": m["role"], "plan": m["plan"]} if m else None
+    from .branding import brief
+    return {"id": m["org_id"], "name": m["name"], "slug": m["slug"], "role": m["role"], "plan": m["plan"],
+            "brand": brief(m)} if m else None
 
 
 # ---------- what field collectors and viewers may be given ----------

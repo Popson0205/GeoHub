@@ -11,6 +11,7 @@ import logging
 import re
 import smtplib
 from email.message import EmailMessage
+from email.utils import formataddr
 
 import anyio
 import httpx
@@ -36,39 +37,64 @@ def parse_address(value: str) -> tuple[str, str]:
     return (m.group(1).strip().strip('"'), m.group(2)) if m else ("", value.strip())
 
 
-def render_html(subject: str, body: str, action: tuple[str, str] | None) -> str:
-    """The plain text as HTML: paragraphs, links made clickable, and the action as a button."""
+def render_html(subject: str, body: str, action: tuple[str, str] | None, brand: dict | None = None) -> str:
+    """The plain text as HTML: paragraphs, links made clickable, and the action as a button. With an organization's
+    `brand`, its logo or name heads the email and its colour is used."""
+    color = html.escape((brand or {}).get("color") or "#17634c", quote=True)
     def para(p: str) -> str:
         t = html.escape(p).replace("\n", "<br>")
-        t = re.sub(r"(https?://[^\s<]+)", r'<a href="\1" style="color:#17634c">\1</a>', t)
+        t = re.sub(r"(https?://[^\s<]+)", r'<a href="\1" style="color:' + color + r'">\1</a>', t)
         return f'<p style="margin:0 0 14px">{t}</p>'
     paras = "".join(para(p) for p in body.strip().split("\n\n") if p.strip())
     button = ""
     if action:
         label, url = action
         button = (f'<p style="margin:22px 0"><a href="{html.escape(url, quote=True)}" style="display:inline-block;'
-                  'background:#17634c;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;'
+                  f'background:{color};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;'
                   f'border-radius:8px">{html.escape(label)}</a></p>')
+    head = '<div style="font-weight:700;font-size:18px;color:#17634c;margin-bottom:18px">Geohub</div>'
+    foot = "You received this because someone added your email address on Geohub."
+    if brand:
+        name = html.escape(brand.get("name") or "")
+        head = (f'<div style="margin-bottom:18px"><img src="{html.escape(brand["logo_url"], quote=True)}" alt="{name}" '
+                'style="max-height:48px;max-width:200px"></div>' if brand.get("logo_url") else
+                f'<div style="font-weight:700;font-size:18px;color:{color};margin-bottom:18px">{name}</div>')
+        foot = f"Sent by Geohub for {name}. You received this because your email was added there."
     return (
         '<!doctype html><html><body style="margin:0;padding:24px;background:#f4f5f2;'
         'font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#18201d">'
         '<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e1e5df;border-radius:12px;padding:28px">'
-        '<div style="font-weight:700;font-size:18px;color:#17634c;margin-bottom:18px">Geohub</div>'
+        + head +
         f'<h1 style="font-size:20px;line-height:1.3;margin:0 0 16px">{html.escape(subject)}</h1>'
         f'<div style="font-size:15px;line-height:1.55">{paras}{button}</div>'
         '</div><p style="max-width:520px;margin:14px auto 0;font-size:12px;color:#6b756f;text-align:center">'
-        'You received this because someone added your email address on Geohub.</p></body></html>')
+        f'{foot}</p></body></html>')
 
 
 def _text(body: str, action: tuple[str, str] | None) -> str:
     return body.strip() + (f"\n\n{action[0]}: {action[1]}" if action else "") + "\n"
 
 
-async def _resend(to: str, subject: str, body: str, action, key: str | None) -> None:
-    payload = {"from": settings.mail_from, "to": [to], "subject": subject,
-               "text": _text(body, action), "html": render_html(subject, body, action)}
-    if settings.mail_reply_to:
-        payload["reply_to"] = settings.mail_reply_to
+def _sender(brand: dict | None) -> tuple[str, str, str]:
+    """(display name, address, reply-to). The address is always MAIL_FROM (the verified one); an organization may
+    choose the name people see and where replies go."""
+    name, email = parse_address(settings.mail_from)
+    if brand and brand.get("sender_name"):
+        name = brand["sender_name"]
+    reply = (brand or {}).get("reply_to") or settings.mail_reply_to
+    return name, email, reply
+
+
+def _from_header(name: str, email: str) -> str:
+    return formataddr((name, email)) if name else email
+
+
+async def _resend(to: str, subject: str, body: str, action, key: str | None, brand: dict | None = None) -> None:
+    name, email, reply = _sender(brand)
+    payload = {"from": _from_header(name, email), "to": [to], "subject": subject,
+               "text": _text(body, action), "html": render_html(subject, body, action, brand)}
+    if reply:
+        payload["reply_to"] = reply
     headers = {"Authorization": f"Bearer {settings.resend_api_key}"}
     if key:
         headers["Idempotency-Key"] = key[:256]       # a retry never sends the same email twice (kept 24 h)
@@ -84,12 +110,12 @@ async def _resend(to: str, subject: str, body: str, action, key: str | None) -> 
             raise RuntimeError(f"Resend refused the email ({r.status_code}): {r.text[:300]}")
 
 
-async def _brevo(to: str, subject: str, body: str, action, key: str | None) -> None:
-    name, email = parse_address(settings.mail_from)
+async def _brevo(to: str, subject: str, body: str, action, key: str | None, brand: dict | None = None) -> None:
+    name, email, reply = _sender(brand)
     payload = {"sender": {"email": email, **({"name": name} if name else {})}, "to": [{"email": to}], "subject": subject,
-               "htmlContent": render_html(subject, body, action), "textContent": _text(body, action)}
-    if settings.mail_reply_to:
-        payload["replyTo"] = {"email": parse_address(settings.mail_reply_to)[1]}
+               "htmlContent": render_html(subject, body, action, brand), "textContent": _text(body, action)}
+    if reply:
+        payload["replyTo"] = {"email": parse_address(reply)[1]}
     if key:
         payload["headers"] = {"X-Mailin-custom": key[:200]}     # shows in Brevo's logs and webhooks, to trace an email
     headers = {"api-key": settings.brevo_api_key, "accept": "application/json"}
@@ -105,13 +131,14 @@ async def _brevo(to: str, subject: str, body: str, action, key: str | None) -> N
             raise RuntimeError(f"Brevo refused the email ({r.status_code}): {r.text[:300]}")
 
 
-def _smtp(to: str, subject: str, body: str, action) -> None:
+def _smtp(to: str, subject: str, body: str, action, brand: dict | None = None) -> None:
+    name, email, reply = _sender(brand)
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = settings.mail_from, to, subject
-    if settings.mail_reply_to:
-        msg["Reply-To"] = settings.mail_reply_to
+    msg["From"], msg["To"], msg["Subject"] = _from_header(name, email), to, subject
+    if reply:
+        msg["Reply-To"] = reply
     msg.set_content(_text(body, action))
-    msg.add_alternative(render_html(subject, body, action), subtype="html")
+    msg.add_alternative(render_html(subject, body, action, brand), subtype="html")
     if settings.smtp_port == 465:
         with smtplib.SMTP_SSL(settings.smtp_host, 465, timeout=15) as s:
             if settings.smtp_user:
@@ -126,8 +153,9 @@ def _smtp(to: str, subject: str, body: str, action) -> None:
 
 
 async def send_email(to: str, subject: str, body: str, *, action: tuple[str, str] | None = None,
-                     key: str | None = None, raise_errors: bool = False) -> bool:
-    """Send one email. `action` is (button label, URL); `key` stops a retried request sending it twice.
+                     key: str | None = None, raise_errors: bool = False, brand: dict | None = None) -> bool:
+    """Send one email. `action` is (button label, URL); `key` stops a retried request sending it twice; `brand`
+    (branding.for_email) sends it in an organization's name and look.
     Returns whether it was sent. Never raises unless `raise_errors` (used by the test-email command)."""
     how = backend()
     if how == "log":
@@ -136,11 +164,11 @@ async def send_email(to: str, subject: str, body: str, *, action: tuple[str, str
         return False
     try:
         if how == "brevo":
-            await _brevo(to, subject, body, action, key)
+            await _brevo(to, subject, body, action, key, brand)
         elif how == "resend":
-            await _resend(to, subject, body, action, key)
+            await _resend(to, subject, body, action, key, brand)
         else:
-            await anyio.to_thread.run_sync(_smtp, to, subject, body, action)
+            await anyio.to_thread.run_sync(_smtp, to, subject, body, action, brand)
         return True
     except Exception:  # noqa: BLE001
         log.exception("failed to send email to %s via %s", to, how)

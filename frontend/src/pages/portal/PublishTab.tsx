@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { Button, ErrorState, Loading, useToast } from "../../components/ui";
 import { loadApi } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
-import type { GeoFeature, Job, License, WorkMap } from "../../lib/types";
+import type { DatasetVisibility, GeoFeature, Job, License, WorkMap } from "../../lib/types";
+import VisibilityField, { VISIBILITY_WORDS } from "../../components/VisibilityField";
 import { fmtDate, KIND_LABEL, kindOf, plural, slugify, statusOf } from "./shared";
 
 type Kind = "point" | "line" | "area";
@@ -33,7 +34,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
   const [slugEdited, setSlugEdited] = useState(false);
   const [description, setDescription] = useState(map.description);
   const [license, setLicense] = useState<License>("CC BY 4.0");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [visibility, setVisibility] = useState<DatasetVisibility>("public");
   const [tags, setTags] = useState("");
   const [credit, setCredit] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -50,7 +51,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
     setBusy(true);
     try {
       const api = await loadApi();
-      const r = await api.publishMap(map.id, { title: title.trim(), slug, description, license, visibility: license === "Private" ? "private" : visibility, geometry_type: kind, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), credit_contributors: credit });
+      const r = await api.publishMap(map.id, { title: title.trim(), slug, description, license, visibility: license === "Private" && visibility === "public" ? "private" : visibility, geometry_type: kind, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), credit_contributors: credit });
       const job = await waitFor(r.job);
       if (job.status === "failed") throw new Error(job.error || "Publishing failed.");
       if (job.status !== "done") throw new Error("Publishing is taking a while. Check the list below in a minute.");
@@ -97,7 +98,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
         <div className="field"><label htmlFor="pdesc">Description</label><textarea id="pdesc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></div>
         <div className="two-col">
           <div className="field"><label htmlFor="plic">Licence</label><select id="plic" value={license} onChange={(e) => setLicense(e.target.value as License)}>{LICENSES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}</select></div>
-          <div className="field"><label htmlFor="pvis">Who can see it</label><select id="pvis" value={license === "Private" ? "private" : visibility} disabled={license === "Private"} onChange={(e) => setVisibility(e.target.value as "public" | "private")}><option value="public">Everyone</option><option value="private">Map members only</option></select></div>
+          <VisibilityField id="pvis" value={visibility} onChange={setVisibility} license={license} membersLabel="Map members only" />
         </div>
         <div className="field"><label htmlFor="ptags">Tags</label><input id="ptags" value={tags} placeholder="buildings, osogbo" onChange={(e) => setTags(e.target.value)} /><span className="field-hint">Separate with commas.</span></div>
         <label className="check"><input type="checkbox" checked={credit} onChange={(e) => setCredit(e.target.checked)} />Credit contributors by name on the dataset page</label>
@@ -115,7 +116,7 @@ export default function PublishTab({ map, features }: { map: WorkMap; features: 
           <ul className="plain-list">
             {published.data.map((d) => (
               <li key={d.slug} className="row" style={{ flexWrap: "wrap" }}>
-                <div className="grow"><Link to={`/hub/${d.slug}`}><strong>{d.title}</strong></Link><div className="field-hint">Version {d.latest_version} · {plural(d.feature_count, "feature")} · {fmtDate(d.updated_at)} · {d.visibility === "private" ? "members only" : "public"}</div></div>
+                <div className="grow"><Link to={`/hub/${d.slug}`}><strong>{d.title}</strong></Link><div className="field-hint">Version {d.latest_version} · {plural(d.feature_count, "feature")} · {fmtDate(d.updated_at)} · {VISIBILITY_WORDS[d.visibility ?? "public"]}</div></div>
                 <Button small onClick={() => newVersion(d.slug)}>Publish new version</Button>
               </li>
             ))}

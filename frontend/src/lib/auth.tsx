@@ -1,3 +1,4 @@
+import { applyBrand } from "./brand";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ApiError, loadApi, tokens } from "./api";
@@ -57,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { const u = await (await loadApi()).me(); setUser(u); cacheUser(u); } catch { /* keep what we have */ }
   };
   const adopt = (s: Session) => { setUser(s.user); cacheUser(s.user); };
+  // the organization's colour, for everyone in it
+  const brandColor = user?.org?.brand?.color ?? null;
+  useEffect(() => { applyBrand(brandColor ? { color: brandColor, logo_url: null } : null); }, [brandColor]);
   return <Ctx.Provider value={{ user, ready, login, register, logout, refresh, adopt }}>{children}</Ctx.Provider>;
 }
 

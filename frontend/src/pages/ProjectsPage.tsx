@@ -5,7 +5,8 @@ import { Icon } from "../components/icons";
 import { Button, CardSkeletons, EmptyState, ErrorState, MoreMenu, PageHeader, useToast, type MoreMenuItem } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
-import type { License, Project } from "../lib/types";
+import type { DatasetVisibility, License, Project } from "../lib/types";
+import VisibilityField from "../components/VisibilityField";
 
 export default function ProjectsPage() {
   const toast = useToast();
@@ -95,6 +96,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
   const [title, setTitle] = useState(project.name);
   const [description, setDescription] = useState("");
   const [license, setLicense] = useState<License>("ODbL");
+  const [visibility, setVisibility] = useState<DatasetVisibility>("public");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const { data: forms, loading: formsLoading } = useAsync((api) => api.listForms(project.id), [project.id]);
@@ -107,7 +109,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
     setBusy(true);
     try {
       const api = await loadApi();
-      const { dataset, job: first } = await api.publishDataset(project.id, { form_id: formId, title, description, license });
+      const { dataset, job: first } = await api.publishDataset(project.id, { form_id: formId, title, description, license, visibility });
       // The snapshot is built in the background. Wait for it, so we only say "published" when it really is.
       let job = first;
       for (let i = 0; i < 60 && (job.status === "queued" || job.status === "running"); i++) {
@@ -141,6 +143,7 @@ export function PublishPanel({ project, onClose }: { project: Project; onClose: 
           {(["ODbL", "CC BY 4.0", "CC0", "Private"] as License[]).map((l) => <option key={l}>{l}</option>)}
         </select>
       </div>
+      <VisibilityField id="pvis-project" value={visibility} onChange={setVisibility} license={license} membersLabel="This project's people only" />
       <div className="row"><Button type="submit" variant="primary" busy={busy} disabled={!formId}>Publish</Button><Button onClick={onClose}>Cancel</Button>{status && <span className="meta" role="status">{status}</span>}</div>
     </form>
   );

@@ -43,6 +43,7 @@ export default function Shell() {
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
         <Link className="brand" to="/"><BrandMark />Geohub</Link>
+        {user?.org?.brand?.logo_url && <span className="brand-org"><img src={user.org.brand.logo_url} alt={user.org.name} /></span>}
         <nav id="main-nav" className={`topnav${navOpen ? " is-open" : ""}`} aria-label="Main">
           {user && <NavLink to="/maps"><Icon name="navMap" size={18} />Web mapping</NavLink>}
           {user && <NavLink to="/collect"><Icon name="navCollect" size={18} />Data collection</NavLink>}

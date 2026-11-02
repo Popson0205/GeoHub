@@ -32,12 +32,18 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class OrgBrand(BaseModel):
+    color: str | None = Field(None, description="Main colour, #rrggbb, readable with white text")
+    logo_url: str | None = None
+
+
 class OrgBrief(BaseModel):
     id: UUID
     name: str
     slug: str
     role: Literal["owner", "admin", "member", "collector", "viewer"]
     plan: str = "individual"
+    brand: OrgBrand | None = Field(None, description="The organization's look, on Organization plans")
 
 
 class UserOut(BaseModel):
@@ -411,7 +417,9 @@ class DatasetIn(BaseModel):
     description: str = Field("", max_length=5000)
     license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] = "CC-BY-4.0"
     tags: list[str] = Field([], max_length=20)
-    visibility: Literal["private", "public"] = "private"
+    visibility: Literal["private", "organization", "public"] = Field(
+        "private", description="private: the project's people; organization: everyone in your organization (Organization "
+        "plans); public: anyone")
     statuses: list[Literal["submitted", "approved"]] = Field(
         ["approved"], min_length=1, description="Feature statuses included in snapshots")
 
@@ -421,7 +429,7 @@ class DatasetPatch(BaseModel):
     description: str | None = Field(None, max_length=5000)
     license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] | None = None
     tags: list[str] | None = Field(None, max_length=20)
-    visibility: Literal["private", "public"] | None = None
+    visibility: Literal["private", "organization", "public"] | None = None
 
 
 class NewVersionIn(BaseModel):
@@ -442,7 +450,7 @@ class DatasetSummary(BaseModel):
     description: str
     license: str
     tags: list[str]
-    visibility: Literal["private", "public"]
+    visibility: Literal["private", "organization", "public"]
     geometry_type: GeometryType
     latest_version: int
     feature_count: int
@@ -885,6 +893,20 @@ class OrgOut(BaseModel):
     subscription_starts: date | None = None
     subscription_ends: date | None = None
     single_org: bool = Field(description="This deployment is a private copy for one organization")
+    branding: "OrgBranding"
+
+
+class OrgBranding(BaseModel):
+    color: str | None = None
+    logo_url: str | None = None
+    sender_name: str | None = Field(None, description="The name the organization's emails come from")
+    reply_to: str | None = Field(None, description="Where replies to its emails go")
+
+
+class OrgBrandingPatch(BaseModel):
+    color: str | None = Field(None, description="#rrggbb; an empty string goes back to Geohub green")
+    sender_name: str | None = Field(None, max_length=80, description="Empty: Geohub")
+    reply_to: str | None = Field(None, max_length=200, description="Empty: none")
 
 
 class OrgPatch(BaseModel):
@@ -1049,3 +1071,6 @@ class OrgDomainIn(BaseModel):
 class OrgDomainPatch(BaseModel):
     auto_join: bool | None = None
     role: Literal["member", "collector", "viewer"] | None = None
+
+
+OrgOut.model_rebuild()

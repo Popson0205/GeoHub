@@ -130,6 +130,22 @@ Upgrading an existing deployment puts every existing account and all existing wo
 "My organization", owned by the earliest account and on the Advanced plan. Rename it and adjust roles on the
 Organization page.
 
+## Branding and private Data hub publishing (Organization plans)
+
+**Branding.** Organization admins set a logo, a colour and the email sender on the Organization page.
+- The **colour** replaces Geohub green for buttons, links and highlights, for everyone in the organization, in light
+  and dark themes. It is darkened when needed so white text on it reads (WCAG AA, 4.5:1); success colours stay green.
+- The **logo** (PNG, JPEG or WebP, up to 1 MB) is re-drawn as a PNG of at most 512 px, shown in the top bar and at the
+  top of the organization's emails, and served at `/orgs/{id}/logo` (public, as emails need it).
+- **Emails come from** sets the name people see in their inbox for the organization's emails (accounts, sign-in
+  links, invitations, domain joining); the address stays `MAIL_FROM`, so delivery is unaffected. **Replies go to**
+  sets their reply-to address.
+
+**Who can see a dataset.** When publishing to the Data hub (from a project or a map): **Everyone** (public),
+**Everyone in your organization** (Organization plans: listed, viewed and downloaded only by people signed in to
+it), or **the project's / map's people only**. A Private licence can be shared with the organization but never made
+public.
+
 ## Sign in with Google or Microsoft
 
 Every plan can sign in with Google or Microsoft. Each button appears once its two variables are set on the server.

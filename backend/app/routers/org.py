@@ -1,10 +1,11 @@
 """The caller's organization: its details, plan and usage, and its people."""
+import re
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 
-from .. import domains, orgs, ratelimit
+from .. import branding, domains, orgs, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -13,9 +14,15 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from .. import passwords
-from ..schemas import AccountIn, AccountOut, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from ..schemas import AccountIn, AccountOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
+public_router = APIRouter(tags=["organization"])
+
+
+async def _mail(conn, m: dict, to: str, subject: str, body: str, **kw) -> bool:
+    """An email sent for the organization: in its name and look when it has branding."""
+    return await send_email(to, subject, body, brand=await branding.for_email(conn, m["org_id"]), **kw)
 
 
 async def _out(conn, m: dict) -> dict:
@@ -23,7 +30,9 @@ async def _out(conn, m: dict) -> dict:
             "plan_name": orgs.PLAN_NAMES.get(m["plan"], m["plan"]), "caps": orgs.caps(m["plan"], m["limits"]),
             "limits": {k: int(v) for k, v in (m["limits"] or {}).items() if k in orgs.LIMIT_LABEL and v is not None},
             "usage": await orgs.usage(conn, m["org_id"]), "subscription_starts": m["subscription_starts"],
-            "subscription_ends": m["subscription_ends"], "single_org": settings.single_org}
+            "subscription_ends": m["subscription_ends"], "single_org": settings.single_org,
+            "branding": {"color": m["brand_color"], "logo_url": branding.logo_url(m["org_id"], m["logo_updated_at"]),
+                         "sender_name": m["email_sender_name"], "reply_to": m["email_reply_to"]}}
 
 
 @router.get("", response_model=OrgOut, summary="Your organization, its plan and what it uses")
@@ -69,7 +78,7 @@ async def add_member(body: OrgMemberIn, request: Request, user=Depends(current_u
             raise Problem(409, "That person is already in your organization.", code="already_member")
         await audit(conn, "org.member_add", actor_id=user["id"], target_type="user", target_id=target["id"], ip=ip,
                     org_id=str(m["org_id"]), role=body.role)
-        await send_email(email, f"You joined {m['name']} on Geohub",
+        await _mail(conn, m, email, f"You joined {m['name']} on Geohub",
                          f"{user['name']} added you to the organization \"{m['name']}\" on Geohub. "
                          "You can now be added to its projects and maps.",
                          action=("Open Geohub", settings.app_url), key=f"org-join/{m['org_id']}/{target['id']}")
@@ -86,7 +95,7 @@ async def add_member(body: OrgMemberIn, request: Request, user=Depends(current_u
     inv = await cur.fetchone()
     await audit(conn, "org.member_invite", actor_id=user["id"], target_type="invitation", target_id=inv["id"], ip=ip,
                 org_id=str(m["org_id"]), role=body.role, email=email)
-    await send_email(email, f"Join {m['name']} on Geohub",
+    await _mail(conn, m, email, f"Join {m['name']} on Geohub",
                      f"{user['name']} invited you to join \"{m['name']}\" on Geohub, where the team maps places, "
                      f"collects field data and shares it.\n\nCreate your account with this email address ({email}) "
                      "and you will join the organization straight away.",
@@ -205,9 +214,9 @@ ROLE_WORDS = {"admin": "an administrator", "member": "a member", "collector": "a
 DEFAULT_PROJECT_ROLE = {"admin": "admin", "member": "admin", "collector": "collector", "viewer": "viewer"}
 
 
-async def _welcome(m: dict, admin: dict, name: str, email: str, role: str, raw: str) -> bool:
-    return await send_email(
-        email, f"Your Geohub account for {m['name']}",
+async def _welcome(conn, m: dict, admin: dict, name: str, email: str, role: str, raw: str) -> bool:
+    return await _mail(
+        conn, m, email, f"Your Geohub account for {m['name']}",
         f"Hello {name},\n\n{admin['name']} created a Geohub account for you in \"{m['name']}\", as {ROLE_WORDS[role]}.\n\n"
         f"Your sign-in email is {email}. Choose your password with the button below; the link works once, within 72 hours. "
         "If it has expired, ask your administrator to send it again.",
@@ -239,7 +248,7 @@ async def create_account(body: AccountIn, request: Request, user=Depends(current
         if not await orgs.bring_into(conn, existing["id"], m["org_id"], body.role):
             raise Problem(409, "That person is already in your organization.", code="already_member")
         uid, name = existing["id"], existing["name"]
-        sent = await send_email(email, f"You joined {m['name']} on Geohub",
+        sent = await _mail(conn, m, email, f"You joined {m['name']} on Geohub",
                                 f"{user['name']} added your Geohub account to \"{m['name']}\", as {ROLE_WORDS[body.role]}. "
                                 "Sign in with your usual password.", action=("Open Geohub", settings.app_url))
     else:
@@ -252,7 +261,7 @@ async def create_account(body: AccountIn, request: Request, user=Depends(current
         uid, name = (await cur.fetchone())["id"], body.name.strip()
         await conn.execute("INSERT INTO org_members (user_id, org_id, role) VALUES (%s, %s, %s)", (uid, m["org_id"], body.role))
         await conn.execute("DELETE FROM org_invitations WHERE org_id = %s AND lower(email) = %s", (m["org_id"], email))
-        sent = False if temporary else await _welcome(m, user, name, email, body.role, await passwords.issue(conn, uid, "set"))
+        sent = False if temporary else await _welcome(conn, m, user, name, email, body.role, await passwords.issue(conn, uid, "set"))
     for g in body.projects:
         role = g.role or DEFAULT_PROJECT_ROLE[body.role]
         await orgs.check_project_role(conn, uid, role)
@@ -276,7 +285,7 @@ async def send_link(user_id: UUID, request: Request, user=Depends(current_user),
         raise Problem(403, "Only an owner can send a link to an owner or administrator.", code="forbidden")
     cur = await conn.execute("SELECT email FROM users WHERE id = %s", (user_id,))
     email = (await cur.fetchone())["email"]
-    sent = await _welcome(m, user, t["name"], email, t["role"] if t["role"] != "owner" else "admin",
+    sent = await _welcome(conn, m, user, t["name"], email, t["role"] if t["role"] != "owner" else "admin",
                           await passwords.issue(conn, user_id, "set"))
     await audit(conn, "org.send_link", actor_id=user["id"], target_type="user", target_id=user_id,
                 ip=client_ip(request), org_id=str(m["org_id"]))
@@ -363,3 +372,64 @@ async def remove_domain(domain: str, request: Request, user=Depends(current_user
     await audit(conn, "org.domain_remove", actor_id=user["id"], target_type="organization", target_id=m["org_id"],
                 ip=client_ip(request), domain=row["domain"])
     return Response(status_code=204)
+
+
+# ---------- branding ----------
+async def _brand_admin(conn, user) -> dict:
+    m = await orgs.require_org_role(conn, user, "admin")
+    if m["plan"] == "individual":
+        raise Problem(403, "Your own logo, colour and email sender come with Organization plans. Ask GeoEstate for one.",
+                      code="plan_feature")
+    return m
+
+
+@router.patch("/branding", response_model=OrgOut, summary="Set the organization's colour and email sender (admins)")
+async def update_branding(body: OrgBrandingPatch, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await _brand_admin(conn, user)
+    sets, params = [], []
+    if body.color is not None:
+        sets.append("brand_color = %s"); params.append(branding.normalize_color(body.color) if body.color.strip() else None)
+    if body.sender_name is not None:
+        name = " ".join(body.sender_name.replace("<", "").replace(">", "").replace('"', "").split())
+        sets.append("email_sender_name = %s"); params.append(name or None)
+    if body.reply_to is not None:
+        reply = body.reply_to.strip().lower()
+        if reply and not re.fullmatch(r"[^@\s<>\"]+@[^@\s<>\"]+\.[a-z]{2,}", reply):
+            raise Problem(422, "Enter an email address for replies.", code="validation", fields={"reply_to": ["not an email"]})
+        sets.append("email_reply_to = %s"); params.append(reply or None)
+    if sets:
+        await conn.execute(f"UPDATE organizations SET {', '.join(sets)} WHERE id = %s", (*params, m["org_id"]))
+        await audit(conn, "org.branding", actor_id=user["id"], target_type="organization", target_id=m["org_id"],
+                    ip=client_ip(request), **body.model_dump(exclude_none=True))
+    return await _out(conn, await orgs.membership(conn, user["id"]))
+
+
+@router.put("/branding/logo", response_model=OrgOut, summary="Upload the organization's logo (admins)",
+            dependencies=[Depends(ratelimit.limit("logo-upload", 20, 3600))])
+async def upload_logo(request: Request, file: UploadFile = File(...), user=Depends(current_user), conn=Depends(get_conn)):
+    """PNG, JPEG or WebP up to 1 MB; stored as a PNG of at most 512 px. A wide logo on a clear background looks best."""
+    m = await _brand_admin(conn, user)
+    png = branding.clean_logo(await file.read(branding.MAX_LOGO_BYTES + 1))
+    await conn.execute("UPDATE organizations SET logo = %s, logo_updated_at = now() WHERE id = %s", (png, m["org_id"]))
+    await audit(conn, "org.logo", actor_id=user["id"], target_type="organization", target_id=m["org_id"], ip=client_ip(request), bytes=len(png))
+    return await _out(conn, await orgs.membership(conn, user["id"]))
+
+
+@router.delete("/branding/logo", response_model=OrgOut, summary="Remove the organization's logo (admins)")
+async def remove_logo(request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await orgs.require_org_role(conn, user, "admin")
+    await conn.execute("UPDATE organizations SET logo = NULL, logo_updated_at = NULL WHERE id = %s", (m["org_id"],))
+    await audit(conn, "org.logo", actor_id=user["id"], target_type="organization", target_id=m["org_id"], ip=client_ip(request), removed=True)
+    return await _out(conn, await orgs.membership(conn, user["id"]))
+
+
+@public_router.get("/orgs/{org_id}/logo", summary="An organization's logo (public: it appears in emails)")
+async def logo(org_id: UUID, conn=Depends(get_conn)):
+    cur = await conn.execute("SELECT logo FROM organizations WHERE id = %s AND logo IS NOT NULL", (org_id,))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "No logo.", code="not_found")
+    # the URL carries ?v=<time of upload>, so a new logo is a new URL and this one can be kept a long time
+    return Response(bytes(row["logo"]), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+                             "Content-Security-Policy": "default-src 'none'; sandbox"})
