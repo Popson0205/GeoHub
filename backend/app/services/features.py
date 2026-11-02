@@ -157,10 +157,24 @@ async def _geom_differs_hex(conn, a_hex: str, b_hex: str) -> bool:
 
 
 # ---------- create / update / delete ----------
+async def _check_record_limit(conn, project_id) -> None:
+    """The organization's plan may cap how many records it keeps. No cap set means no counting at all."""
+    cur = await conn.execute("SELECT o.id, o.limits->>'records' AS cap FROM projects p JOIN organizations o ON o.id = p.org_id "
+                             "WHERE p.id = %s", (project_id,))
+    row = await cur.fetchone()
+    if not row or row["cap"] is None:
+        return
+    cur = await conn.execute("SELECT count(*) AS n FROM features f JOIN projects p ON p.id = f.project_id "
+                             "WHERE p.org_id = %s AND f.deleted_at IS NULL", (row["id"],))
+    if (await cur.fetchone())["n"] >= int(row["cap"]):
+        raise Reject("PLAN_LIMIT", f"Your organization's plan allows {row['cap']} records. Ask the organization owner to upgrade.")
+
+
 async def _create(conn, project_id, user_id, ch) -> dict:
     if not ch.get("form_id"):
         raise Reject("VALIDATION", "form_id is required to create a feature.", {"form_id": ["required"]})
     gtype, fields, fver = await load_form_version(conn, project_id, ch["form_id"], ch.get("form_version"))
+    await _check_record_limit(conn, project_id)
     status = ch.get("status") or "submitted"
     props = ch.get("properties") or {}
     await _validate(conn, gtype, fields, ch.get("geometry"), props, status, check_db=True)

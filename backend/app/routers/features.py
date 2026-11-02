@@ -21,7 +21,7 @@ from ..services.media import media_for_feature
 router = APIRouter(tags=["features"])
 
 HTTP_FOR = {"FORBIDDEN": 403, "NOT_FOUND": 404, "ALREADY_EXISTS": 409, "FEATURE_DELETED": 409,
-            "FORM_NOT_PUBLISHED": 409, "VALIDATION": 422}
+            "FORM_NOT_PUBLISHED": 409, "VALIDATION": 422, "PLAN_LIMIT": 402}
 
 
 def raise_for(res: dict):

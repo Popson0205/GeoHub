@@ -12,6 +12,7 @@ const PAGES: SearchItem[] = [
   { kind: "Page", title: "Dashboards", to: "/dashboards", icon: "navDash" },
   { kind: "Page", title: "Dashboard reports", to: "/dashboards/reports", icon: "navDash" },
   { kind: "Page", title: "Data hub", hint: "Published datasets", to: "/hub", icon: "navHub" },
+  { kind: "Page", title: "Organization", hint: "People, roles and plan", to: "/settings/organization", icon: "users" },
 ];
 
 /**

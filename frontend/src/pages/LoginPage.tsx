@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import { config } from "../lib/config";
@@ -9,10 +9,14 @@ export default function LoginPage() {
   const { login, register } = useAuth();
   const nav = useNavigate();
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
-  const [email, setEmail] = useState(config.useMock ? "demo@geohub.test" : "");
+  // An invitation email links here with ?signup=1&email=…, so the invited address is filled in.
+  const [params] = useSearchParams();
+  const invited = params.get("email") ?? "";
+  const [email, setEmail] = useState(config.useMock ? "demo@geohub.test" : invited);
   const [password, setPassword] = useState(config.useMock ? "demo" : "");
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const [orgName, setOrgName] = useState("");
+  const [mode, setMode] = useState<"signin" | "register">(params.get("signup") === "1" && !config.useMock ? "register" : "signin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -21,7 +25,7 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      if (mode === "register") await register(name, email, password);
+      if (mode === "register") await register(name, email, password, invited ? undefined : orgName);
       else await login(email, password);
       nav(from, { replace: true });
     } catch (err) {
@@ -46,6 +50,15 @@ export default function LoginPage() {
         {config.useMock && <div className="state"><span>Mock mode: no server needed. Use the filled-in demo account.</span></div>}
         {mode === "register" && <div className="field"><label htmlFor="name">Your name</label><input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} /></div>}
         <div className="field"><label htmlFor="email">Email</label><input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+        {mode === "register" && (invited ? (
+          <p className="field-hint">You were invited, so you will join your team's organization.</p>
+        ) : (
+          <div className="field">
+            <label htmlFor="org">Organization <span className="muted">(optional)</span></label>
+            <input id="org" autoComplete="organization" placeholder="e.g. Acme Surveys" value={orgName} onChange={(e) => setOrgName(e.target.value)} aria-describedby="org-hint" />
+            <span id="org-hint" className="field-hint">Your company or team. If a colleague invited you, leave this empty: you will join theirs.</span>
+          </div>
+        ))}
         <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 8 : undefined} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
         {error && <div className="field-error" role="alert">{error}</div>}
         <Button type="submit" variant="primary" busy={busy}>{mode === "register" ? "Create account" : "Sign in"}</Button>

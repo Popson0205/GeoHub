@@ -4,8 +4,15 @@ import { ApiError, loadApi, tokens } from "./api";
 import type { User } from "./types";
 import { Loading } from "../components/ui";
 
-interface AuthState { user: User | null; ready: boolean; login(email: string, password: string): Promise<void>; register(name: string, email: string, password: string): Promise<void>; logout(): Promise<void> }
-const Ctx = createContext<AuthState>({ user: null, ready: false, login: async () => {}, register: async () => {}, logout: async () => {} });
+interface AuthState {
+  user: User | null; ready: boolean;
+  login(email: string, password: string): Promise<void>;
+  register(name: string, email: string, password: string, organization?: string): Promise<void>;
+  logout(): Promise<void>;
+  /** Read the signed-in person again, e.g. after their organization was renamed. */
+  refresh(): Promise<void>;
+}
+const Ctx = createContext<AuthState>({ user: null, ready: false, login: async () => {}, register: async () => {}, logout: async () => {}, refresh: async () => {} });
 export const useAuth = () => useContext(Ctx);
 
 // The signed-in person is remembered on the device so the app still opens with no connection.
@@ -36,15 +43,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const s = await (await loadApi()).login(email, password);
     setUser(s.user); cacheUser(s.user);
   };
-  const register = async (name: string, email: string, password: string) => {
-    const s = await (await loadApi()).register(name, email, password);
+  const register = async (name: string, email: string, password: string, organization?: string) => {
+    const s = await (await loadApi()).register(name, email, password, organization);
     setUser(s.user); cacheUser(s.user);
   };
   const logout = async () => {
     await (await loadApi()).logout();
     setUser(null); cacheUser(null);
   };
-  return <Ctx.Provider value={{ user, ready, login, register, logout }}>{children}</Ctx.Provider>;
+  const refresh = async () => {
+    try { const u = await (await loadApi()).me(); setUser(u); cacheUser(u); } catch { /* keep what we have */ }
+  };
+  return <Ctx.Provider value={{ user, ready, login, register, logout, refresh }}>{children}</Ctx.Provider>;
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {

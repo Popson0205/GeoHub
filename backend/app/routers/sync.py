@@ -17,7 +17,8 @@ router = APIRouter(tags=["sync"])
 async def _area_hex(conn, project_id, user_id) -> str | None:
     cur = await conn.execute("SELECT assigned_area::text AS a FROM members WHERE project_id = %s AND user_id = %s",
                              (project_id, user_id))
-    return (await cur.fetchone())["a"]
+    row = await cur.fetchone()          # an organization admin may have no membership row of their own
+    return row["a"] if row else None
 
 
 def _area_clause(area_hex, user_id) -> tuple[str, list]:
@@ -81,7 +82,7 @@ async def bundle(project_id: UUID, limit: int = Query(5000, ge=1, le=20000),
     cur = await conn.execute("SELECT ST_AsGeoJSON(assigned_area)::jsonb AS a FROM members "
                              "WHERE project_id = %s AND user_id = %s", (project_id, user["id"]))
     return {"project": {"id": p["id"], "name": p["name"], "description": p["description"],
-                        "assigned_area": (await cur.fetchone())["a"]},
+                        "assigned_area": ((await cur.fetchone()) or {"a": None})["a"]},
             "role": role, "forms": forms, "features": rows[:limit], "truncated": len(rows) > limit,
             "cursor": encode_cursor(s=p["seq_counter"]),
             "limits": {"max_photo_bytes": settings.max_photo_bytes, "photo_web_px": settings.photo_web_px,

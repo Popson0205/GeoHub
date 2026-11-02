@@ -75,6 +75,26 @@ records worse than 30 m flagged.
 For better than a metre, pair the phone with an external GNSS receiver (for example Emlid Reach, Garmin GLO 2 or
 Bad Elf). On Android, use the receiver's app or "Bluetooth GNSS" and turn on its mock-location option. On iPhone,
 pair an MFi receiver. The browser then reports the receiver's position, so Geohub needs no change.
+## Organizations
+
+Every account belongs to exactly one organization, and projects and maps belong to one. Its owners are owners of
+every project in it and its administrators are administrators of every one, so work is never stranded when someone
+leaves. Organization admins invite people by email (Account menu → Organization); people with no account get an
+email and join when they sign up with that address. Someone who signs up without an invitation gets a new
+organization of their own, and can later be added to a colleague's (an empty one-person organization is merged).
+
+**Two ways to run it for clients:**
+
+- **One shared deployment** (the default): many client organizations, each seeing only its own work.
+- **A private copy for one client**: set `SINGLE_ORG=true` and `ORG_NAME=Client Name`. The first account to sign up
+  creates the organization and owns it; after that, sign-up is by invitation only.
+
+**Plans and limits** are set by hand for now, in the database:
+`UPDATE organizations SET plan = 'team', limits = '{"seats": 10, "projects": 5, "records": 50000}' WHERE slug = '…';`
+A missing key means unlimited. Going over a limit is refused with a clear message (HTTP 402, code `plan_limit`).
+
+Upgrading an existing deployment puts every existing account and all existing work into one organization named
+"My organization", owned by the earliest account. Rename it and adjust roles on the Organization page.
 
 ## Error reporting
 

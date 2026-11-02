@@ -19,6 +19,8 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
     name: str = Field(min_length=1, max_length=120)
+    organization: str | None = Field(None, max_length=120, description="Name for a new organization. Ignored when the "
+                                     "email was invited to one, or on a private copy.")
 
 
 class LoginIn(BaseModel):
@@ -30,10 +32,18 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class OrgBrief(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    role: Literal["owner", "admin", "member"]
+
+
 class UserOut(BaseModel):
     id: UUID
     email: EmailStr
     name: str
+    org: OrgBrief | None = None
 
 
 class AuthOut(BaseModel):
@@ -830,3 +840,47 @@ class PublicDashboardOut(BaseModel):
     truncated: bool = Field(False, description="There were more records than a public link carries; the newest are shown")
     forms: list[PublicDashboardForm]
     features: list[PublicDashboardFeature]
+
+
+# ---------- organizations ----------
+OrgRole = Literal["owner", "admin", "member"]
+
+
+class OrgUsage(BaseModel):
+    seats: int = Field(description="Members plus pending invitations")
+    projects: int
+    records: int
+
+
+class OrgOut(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    role: OrgRole = Field(description="The caller's role in the organization")
+    plan: str
+    limits: dict[str, int] = Field(description="Caps set for this organization's plan; a missing key means unlimited")
+    usage: OrgUsage
+    single_org: bool = Field(description="This deployment is a private copy for one organization")
+
+
+class OrgPatch(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class OrgMemberOut(BaseModel):
+    id: UUID = Field(description="The user id, or the invitation id while invited")
+    user_id: UUID | None
+    email: str
+    name: str | None
+    role: OrgRole
+    status: Literal["active", "invited"]
+    joined_at: datetime
+
+
+class OrgMemberIn(BaseModel):
+    email: EmailStr
+    role: Literal["admin", "member"] = "member"
+
+
+class OrgMemberPatch(BaseModel):
+    role: OrgRole

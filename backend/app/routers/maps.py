@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from .. import storage
+from .. import orgs, storage
 from ..db import get_conn
 from ..audit import audit
 from ..deps import current_user, require_map
@@ -293,8 +293,9 @@ async def list_maps(user=Depends(current_user), conn=Depends(get_conn)):
 
 @router.post("/maps", response_model=MapOut, status_code=201)
 async def create_map(body: MapIn, user=Depends(current_user), conn=Depends(get_conn)):
-    cur = await conn.execute("INSERT INTO workspace_maps (owner_id, name, description) VALUES (%s, %s, %s) RETURNING id",
-                             (user["id"], body.name.strip(), body.description))
+    org = await orgs.require_membership(conn, user)
+    cur = await conn.execute("INSERT INTO workspace_maps (owner_id, name, description, org_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                             (user["id"], body.name.strip(), body.description, org["org_id"]))
     return await _map_out(conn, (await cur.fetchone())["id"], user["id"])
 
 
