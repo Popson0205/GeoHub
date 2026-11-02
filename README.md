@@ -96,21 +96,30 @@ A missing key means unlimited. Going over a limit is refused with a clear messag
 Upgrading an existing deployment puts every existing account and all existing work into one organization named
 "My organization", owned by the earliest account. Rename it and adjust roles on the Organization page.
 
-## Email (Resend)
+## Email (Brevo)
 
 Geohub emails people when they are invited to an organization or a project. It sends through
-[Resend](https://resend.com)'s HTTPS API, which works on any host (Railway blocks outgoing SMTP below its Pro plan).
+[Brevo](https://www.brevo.com)'s HTTPS API, which works on any host (Railway blocks outgoing SMTP below its Pro plan).
 
-1. In Resend, add and verify your domain (**Domains**: add the DNS records it shows, then wait for "Verified").
-2. Create an API key (**API Keys**, "Sending access").
-3. Set on the server: `RESEND_API_KEY=re_…`, `MAIL_FROM=Geohub <no-reply@yourdomain.com>` (an address on the verified
-   domain) and, optionally, `MAIL_REPLY_TO=support@yourdomain.com`. `APP_URL` must be the web app's address, since the
-   links in emails use it.
-4. Check it: `python -m app.ops.test_email you@yourdomain.com` (on Railway: the service's "Run a command", or
-   `railway run`). It prints the provider's error in full if something is wrong.
+1. In Brevo, add the sending address: **Senders, Domains & Dedicated IPs → Senders → Add a sender**, then click the
+   link Brevo emails to it. To start, this can be your own Gmail address.
+2. Create an API key: **SMTP & API → API Keys → Generate a new API key** (an API key, not the SMTP key).
+3. Set on the server: `BREVO_API_KEY=xkeysib-…`, `MAIL_FROM=Geohub <the-address-you-verified>` and, optionally,
+   `MAIL_REPLY_TO=…`. `APP_URL` must be the web app's address, since the links in emails use it.
+4. Check it: `python -m app.ops.test_email someone@example.com` (on Railway: the service's "Run a command", or
+   `railway run`). It prints Brevo's error in full if something is wrong.
 
-Without `RESEND_API_KEY`, SMTP is used when `SMTP_HOST` is set (ports 587 or 465); with neither, emails are only
-written to the log. A failed email is logged and never stops the action that sent it.
+**Before inviting clients, use your own domain.** Gmail and Yahoo now filter mail sent *from* a Gmail address by
+another service, so invitations from a Gmail sender often land in spam or are dropped. In Brevo, add your domain under
+**Senders, Domains & Dedicated IPs → Domains**, add the DNS records it shows (Brevo code, DKIM, DMARC), then set
+`MAIL_FROM=Geohub <no-reply@yourdomain.com>`.
+
+If Brevo rejects the key with an "unrecognised IP address" message, allow the server's IP under **Security →
+Authorised IPs**, or turn that check off (Railway's outgoing IP can change).
+
+Other ways to send: `RESEND_API_KEY` (Resend) is used when `BREVO_API_KEY` is not set; SMTP when `SMTP_HOST` is set
+(ports 587 or 465). With none of them, emails are only written to the log. A failed email is logged and never stops
+the action that sent it.
 
 ## Error reporting
 

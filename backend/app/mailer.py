@@ -1,5 +1,6 @@
-"""Sending email: through Resend's HTTPS API when RESEND_API_KEY is set (works on hosts that block SMTP, such as
-Railway below the Pro plan), else SMTP when SMTP_HOST is set, else the message is only written to the log (dev).
+"""Sending email over HTTPS, which works on hosts that block SMTP (such as Railway below the Pro plan): Brevo when
+BREVO_API_KEY is set, else Resend when RESEND_API_KEY is set. Otherwise SMTP when SMTP_HOST is set, else the
+message is only written to the log (dev).
 
 Every message goes out as plain text and as simple branded HTML with one clear button. Sending never raises:
 a failed email is logged, and the action that triggered it still succeeds.
@@ -18,12 +19,21 @@ from .config import settings
 
 log = logging.getLogger("mailer")
 RESEND_URL = "https://api.resend.com/emails"
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+RETRY = (429, 500, 502, 503, 504)
 # Tests replace this with a mock transport.
 transport: httpx.AsyncBaseTransport | None = None
 
 
 def backend() -> str:
-    return "resend" if settings.resend_api_key else "smtp" if settings.smtp_host else "log"
+    return ("brevo" if settings.brevo_api_key else "resend" if settings.resend_api_key
+            else "smtp" if settings.smtp_host else "log")
+
+
+def parse_address(value: str) -> tuple[str, str]:
+    """'Geohub <no-reply@x.com>' -> ('Geohub', 'no-reply@x.com'); a bare address has no name."""
+    m = re.match(r"^\s*(.*?)\s*<\s*([^<>\s]+@[^<>\s]+)\s*>\s*$", value)
+    return (m.group(1).strip().strip('"'), m.group(2)) if m else ("", value.strip())
 
 
 def render_html(subject: str, body: str, action: tuple[str, str] | None) -> str:
@@ -68,10 +78,31 @@ async def _resend(to: str, subject: str, body: str, action, key: str | None) -> 
             if r.status_code < 400:
                 log.info("email sent", extra={"ctx": {"to": to, "subject": subject, "id": r.json().get("id"), "via": "resend"}})
                 return
-            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            if r.status_code in RETRY and attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
                 continue
             raise RuntimeError(f"Resend refused the email ({r.status_code}): {r.text[:300]}")
+
+
+async def _brevo(to: str, subject: str, body: str, action, key: str | None) -> None:
+    name, email = parse_address(settings.mail_from)
+    payload = {"sender": {"email": email, **({"name": name} if name else {})}, "to": [{"email": to}], "subject": subject,
+               "htmlContent": render_html(subject, body, action), "textContent": _text(body, action)}
+    if settings.mail_reply_to:
+        payload["replyTo"] = {"email": parse_address(settings.mail_reply_to)[1]}
+    if key:
+        payload["headers"] = {"X-Mailin-custom": key[:200]}     # shows in Brevo's logs and webhooks, to trace an email
+    headers = {"api-key": settings.brevo_api_key, "accept": "application/json"}
+    async with httpx.AsyncClient(timeout=15, transport=transport) as c:
+        for attempt in range(3):
+            r = await c.post(BREVO_URL, json=payload, headers=headers)
+            if r.status_code < 400:
+                log.info("email sent", extra={"ctx": {"to": to, "subject": subject, "id": r.json().get("messageId"), "via": "brevo"}})
+                return
+            if r.status_code in RETRY and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            raise RuntimeError(f"Brevo refused the email ({r.status_code}): {r.text[:300]}")
 
 
 def _smtp(to: str, subject: str, body: str, action) -> None:
@@ -100,11 +131,13 @@ async def send_email(to: str, subject: str, body: str, *, action: tuple[str, str
     Returns whether it was sent. Never raises unless `raise_errors` (used by the test-email command)."""
     how = backend()
     if how == "log":
-        log.info("email (not sent: no RESEND_API_KEY or SMTP_HOST)",
+        log.info("email (not sent: no BREVO_API_KEY, RESEND_API_KEY or SMTP_HOST)",
                  extra={"ctx": {"to": to, "subject": subject, "body": _text(body, action)}})
         return False
     try:
-        if how == "resend":
+        if how == "brevo":
+            await _brevo(to, subject, body, action, key)
+        elif how == "resend":
             await _resend(to, subject, body, action, key)
         else:
             await anyio.to_thread.run_sync(_smtp, to, subject, body, action)

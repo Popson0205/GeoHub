@@ -75,3 +75,49 @@ def test_an_organization_invitation_sends_a_signup_link(actor, resend):
     sent = [json.loads(c.content) for c in calls]
     inv = next(s for s in sent if s["to"] == ["new.person+geo@example.com"])
     assert inv["subject"].startswith("Join ") and "signup=1&amp;email=new.person%2Bgeo%40example.com" in inv["html"] and "signup=1&email=new.person%2Bgeo%40example.com" in inv["text"]
+
+
+@pytest.fixture
+def brevo(monkeypatch):
+    calls, replies = [], []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return replies.pop(0) if replies else httpx.Response(201, json={"messageId": "<1@smtp-relay.brevo.com>"})
+    monkeypatch.setattr(settings, "brevo_api_key", "xkeysib-test")
+    monkeypatch.setattr(settings, "resend_api_key", "re_also_set")
+    monkeypatch.setattr(settings, "mail_from", "Geohub <idrispopoola02@gmail.com>")
+    monkeypatch.setattr(settings, "mail_reply_to", "Support <help@example.com>")
+    monkeypatch.setattr(mailer, "transport", httpx.MockTransport(handler))
+    monkeypatch.setattr(mailer.asyncio, "sleep", lambda s: _noop())
+    return calls, replies
+
+
+def test_brevo_comes_first_and_gets_its_own_request_shape(brevo):
+    import anyio
+    calls, _ = brevo
+    assert mailer.backend() == "brevo"
+    ok = anyio.run(lambda: mailer.send_email("ada@example.com", "You were added to Wells", "Bola added you.",
+                                             action=("Open the project", "https://app.example.com/collect/p1"), key="project-add/p1/u1"))
+    assert ok and len(calls) == 1
+    r = calls[0]
+    body = json.loads(r.content)
+    assert str(r.url) == "https://api.brevo.com/v3/smtp/email" and r.headers["api-key"] == "xkeysib-test"
+    assert body["sender"] == {"name": "Geohub", "email": "idrispopoola02@gmail.com"} and body["to"] == [{"email": "ada@example.com"}]
+    assert body["replyTo"] == {"email": "help@example.com"} and body["headers"] == {"X-Mailin-custom": "project-add/p1/u1"}
+    assert "Open the project: https://app.example.com/collect/p1" in body["textContent"] and "Bola added you." in body["htmlContent"]
+
+
+def test_brevo_retries_when_busy_and_reports_a_refusal(brevo):
+    import anyio
+    calls, replies = brevo
+    replies += [httpx.Response(503), httpx.Response(201, json={"messageId": "<2@x>"})]
+    assert anyio.run(lambda: mailer.send_email("a@example.com", "s", "b")) and len(calls) == 2
+    replies.append(httpx.Response(400, json={"code": "invalid_parameter", "message": "sender is not valid"}))
+    with pytest.raises(RuntimeError, match="Brevo refused.*sender is not valid"):
+        anyio.run(lambda: mailer.send_email("a@example.com", "s", "b", raise_errors=True))
+
+
+def test_addresses_with_and_without_names():
+    assert mailer.parse_address('"Geohub Team" <hi@example.com>') == ("Geohub Team", "hi@example.com")
+    assert mailer.parse_address("hi@example.com") == ("", "hi@example.com")
