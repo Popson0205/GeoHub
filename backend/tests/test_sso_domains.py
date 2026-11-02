@@ -199,3 +199,31 @@ def test_staff_can_add_a_verified_domain(client, monkeypatch):
     assert boss.get("/org/domains").json()[0]["verified"]
     listed = next(o for o in staff.get("/admin/orgs").json() if o["id"] == boss.org_id)
     assert listed["domains"] == [dom]
+
+
+def test_sign_in_needs_no_redis_and_errors_go_back_to_the_sign_in_page(client, idp, monkeypatch):
+    """The one-time code lives in the database, so a deployment without Redis still signs people in; and an
+    unexpected failure at the callback lands on the sign-in page with a message, not a raw server error."""
+    from app import ratelimit
+
+    class Down:
+        def __getattr__(self, name):
+            async def fail(*a, **k):
+                raise ConnectionError("no redis")
+            return fail
+    monkeypatch.setattr(ratelimit, "redis", Down())
+    out = sign_in(client, idp, "google", email=f"{uid()}@example.com", name="No Redis")
+    assert out["user"]["name"] == "No Redis"
+
+    from app.routers import sso
+    async def boom(*a, **k):
+        raise RuntimeError("database fell over")
+    monkeypatch.setattr(sso, "_resolve", boom)
+    assert "problem on our side" in sign_in(client, idp, "google", email=f"{uid()}@example.com")
+
+
+def test_app_url_with_a_trailing_slash():
+    from app.config import Settings
+    s = Settings(app_url="https://geohub.example.com/", database_url="x", jwt_secret="x", s3_endpoint="x",
+                 s3_public_endpoint="x", s3_access_key="x", s3_secret_key="x")
+    assert s.app_url == "https://geohub.example.com"

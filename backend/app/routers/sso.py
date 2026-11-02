@@ -7,12 +7,12 @@ The ID token comes straight from the provider's token endpoint over TLS, in exch
 issuer is proven by TLS (OpenID Connect Core 3.1.3.7); we still check its audience, expiry, issuer and nonce. A
 person is matched by the provider's stable id, else by a proven email, else a new account is made (joining the
 organization that invited them, or that owns their email's domain). Tokens never appear in a URL: the browser gets
-a one-time code that works for two minutes."""
+a one-time code that works once, for two minutes (kept in the database, hashed)."""
 import hmac
+import logging
 import secrets
 import time
 from urllib.parse import urlencode
-from uuid import UUID
 
 import httpx
 import jwt
@@ -26,10 +26,12 @@ from ..db import get_conn
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..passwords import unusable_hash
+from ..security import hash_token
 from ..schemas import AuthOut, SsoExchangeIn
 from .auth import _issue
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+log = logging.getLogger("sso")
 # Tests replace this with a mock transport.
 transport: httpx.AsyncBaseTransport | None = None
 COOKIE = "geohub_sso"
@@ -178,8 +180,15 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
             user = await _resolve(conn, provider, subject, email, verified, name, client_ip(request))
     except Problem as p:
         return _to_login(p.detail)
+    except Exception:  # noqa: BLE001 - never leave someone on a raw error page in the middle of signing in
+        log.exception("sso callback failed (%s)", provider)
+        return _to_login(f"{NAMES.get(provider, provider)} sign-in did not finish because of a problem on our side. "
+                         "Try again, or sign in with your email and password.")
     one_time = secrets.token_urlsafe(32)
-    await ratelimit.redis.set(f"sso-code:{one_time}", str(user["id"]), ex=120)
+    await conn.execute("DELETE FROM sso_codes WHERE expires_at < now()")
+    await conn.execute("INSERT INTO sso_codes (code_hash, user_id, expires_at) VALUES (%s, %s, now() + interval '2 minutes')",
+                       (hash_token(one_time), user["id"]))
+    await conn.commit()                 # the browser trades the code straight away: it must be there already
     r = RedirectResponse(f"{settings.app_url}/sso?{urlencode({'code': one_time, 'next': st['next']})}", status_code=303)
     r.delete_cookie(COOKIE, path=f"{settings.api_prefix.rstrip('/')}/auth/sso")
     return r
@@ -188,10 +197,12 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
 @router.post("/sso/exchange", response_model=AuthOut, summary="Trade the one-time code from a Google / Microsoft sign-in for tokens",
              dependencies=[Depends(ratelimit.limit("sso-exchange", 30, 60))])
 async def exchange(body: SsoExchangeIn, conn=Depends(get_conn)):
-    uid = await ratelimit.redis.getdel(f"sso-code:{body.code}")
-    if not uid:
+    cur = await conn.execute("DELETE FROM sso_codes WHERE code_hash = %s RETURNING user_id, expires_at > now() AS fresh",
+                             (hash_token(body.code),))
+    row = await cur.fetchone()
+    if not row or not row["fresh"]:
         raise Problem(401, "This sign-in has expired. Sign in again.", code="invalid_token")
-    cur = await conn.execute("SELECT id, email, name FROM users WHERE id = %s", (UUID(uid),))
+    cur = await conn.execute("SELECT id, email, name FROM users WHERE id = %s", (row["user_id"],))
     user = await cur.fetchone()
     if not user:
         raise Problem(401, "This account no longer exists.", code="invalid_token")

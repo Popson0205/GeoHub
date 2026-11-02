@@ -77,6 +77,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _prod_checks(self):
+        # "https://example.com/" and "https://example.com" mean the same: links are built as app_url + "/path"
+        self.app_url = self.app_url.strip().rstrip("/")
+        self.public_base_url = self.public_base_url.strip().rstrip("/")
         if self.env == "prod" and (len(self.jwt_secret) < 32 or self.jwt_secret.startswith("change-me")):
             raise ValueError("JWT_SECRET must be a random string of 32+ characters when ENV=prod")
         return self
