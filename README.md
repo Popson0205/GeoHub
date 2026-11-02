@@ -51,6 +51,10 @@ With `VITE_USE_MOCK=true` (the default) the frontend runs alone against an in-br
 image. The API is served under `/api` and the web app at `/`. Set `API_PREFIX=/api` and `WEB_DIR` (already set in that
 Dockerfile) and `PUBLIC_BASE_URL=https://your-domain/api`.
 
+Web app settings such as `VITE_BASEMAP_URL`, `VITE_BASEMAP_LIGHT_URL` and `VITE_RELEASE` are built into the image, so set
+them as Railway service variables and redeploy; the Dockerfile passes them to the build. `VITE_API_URL` and `VITE_USE_MOCK`
+are already set by the Dockerfile. `VITE_RELEASE` defaults to the commit Railway builds.
+
 **Separately:**
 
 - **Database**: Supabase. **Backend**: any Docker host (Railway, Render, Fly). See "Deploy" in [`backend/README.md`](backend/README.md).

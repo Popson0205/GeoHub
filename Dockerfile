@@ -7,7 +7,15 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-ENV VITE_USE_MOCK=false VITE_API_URL=/api
+# Settings baked into the web app at build time. On Railway, set them as service variables: Railway passes
+# variables named in ARG lines to the build. Left empty, the app uses its free defaults.
+ARG VITE_BASEMAP_URL=""
+ARG VITE_BASEMAP_LIGHT_URL=""
+ARG VITE_RELEASE=""
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ENV VITE_USE_MOCK=false VITE_API_URL=/api \
+    VITE_BASEMAP_URL=${VITE_BASEMAP_URL} VITE_BASEMAP_LIGHT_URL=${VITE_BASEMAP_LIGHT_URL} \
+    VITE_RELEASE=${VITE_RELEASE:-$RAILWAY_GIT_COMMIT_SHA}
 RUN npm run build
 
 # ---- 2. API image + built frontend ----

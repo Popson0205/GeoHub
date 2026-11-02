@@ -1,5 +1,6 @@
 const env = import.meta.env;
 
+// An empty setting (a Docker build argument left blank) counts as not set, so the free defaults apply.
 // VITE_API_URL may be a path such as "/api" (API served from the same origin); make it absolute so MapLibre
 // can use it inside tile URLs.
 const rawApi = String(env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -8,6 +9,6 @@ const apiUrl = rawApi.startsWith("/") ? window.location.origin + rawApi : rawApi
 export const config = {
   useMock: String(env.VITE_USE_MOCK ?? "true") !== "false",
   apiUrl,
-  basemapUrl: String(env.VITE_BASEMAP_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
-  basemapLightUrl: String(env.VITE_BASEMAP_LIGHT_URL ?? "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"),
+  basemapUrl: String(env.VITE_BASEMAP_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+  basemapLightUrl: String(env.VITE_BASEMAP_LIGHT_URL || "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"),
 };
