@@ -101,15 +101,30 @@ unlimited:
 | Custom (quoted) | `custom` | set in `limits` | set in `limits` | set in `limits` |
 
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
-counts. Until the platform admin page arrives, set an organization's plan and subscription in the database:
-`UPDATE organizations SET plan = 'standard', subscription_starts = '2026-11-01', subscription_ends = '2027-10-31' WHERE slug = '…';`
-For a Custom plan, or a one-off change, add caps: `limits = '{"seats": 50, "collectors": 1000}'` (a missing key
-means the plan's number). Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
+counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
+
+**Platform admin (GeoEstate staff).** Set `PLATFORM_ADMINS` to a comma-separated list of staff emails, e.g.
+`PLATFORM_ADMINS=idrispopoola02@gmail.com`. Those accounts get **Platform admin** in the account menu (`/admin`):
+
+- **Organizations:** set up a client organization once its invoice is paid (name, plan, subscription dates, the
+  owner's name and email; the owner is emailed a link to choose a password and then adds their own team), change its
+  plan, renew its dates, or give it its own people caps (empty = the plan's numbers). Renewals due within 60 days
+  stand out.
+- **Requests:** what people send from the public **Request an organization** page (`/request-organization`, linked
+  from the sign-in page). Each request is emailed to every platform admin and acknowledged to the sender. Mark its
+  progress, keep a note (invoice number…), and **Set up this organization** fills in the form from it.
+
+Everyone else gets "not found" from the admin API, so it is not revealed.
+
+**Renewal reminders.** The server checks every hour and emails an organization's owners and admins 60, 30 and 7 days
+before its subscription ends and on the day itself, copying the platform admins. Each reminder goes once, even with
+several servers. Nothing is blocked when a subscription ends; renewal is followed up by invoice. Turn the check off
+with `REMINDERS_ENABLED=false`, or run it by hand: `python3 -m app.ops.renewal_reminders` (optionally with a date,
+`2027-01-14`, to catch up a day the server was off).
 
 **Accounts.** Admins create accounts on the Organization page: the person either gets an email with a one-time link to
 set their password (72 hours), or a temporary password shown once, which they must change at first sign-in. Anyone
-can reset a forgotten password from the sign-in page (2-hour link). Set `VITE_CONTACT_EMAIL` to show a "Request an
-organization" link on the sign-up page.
+can reset a forgotten password from the sign-in page (2-hour link).
 
 Upgrading an existing deployment puts every existing account and all existing work into one organization named
 "My organization", owned by the earliest account and on the Advanced plan. Rename it and adjust roles on the

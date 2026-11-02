@@ -17,7 +17,9 @@ export type AddableRole = Exclude<OrgRole, "owner">;
 export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
 export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string }
-export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean }
+export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean;
+  /** GeoEstate staff who set up client organizations (PLATFORM_ADMINS on the server). */
+  platform_admin?: boolean }
 /** One-off caps set by hand; a missing key means the plan's number. */
 export interface OrgLimits { seats?: number; collectors?: number; viewers?: number; projects?: number; records?: number }
 export type PeopleKind = "seats" | "collectors" | "viewers";
@@ -39,6 +41,27 @@ export interface PasswordLink { email: string; name: string; purpose: "set" | "r
 /** The result of the email check: each step and whether it passed. */
 export interface EmailCheck { ok: boolean; provider: string; steps: { status: "ok" | "warn" | "fail" | "info"; name: string; detail: string }[] }
 export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }
+// ---- platform admin (GeoEstate staff) ----
+export type RequestPlan = "standard" | "advanced" | "custom" | "unsure";
+export type RequestStatus = "new" | "contacted" | "set_up" | "declined";
+/** Someone asking for an organization from the website. */
+export interface OrgRequestInput { organization: string; contact_name: string; email: string; phone?: string; plan: RequestPlan;
+  team_size?: string; message?: string; website?: string }
+export interface OrgRequest extends OrgRequestInput { id: string; status: RequestStatus; note: string | null; org_id: string | null;
+  created_at: string; updated_at: string }
+/** A client organization as GeoEstate staff see it. */
+export interface AdminOrg {
+  id: string; name: string; slug: string; plan: PlanId | string; plan_name: string;
+  caps: Record<PeopleKind, number | null>; limits: OrgLimits; usage: Record<PeopleKind, number> & { projects: number; records: number };
+  subscription_starts: string | null; subscription_ends: string | null;
+  /** Days until the subscription ends; negative once it has ended; null without an end date. */
+  days_left: number | null;
+  owner_name: string | null; owner_email: string | null; created_at: string;
+}
+export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string;
+  subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string }
+export interface AdminOrgPatch { name?: string; plan?: PlanId; subscription_starts?: string | null; subscription_ends?: string | null;
+  clear_dates?: boolean; limits?: OrgLimits }
 export interface Session { access_token: string; refresh_token?: string; user: User }
 
 export interface Project {

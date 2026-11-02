@@ -6,6 +6,7 @@ import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from 
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -25,6 +26,7 @@ interface State {
   audit?: (AuditEvent & { project_id: string })[];
   org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null };
   orgMembers?: OrgMember[];
+  adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
@@ -81,7 +83,8 @@ export class MockApi implements Api {
   private me_(): User {
     const { org, members } = this.orgState;
     const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan }, must_change_password: false };
+    // the demo account also plays GeoEstate staff, so the platform admin page can be tried
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan }, must_change_password: false, platform_admin: true };
   }
   async getOrg(): Promise<Org> {
     await wait(); this.auth();
@@ -164,6 +167,87 @@ export class MockApi implements Api {
     return this.login(DEMO_USER.email, "demo");
   }
   async forgotPassword(_email: string) { await wait(); }
+  // ---- platform admin
+  private get adminState() {
+    if (!this.s.adminOrgs) {
+      const d = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+      const ago = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+      const org = (id: string, name: string, plan: string, ends: number | null, owner: [string, string], usage: [number, number, number]): AdminOrg => ({
+        id, name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), plan, plan_name: PLAN_NAMES[plan], caps: { ...PLAN_CAPS[plan] }, limits: {},
+        usage: { seats: usage[0], collectors: usage[1], viewers: usage[2], projects: 3, records: 1200 },
+        subscription_starts: ends == null ? null : d(ends - 365), subscription_ends: ends == null ? null : d(ends), days_left: ends,
+        owner_name: owner[0], owner_email: owner[1], created_at: ago(400 - (ends ?? 0)) });
+      this.s.adminOrgs = [
+        org("org-a", "Lagos Survey Ltd", "standard", 24, ["Ada Obi", "ada@lagossurvey.example.com"], [7, 31, 12]),
+        org("org-b", "Kaduna State Land Agency", "advanced", 210, ["Musa Bello", "musa@kadland.example.com"], [22, 180, 64]),
+        org("org-c", "Green Cities NGO", "custom", null, ["Tolu Adeyemi", "tolu@greencities.example.com"], [40, 400, 90]),
+      ];
+      this.s.orgRequests = [{ id: "req-1", organization: "Ibadan Water Board", contact_name: "Kemi Lawal", email: "kemi@ibwater.example.com",
+        phone: "+234 803 000 0000", plan: "standard", team_size: "8 staff, 40 field collectors", message: "We map boreholes across Oyo State.",
+        status: "new", note: null, org_id: null, created_at: ago(1), updated_at: ago(1) }];
+    }
+    return { orgs: this.s.adminOrgs, requests: this.s.orgRequests! };
+  }
+  private staff() { this.auth(); if (!this.me_().platform_admin) throw new ApiError(404, "Not found."); }
+  async requestOrganization(input: OrgRequestInput) {
+    await wait();
+    if (input.website) return;
+    const now = new Date().toISOString();
+    this.adminState.requests.unshift({ ...input, id: uuid(), status: "new", note: null, org_id: null, created_at: now, updated_at: now });
+    this.save();
+  }
+  async adminListOrgs(q?: string) {
+    await wait(); this.staff();
+    const t = (q ?? "").trim().toLowerCase();
+    return this.adminState.orgs.filter((o) => !t || `${o.name} ${o.slug} ${o.owner_email}`.toLowerCase().includes(t));
+  }
+  private fill(o: AdminOrg): AdminOrg {
+    const caps = { ...(PLAN_CAPS[o.plan] ?? PLAN_CAPS.individual), ...o.limits } as AdminOrg["caps"];
+    const days = o.subscription_ends ? Math.round((Date.parse(o.subscription_ends) - Date.parse(new Date().toISOString().slice(0, 10))) / 86400000) : null;
+    return { ...o, plan_name: PLAN_NAMES[o.plan] ?? o.plan, caps, days_left: days };
+  }
+  private checkDates(starts?: string | null, ends?: string | null) {
+    if (starts && ends && ends < starts) throw new ApiError(422, "The subscription cannot end before it starts.", { subscription_ends: "before start" });
+  }
+  async adminCreateOrg(input: AdminOrgInput) {
+    await wait(); this.staff();
+    this.checkDates(input.subscription_starts, input.subscription_ends);
+    const { orgs, requests } = this.adminState;
+    const email = input.owner_email.trim().toLowerCase();
+    if (orgs.some((o) => o.owner_email === email)) throw new ApiError(409, "That email already belongs to an organization with work in it. Use another email for the owner.", { owner_email: "already in use" });
+    const o = this.fill({ id: uuid(), name: input.name.trim(), slug: input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), plan: input.plan,
+      plan_name: "", caps: PLAN_CAPS.individual, limits: input.limits ?? {}, usage: { seats: 1, collectors: 0, viewers: 0, projects: 0, records: 0 },
+      subscription_starts: input.subscription_starts ?? null, subscription_ends: input.subscription_ends ?? null, days_left: null,
+      owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString() });
+    orgs.unshift(o);
+    const r = requests.find((x) => x.id === input.request_id);
+    if (r) Object.assign(r, { status: "set_up", org_id: o.id, updated_at: new Date().toISOString() });
+    this.save();
+    return o;
+  }
+  async adminUpdateOrg(id: string, patch: AdminOrgPatch) {
+    await wait(); this.staff();
+    const { orgs } = this.adminState;
+    const i = orgs.findIndex((o) => o.id === id);
+    if (i < 0) throw new ApiError(404, "Organization not found.");
+    const o = orgs[i];
+    const next = { ...o, ...(patch.name != null && { name: patch.name.trim() }), ...(patch.plan && { plan: patch.plan }),
+      ...(patch.limits && { limits: patch.limits }),
+      ...(patch.clear_dates ? { subscription_starts: null, subscription_ends: null } : {
+        subscription_starts: patch.subscription_starts ?? o.subscription_starts, subscription_ends: patch.subscription_ends ?? o.subscription_ends }) };
+    this.checkDates(next.subscription_starts, next.subscription_ends);
+    orgs[i] = this.fill(next); this.save();
+    return orgs[i];
+  }
+  async adminListRequests() { await wait(); this.staff(); return [...this.adminState.requests]; }
+  async adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }) {
+    await wait(); this.staff();
+    const r = this.adminState.requests.find((x) => x.id === id);
+    if (!r) throw new ApiError(404, "Request not found.");
+    Object.assign(r, patch.status ? { status: patch.status } : {}, patch.note != null ? { note: patch.note } : {}, { updated_at: new Date().toISOString() });
+    this.save();
+    return { ...r };
+  }
   async changePassword(current: string, next: string) {
     await wait(); this.auth();
     if (current !== "demo") throw new ApiError(422, "The current password is not right.", { current_password: "not right" });

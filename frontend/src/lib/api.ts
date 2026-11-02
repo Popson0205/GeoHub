@@ -2,6 +2,7 @@ import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
 import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -40,6 +41,14 @@ export interface Api {
   setPassword(token: string, password: string): Promise<Session>;
   forgotPassword(email: string): Promise<void>;
   changePassword(current: string, next: string): Promise<void>;
+  // ---- requests and platform admin (GeoEstate staff)
+  /** Public: ask GeoEstate to set up an organization. */
+  requestOrganization(input: OrgRequestInput): Promise<void>;
+  adminListOrgs(q?: string): Promise<AdminOrg[]>;
+  adminCreateOrg(input: AdminOrgInput): Promise<AdminOrg>;
+  adminUpdateOrg(id: string, patch: AdminOrgPatch): Promise<AdminOrg>;
+  adminListRequests(): Promise<OrgRequest[]>;
+  adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }): Promise<OrgRequest>;
   logout(): Promise<void>;
   me(): Promise<User>;
 
@@ -647,6 +656,12 @@ class HttpApi implements Api {
   }
   async forgotPassword(email: string) { await this.req("POST", "/auth/forgot-password", { email }); }
   async changePassword(current: string, next: string) { await this.req("POST", "/auth/change-password", { current_password: current, new_password: next }); }
+  async requestOrganization(input: OrgRequestInput) { await this.req("POST", "/org-requests", input); }
+  adminListOrgs(q?: string) { return this.req<AdminOrg[]>("GET", `/admin/orgs${q ? `?q=${encodeURIComponent(q)}` : ""}`); }
+  adminCreateOrg(input: AdminOrgInput) { return this.req<AdminOrg>("POST", "/admin/orgs", input); }
+  adminUpdateOrg(id: string, patch: AdminOrgPatch) { return this.req<AdminOrg>("PATCH", `/admin/orgs/${id}`, patch); }
+  adminListRequests() { return this.req<OrgRequest[]>("GET", "/admin/requests"); }
+  adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }) { return this.req<OrgRequest>("PATCH", `/admin/requests/${id}`, patch); }
   async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
     const q = new URLSearchParams({ limit: "50" });
     if (opts.kind) q.set("kind", opts.kind);

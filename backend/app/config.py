@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     # A private copy for one client: sign-up by invitation only, after the first account creates the organization.
     single_org: bool = False
+    # GeoEstate staff who run the platform: comma-separated emails. They see the platform admin page, get
+    # organization requests, and are copied on renewal reminders.
+    platform_admins: str = ""
+    reminders_enabled: bool = True            # check daily for subscriptions about to end
     org_name: str = "GeoHub"                  # that organization's name when the first account creates it
     log_level: str = "INFO"
     backup_retention_days: int = 30
