@@ -37,7 +37,8 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "Bola@Example.com" } });
   ok(/49 left/.test(screen.getByRole("radio", { name: /Field collector/ }).closest("label")?.textContent ?? ""), "each role says how many places of its kind are left");
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add person" })); });
-  await until(() => /bola@example.com has been emailed/.test(text()));
+  const addReady = () => { const b = screen.getByRole("button", { name: /Add person/ }) as HTMLButtonElement; return !b.disabled && b.getAttribute("aria-busy") !== "true"; };
+  await until(() => /bola@example.com has been emailed/.test(text()) && addReady());
   ok(/bola@example.com has been emailed a link to set their password/.test(text()), "an emailed link is the default way in");
   ok(api.s.orgMembers.some((m: any) => m.email === "bola@example.com" && m.role === "collector"), "the account is made at once, as a field collector");
 
