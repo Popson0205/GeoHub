@@ -143,3 +143,7 @@
 .guide-step.is-done .guide-mark { border-color: var(--green-600); background: var(--green-600); color: #fff; }
 .guide-step.is-next .guide-mark { border-color: var(--green-600); color: var(--green-700); box-shadow: 0 0 0 4px var(--green-100); }
 @media (max-width: 600px) { .guide-step { flex-wrap: wrap; } .guide-step .grow { flex: 1 1 calc(100% - 44px); } .guide-step .btn { margin-left: 40px; } }
+.auth-forgot { align-self: flex-end; margin-top: 4px; font-size: var(--fs-sm); }
+.auth-company { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.auth-msg { max-width: 420px; }
+.auth-msg h1 { margin-bottom: var(--s-3); }

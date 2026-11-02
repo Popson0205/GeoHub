@@ -604,3 +604,28 @@ body.is-dnd * { cursor: grabbing !important; }
 .mail-check li.is-ok .mail-step { background: var(--green-soft); color: var(--green-700); }
 .mail-check li.is-fail .mail-step { background: var(--danger-50); color: var(--danger-600); }
 .mail-check li.is-warn .mail-step { background: var(--warning-50); color: var(--warning-600); }
+
+/* add a person: roles with what is left of each kind */
+.org-add { display: flex; flex-direction: column; gap: var(--s-4); }
+.org-add-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+.org-add-row .field { margin: 0; }
+.org-add fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.org-add legend { margin-bottom: 6px; padding: 0; font-weight: 600; font-size: var(--fs-sm); }
+.org-roles { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px !important; }
+.org-role-opt, .org-delivery label { display: flex; gap: 10px; align-items: flex-start; padding: 10px var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-sm); line-height: 1.4; }
+.org-role-opt.is-on { border-color: var(--green-600); box-shadow: inset 0 0 0 1px var(--green-600); background: var(--green-soft); }
+.org-role-opt.is-full { opacity: .55; cursor: not-allowed; }
+.org-role-opt input, .org-delivery input { margin-top: 3px; accent-color: var(--green-600); }
+.org-projects { flex-direction: row !important; flex-wrap: wrap; gap: 6px 16px !important; font-size: var(--fs-sm); }
+.org-projects label { display: inline-flex; gap: 6px; align-items: center; }
+.org-add > .btn { align-self: flex-start; }
+.org-temp { margin-top: var(--s-4); padding: var(--s-3) var(--s-4); border: 1px solid var(--warning-100); border-radius: var(--r-md); background: var(--warning-50); }
+.org-temp p { margin: 0 0 8px; font-size: var(--fs-sm); }
+.org-temp-row { display: flex; align-items: center; gap: var(--s-3); }
+.org-temp-pw { font: 600 var(--fs-lg) var(--font-mono); letter-spacing: .04em; color: var(--ink-900); user-select: all; }
+.org-renew { margin: 0; font-size: var(--fs-sm); color: var(--ink-700); }
+.org-actions .btn + .btn { margin-left: 2px; }
+@media (max-width: 560px) {
+  .org-add-row, .org-roles { grid-template-columns: 1fr; }
+  .org-add > .btn { align-self: stretch; }
+}

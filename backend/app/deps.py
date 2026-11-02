@@ -13,7 +13,7 @@ RANK = {"viewer": 1, "collector": 2, "admin": 3, "owner": 4}
 
 async def _user_from_token(conn, token: str, request: Request) -> dict:
     sub = decode_token(token, "access")["sub"]
-    cur = await conn.execute("SELECT id, email, name, created_at FROM users WHERE id = %s", (sub,))
+    cur = await conn.execute("SELECT id, email, name, created_at, must_change_password FROM users WHERE id = %s", (sub,))
     user = await cur.fetchone()
     if not user:
         raise Problem(401, "Unknown user.", code="invalid_token")

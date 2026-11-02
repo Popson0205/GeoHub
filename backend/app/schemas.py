@@ -36,7 +36,8 @@ class OrgBrief(BaseModel):
     id: UUID
     name: str
     slug: str
-    role: Literal["owner", "admin", "member"]
+    role: Literal["owner", "admin", "member", "collector", "viewer"]
+    plan: str = "individual"
 
 
 class UserOut(BaseModel):
@@ -44,6 +45,7 @@ class UserOut(BaseModel):
     email: EmailStr
     name: str
     org: OrgBrief | None = None
+    must_change_password: bool = Field(False, description="Signed in with a temporary password: choose a new one first")
 
 
 class AuthOut(BaseModel):
@@ -843,13 +845,22 @@ class PublicDashboardOut(BaseModel):
 
 
 # ---------- organizations ----------
-OrgRole = Literal["owner", "admin", "member"]
+OrgRole = Literal["owner", "admin", "member", "collector", "viewer"]
+AddableRole = Literal["admin", "member", "collector", "viewer"]
 
 
 class OrgUsage(BaseModel):
-    seats: int = Field(description="Members plus pending invitations")
+    seats: int = Field(description="Owners, admins and members, plus pending invitations for them")
+    collectors: int = Field(description="Field collectors, plus pending invitations")
+    viewers: int = Field(description="Viewers, plus pending invitations")
     projects: int
     records: int
+
+
+class OrgCaps(BaseModel):
+    seats: int | None = Field(None, description="Team seats; null = unlimited")
+    collectors: int | None = None
+    viewers: int | None = None
 
 
 class OrgOut(BaseModel):
@@ -857,9 +868,13 @@ class OrgOut(BaseModel):
     name: str
     slug: str
     role: OrgRole = Field(description="The caller's role in the organization")
-    plan: str
-    limits: dict[str, int] = Field(description="Caps set for this organization's plan; a missing key means unlimited")
+    plan: str = Field(description="individual, standard, advanced or custom")
+    plan_name: str
+    caps: OrgCaps = Field(description="How many people of each kind the plan includes")
+    limits: dict[str, int] = Field(description="Caps set by hand for this organization (Custom plans, one-off changes)")
     usage: OrgUsage
+    subscription_starts: date | None = None
+    subscription_ends: date | None = None
     single_org: bool = Field(description="This deployment is a private copy for one organization")
 
 
@@ -879,7 +894,48 @@ class OrgMemberOut(BaseModel):
 
 class OrgMemberIn(BaseModel):
     email: EmailStr
-    role: Literal["admin", "member"] = "member"
+    role: AddableRole = "member"
+
+
+class ProjectGrant(BaseModel):
+    project_id: UUID
+    role: Literal["admin", "collector", "viewer"] | None = Field(None, description="Defaults from the person's role")
+
+
+class AccountIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    role: AddableRole = "member"
+    delivery: Literal["email", "temporary"] = Field("email", description="email: send a one-time link to set a "
+                                                    "password. temporary: return a password to hand over, shown once")
+    projects: list[ProjectGrant] = Field(default_factory=list, max_length=200)
+
+
+class AccountOut(BaseModel):
+    member: "OrgMemberOut"
+    temporary_password: str | None = Field(None, description="Only with delivery=temporary; shown this once")
+    email_sent: bool
+
+
+class PasswordTokenOut(BaseModel):
+    email: str
+    name: str
+    purpose: Literal["set", "reset"]
+    org_name: str | None = None
+
+
+class SetPasswordIn(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class OrgMemberPatch(BaseModel):

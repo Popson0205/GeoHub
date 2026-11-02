@@ -10,7 +10,10 @@ from ..db import get_conn
 from ..deps import current_user
 from ..errors import Problem
 from ..logging_setup import client_ip
-from ..schemas import AuthOut, LoginIn, RefreshIn, RegisterIn, UserOut
+from .. import passwords
+from ..mailer import send_email
+from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, PasswordTokenOut, RefreshIn, RegisterIn,
+                       SetPasswordIn, UserOut)
 from ..security import (burn_password_check, hash_password, hash_token, make_access_token, new_refresh_token,
                         verify_password)
 
@@ -19,6 +22,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 async def _issue(conn, user: dict, family_id=None) -> dict:
     org = orgs.org_out(await orgs.require_membership(conn, user))
+    cur = await conn.execute("SELECT must_change_password FROM users WHERE id = %s", (user["id"],))
+    must = (await cur.fetchone())["must_change_password"]
     raw, digest = new_refresh_token()
     await conn.execute(
         "INSERT INTO refresh_tokens (user_id, family_id, token_hash, expires_at) "
@@ -26,7 +31,8 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
         (user["id"], family_id or uuid4(), digest, settings.refresh_token_days))
     return {"access_token": make_access_token(user["id"]), "refresh_token": raw,
             "expires_in": settings.access_token_minutes * 60,
-            "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org}}
+            "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org,
+                     "must_change_password": must}}
 
 
 @router.post("/register", response_model=AuthOut, status_code=201,
@@ -88,6 +94,56 @@ async def refresh(body: RefreshIn, conn=Depends(get_conn)):
     return await _issue(conn, {"id": rt["user_id"], "email": rt["email"], "name": rt["name"]}, rt["family_id"])
 
 
+@router.get("/password-link/{token}", response_model=PasswordTokenOut, summary="Who a set/reset password link is for")
+async def password_link(token: str, conn=Depends(get_conn)):
+    t = await passwords.lookup(conn, token)
+    return {"email": t["email"], "name": t["name"], "purpose": t["purpose"], "org_name": t["org_name"]}
+
+
+@router.post("/set-password", response_model=AuthOut, summary="Set a password from a one-time link, and sign in",
+             dependencies=[Depends(ratelimit.limit("set-password", 20, 3600))])
+async def set_password(body: SetPasswordIn, request: Request, conn=Depends(get_conn)):
+    t = await passwords.lookup(conn, body.token, lock=True)
+    await conn.execute("UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s",
+                       (await hash_password(body.password), t["user_id"]))
+    await conn.execute("UPDATE password_tokens SET used_at = now() WHERE id = %s", (t["id"],))
+    # a reset ends every other session, in case someone else had the old password
+    await conn.execute("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (t["user_id"],))
+    await audit(conn, "user.password_set", actor_id=t["user_id"], target_type="user", target_id=t["user_id"],
+                ip=client_ip(request), via=t["purpose"])
+    return await _issue(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
+
+
+@router.post("/forgot-password", status_code=202, summary="Email a link to choose a new password",
+             dependencies=[Depends(ratelimit.limit("forgot-password", 5, 3600))])
+async def forgot_password(body: ForgotPasswordIn, conn=Depends(get_conn)):
+    """Always answers the same, so it never reveals whether an email has an account."""
+    await ratelimit.hit(f"forgot-email:{body.email.lower()}", 3, 3600)
+    cur = await conn.execute("SELECT id, name, email FROM users WHERE lower(email) = lower(%s)", (body.email,))
+    u = await cur.fetchone()
+    if u:
+        raw = await passwords.issue(conn, u["id"], "reset")
+        await send_email(u["email"], "Choose a new Geohub password",
+                         f"Hello {u['name']},\n\nSomeone asked to reset the password for this Geohub account. If it was "
+                         "you, choose a new password below. The link works once, within 2 hours.\n\n"
+                         "If it was not you, ignore this email: your password stays as it is.",
+                         action=("Choose a new password", f"{settings.app_url}/set-password?token={raw}"))
+    return {"sent": True}
+
+
+@router.post("/change-password", status_code=204, summary="Change your password (also after a temporary one)")
+async def change_password(body: ChangePasswordIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    cur = await conn.execute("SELECT password_hash FROM users WHERE id = %s", (user["id"],))
+    if not await verify_password(body.current_password, (await cur.fetchone())["password_hash"]):
+        raise Problem(422, "The current password is not right.", code="bad_credentials", fields={"current_password": ["not right"]})
+    if body.new_password == body.current_password:
+        raise Problem(422, "Choose a password different from the current one.", code="validation", fields={"new_password": ["same as before"]})
+    await conn.execute("UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s",
+                       (await hash_password(body.new_password), user["id"]))
+    await audit(conn, "user.password_change", actor_id=user["id"], target_type="user", target_id=user["id"], ip=client_ip(request))
+    return Response(status_code=204)
+
+
 @router.post("/logout", status_code=204)
 async def logout(body: RefreshIn, conn=Depends(get_conn)):
     await conn.execute(
@@ -101,4 +157,4 @@ me_router = APIRouter(tags=["auth"])
 
 @me_router.get("/me", response_model=UserOut)
 async def me(user=Depends(current_user), conn=Depends(get_conn)):
-    return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user))}
+    return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user))}   # must_change_password: from the user row

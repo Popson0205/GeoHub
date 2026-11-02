@@ -89,12 +89,31 @@ organization of their own, and can later be added to a colleague's (an empty one
 - **A private copy for one client**: set `SINGLE_ORG=true` and `ORG_NAME=Client Name`. The first account to sign up
   creates the organization and owns it; after that, sign-up is by invitation only.
 
-**Plans and limits** are set by hand for now, in the database:
-`UPDATE organizations SET plan = 'team', limits = '{"seats": 10, "projects": 5, "records": 50000}' WHERE slug = '…';`
-A missing key means unlimited. Going over a limit is refused with a clear message (HTTP 402, code `plan_limit`).
+**Plans.** Anyone who signs up gets the free **Individual** plan. Organizations are set up by GeoEstate after a
+yearly invoice. Plans differ only by how many people they hold; projects, forms, maps, dashboards and records are
+unlimited:
+
+| Plan | `plan` | Team seats | Field collectors | Viewers |
+| --- | --- | --- | --- | --- |
+| Individual (free) | `individual` | 1 | 5 | 5 |
+| Organization Standard ($500/year) | `standard` | 10 | 50 | 50 |
+| Organization Advanced ($1,000/year) | `advanced` | 30 | 300 | unlimited |
+| Custom (quoted) | `custom` | set in `limits` | set in `limits` | set in `limits` |
+
+Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
+counts. Until the platform admin page arrives, set an organization's plan and subscription in the database:
+`UPDATE organizations SET plan = 'standard', subscription_starts = '2026-11-01', subscription_ends = '2027-10-31' WHERE slug = '…';`
+For a Custom plan, or a one-off change, add caps: `limits = '{"seats": 50, "collectors": 1000}'` (a missing key
+means the plan's number). Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
+
+**Accounts.** Admins create accounts on the Organization page: the person either gets an email with a one-time link to
+set their password (72 hours), or a temporary password shown once, which they must change at first sign-in. Anyone
+can reset a forgotten password from the sign-in page (2-hour link). Set `VITE_CONTACT_EMAIL` to show a "Request an
+organization" link on the sign-up page.
 
 Upgrading an existing deployment puts every existing account and all existing work into one organization named
-"My organization", owned by the earliest account. Rename it and adjust roles on the Organization page.
+"My organization", owned by the earliest account and on the Advanced plan. Rename it and adjust roles on the
+Organization page.
 
 ## Email (Brevo)
 

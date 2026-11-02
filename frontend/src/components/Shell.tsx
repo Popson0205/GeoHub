@@ -61,7 +61,8 @@ export default function Shell() {
             {userOpen && (
               <div className="menu-pop" role="menu" aria-label="Account">
                 <div className="menu-head"><strong>{user.name}</strong>{user.email && <span>{user.email}</span>}{user.org && <span className="menu-org">{user.org.name}</span>}</div>
-                <Link role="menuitem" className="menu-item" to="/settings/organization"><Icon name="users" size={18} />Organization</Link>
+                <Link role="menuitem" className="menu-item" to="/settings/organization"><Icon name="users" size={18} />{user.org?.plan === "individual" ? "Account" : "Organization"}</Link>
+                <Link role="menuitem" className="menu-item" to="/change-password"><Icon name="key" size={18} />Change password</Link>
                 <div className="menu-theme" role="group" aria-label="Appearance">
                   <span className="menu-label">Appearance</span>
                   <div className="seg-control">

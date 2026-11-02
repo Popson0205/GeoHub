@@ -12,15 +12,18 @@ from ..deps import current_user
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
-from ..schemas import OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from .. import passwords
+from ..schemas import AccountIn, AccountOut, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
 
 
 async def _out(conn, m: dict) -> dict:
     return {"id": m["org_id"], "name": m["name"], "slug": m["slug"], "role": m["role"], "plan": m["plan"],
-            "limits": {k: int(v) for k, v in (m["limits"] or {}).items() if k in orgs.LIMIT_LABEL},
-            "usage": await orgs.usage(conn, m["org_id"]), "single_org": settings.single_org}
+            "plan_name": orgs.PLAN_NAMES.get(m["plan"], m["plan"]), "caps": orgs.caps(m["plan"], m["limits"]),
+            "limits": {k: int(v) for k, v in (m["limits"] or {}).items() if k in orgs.LIMIT_LABEL and v is not None},
+            "usage": await orgs.usage(conn, m["org_id"]), "subscription_starts": m["subscription_starts"],
+            "subscription_ends": m["subscription_ends"], "single_org": settings.single_org}
 
 
 @router.get("", response_model=OrgOut, summary="Your organization, its plan and what it uses")
@@ -46,7 +49,7 @@ async def list_members(user=Depends(current_user), conn=Depends(get_conn)):
         "  FROM org_members om JOIN users u ON u.id = om.user_id WHERE om.org_id = %(o)s "
         " UNION ALL "
         " SELECT i.id, NULL, i.email, NULL, i.role, 'invited', i.created_at FROM org_invitations i WHERE i.org_id = %(o)s"
-        ") x ORDER BY (status = 'active') DESC, array_position(ARRAY['owner','admin','member'], role), lower(email)",
+        ") x ORDER BY (status = 'active') DESC, array_position(ARRAY['owner','admin','member','collector','viewer'], role), lower(email)",
         {"o": m["org_id"]})
     return await cur.fetchall()
 
@@ -75,7 +78,7 @@ async def add_member(body: OrgMemberIn, request: Request, user=Depends(current_u
                 "status": "active", "joined_at": (await cur.fetchone())["created_at"]}
     cur = await conn.execute("SELECT id FROM org_invitations WHERE org_id = %s AND lower(email) = %s", (m["org_id"], email))
     if not await cur.fetchone():
-        await orgs.check_limit(conn, m["org_id"], "seats")
+        await orgs.check_limit(conn, m["org_id"], orgs.KIND_OF_ROLE[body.role])
     cur = await conn.execute(
         "INSERT INTO org_invitations (org_id, email, role, invited_by) VALUES (%s, %s, %s, %s) "
         "ON CONFLICT (org_id, lower(email)) DO UPDATE SET role = EXCLUDED.role RETURNING id, created_at",
@@ -113,7 +116,19 @@ async def set_role(user_id: UUID, body: OrgMemberPatch, request: Request, user=D
     t = await _target(conn, m["org_id"], user_id)
     if t["role"] == "owner" and body.role != "owner" and await _owners(conn, m["org_id"]) == 1:
         raise Problem(409, "An organization needs at least one owner. Make someone else an owner first.", code="last_owner")
+    if orgs.KIND_OF_ROLE[body.role] != orgs.KIND_OF_ROLE[t["role"]]:
+        await orgs.check_limit(conn, m["org_id"], orgs.KIND_OF_ROLE[body.role])
     await conn.execute("UPDATE org_members SET role = %s WHERE user_id = %s", (body.role, user_id))
+    # someone who becomes a field collector or viewer keeps their projects, in the role that kind allows
+    if body.role in ("collector", "viewer"):
+        await conn.execute("UPDATE members SET role = %s WHERE user_id = %s AND role <> %s "
+                           "AND project_id IN (SELECT id FROM projects WHERE org_id = %s)", (body.role, user_id, body.role, m["org_id"]))
+        if body.role == "collector":
+            await conn.execute("UPDATE map_members SET role = 'contributor' WHERE user_id = %s "
+                               "AND map_id IN (SELECT id FROM workspace_maps WHERE org_id = %s)", (user_id, m["org_id"]))
+        else:
+            await conn.execute("DELETE FROM map_members WHERE user_id = %s AND map_id IN "
+                               "(SELECT id FROM workspace_maps WHERE org_id = %s)", (user_id, m["org_id"]))
     await audit(conn, "org.role_change", actor_id=user["id"], target_type="user", target_id=user_id,
                 ip=client_ip(request), org_id=str(m["org_id"]), role=body.role)
     cur = await conn.execute("SELECT u.id, u.id AS user_id, u.email, u.name, om.role, 'active' AS status, "
@@ -183,3 +198,86 @@ async def cancel_invitation(invitation_id: UUID, user=Depends(current_user), con
     if not await cur.fetchone():
         raise Problem(404, "Invitation not found.", code="not_found")
     return Response(status_code=204)
+
+
+# ---------- accounts made by an admin ----------
+ROLE_WORDS = {"admin": "an administrator", "member": "a member", "collector": "a field collector", "viewer": "a viewer"}
+DEFAULT_PROJECT_ROLE = {"admin": "admin", "member": "admin", "collector": "collector", "viewer": "viewer"}
+
+
+async def _welcome(m: dict, admin: dict, name: str, email: str, role: str, raw: str) -> bool:
+    return await send_email(
+        email, f"Your Geohub account for {m['name']}",
+        f"Hello {name},\n\n{admin['name']} created a Geohub account for you in \"{m['name']}\", as {ROLE_WORDS[role]}.\n\n"
+        f"Your sign-in email is {email}. Choose your password with the button below; the link works once, within 72 hours. "
+        "If it has expired, ask your administrator to send it again.",
+        action=("Set your password", f"{settings.app_url}/set-password?token={raw}"))
+
+
+@router.post("/accounts", response_model=AccountOut, status_code=201, summary="Create an account for someone (admins)")
+async def create_account(body: AccountIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    """The person gets an account straight away, in the organization and the projects given, and either an email
+    with a one-time link to set their password, or a temporary password shown here once (they choose their own at
+    first sign-in). It uses one place of the role's kind: a team seat, a field collector or a viewer."""
+    m = await orgs.require_org_role(conn, user, "admin")
+    if body.role == "admin" and m["role"] != "owner":
+        raise Problem(403, "Only an owner can add administrators.", code="forbidden")
+    email, ip = body.email.lower(), client_ip(request)
+    # every project named must belong to this organization
+    pids = [g.project_id for g in body.projects]
+    if pids:
+        cur = await conn.execute("SELECT id FROM projects WHERE org_id = %s AND id = ANY(%s)", (m["org_id"], pids))
+        found = {r["id"] for r in await cur.fetchall()}
+        if len(found) != len(set(pids)):
+            raise Problem(422, "Some of those projects are not in your organization.", code="validation",
+                          fields={"projects": ["unknown project"]})
+    cur = await conn.execute("SELECT id, name FROM users WHERE lower(email) = %s", (email,))
+    existing = await cur.fetchone()
+    temporary = None
+    if existing:
+        # someone who signed up on their own with nothing in their account yet is brought in; anyone else is refused
+        if not await orgs.bring_into(conn, existing["id"], m["org_id"], body.role):
+            raise Problem(409, "That person is already in your organization.", code="already_member")
+        uid, name = existing["id"], existing["name"]
+        sent = await send_email(email, f"You joined {m['name']} on Geohub",
+                                f"{user['name']} added your Geohub account to \"{m['name']}\", as {ROLE_WORDS[body.role]}. "
+                                "Sign in with your usual password.", action=("Open Geohub", settings.app_url))
+    else:
+        await orgs.check_limit(conn, m["org_id"], orgs.KIND_OF_ROLE[body.role])
+        temporary = passwords.temporary_password() if body.delivery == "temporary" else None
+        pw_hash = await (passwords.hash_password(temporary) if temporary else passwords.unusable_hash())
+        cur = await conn.execute(
+            "INSERT INTO users (email, name, password_hash, must_change_password) VALUES (%s, %s, %s, %s) RETURNING id",
+            (email, body.name.strip(), pw_hash, bool(temporary)))
+        uid, name = (await cur.fetchone())["id"], body.name.strip()
+        await conn.execute("INSERT INTO org_members (user_id, org_id, role) VALUES (%s, %s, %s)", (uid, m["org_id"], body.role))
+        await conn.execute("DELETE FROM org_invitations WHERE org_id = %s AND lower(email) = %s", (m["org_id"], email))
+        sent = False if temporary else await _welcome(m, user, name, email, body.role, await passwords.issue(conn, uid, "set"))
+    for g in body.projects:
+        role = g.role or DEFAULT_PROJECT_ROLE[body.role]
+        await orgs.check_project_role(conn, uid, role)
+        await conn.execute("INSERT INTO members (project_id, user_id, role) VALUES (%s, %s, %s) "
+                           "ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role", (g.project_id, uid, role))
+    await audit(conn, "org.account_create", actor_id=user["id"], target_type="user", target_id=uid, ip=ip,
+                org_id=str(m["org_id"]), role=body.role, delivery="existing" if existing else body.delivery,
+                projects=len(body.projects))
+    cur = await conn.execute("SELECT created_at FROM org_members WHERE user_id = %s", (uid,))
+    return {"member": {"id": uid, "user_id": uid, "email": email, "name": name, "role": body.role, "status": "active",
+                       "joined_at": (await cur.fetchone())["created_at"]},
+            "temporary_password": temporary, "email_sent": sent}
+
+
+@router.post("/members/{user_id}/send-link", status_code=202, summary="Email someone a new set-password link (admins)")
+async def send_link(user_id: UUID, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    """For a welcome link that expired or went astray, or a forgotten password. Older links stop working."""
+    m = await orgs.require_org_role(conn, user, "admin")
+    t = await _target(conn, m["org_id"], user_id)
+    if t["role"] in ("owner", "admin") and m["role"] != "owner" and user_id != user["id"]:
+        raise Problem(403, "Only an owner can send a link to an owner or administrator.", code="forbidden")
+    cur = await conn.execute("SELECT email FROM users WHERE id = %s", (user_id,))
+    email = (await cur.fetchone())["email"]
+    sent = await _welcome(m, user, t["name"], email, t["role"] if t["role"] != "owner" else "admin",
+                          await passwords.issue(conn, user_id, "set"))
+    await audit(conn, "org.send_link", actor_id=user["id"], target_type="user", target_id=user_id,
+                ip=client_ip(request), org_id=str(m["org_id"]))
+    return {"sent": sent}
