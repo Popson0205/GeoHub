@@ -63,7 +63,7 @@ export default function Shell() {
               <div className="menu-pop" role="menu" aria-label="Account">
                 <div className="menu-head"><strong>{user.name}</strong>{user.email && <span>{user.email}</span>}{user.org && <span className="menu-org">{user.org.name}</span>}</div>
                 <Link role="menuitem" className="menu-item" to="/settings/organization"><Icon name="users" size={18} />{user.org?.plan === "individual" ? "Account" : "Organization"}</Link>
-                <Link role="menuitem" className="menu-item" to="/change-password"><Icon name="key" size={18} />Change password</Link>
+                <Link role="menuitem" className="menu-item" to="/settings/security"><Icon name="key" size={18} />Account security</Link>
                 {user.platform_admin && <Link role="menuitem" className="menu-item" to="/admin"><Icon name="globe" size={18} />Platform admin</Link>}
                 <div className="menu-theme" role="group" aria-label="Appearance">
                   <span className="menu-label">Appearance</span>

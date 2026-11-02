@@ -7,15 +7,27 @@ import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, O
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
   Dashboard, DashboardConfig, DashboardSharing, ImportOptions, PublicDashboard,
+  Team, ProjectTeam, TeamProjectRole, ImportResult, MfaStatus, MfaSetup, ApiKey, ApiKeyCreated, AddableRole,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
 import { LICENSE_TO_API, LICENSE_FROM_API } from "./types";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public fields?: Record<string, string>) {
+  constructor(public status: number, message: string, public fields?: Record<string, string>, public code?: string) {
     super(message);
   }
 }
+
+/** Signing in got as far as the password (or Google / Microsoft, or an emailed link): the person has two-step
+ *  sign-in on, so finish with verifyMfa(token, code from their app). */
+export class MfaRequired extends Error {
+  constructor(public token: string) {
+    super("Enter the code from your authenticator app.");
+  }
+}
+
+/** The organization requires two-step sign-in and this person has not set it up: the app sends them to set it up. */
+export const MFA_SETUP_EVENT = "geohub:mfa-setup-required";
 
 /** Everything the UI needs from a backend. HttpApi talks to the real API; MockApi (src/mock) is in-memory. */
 export interface Api {
@@ -69,6 +81,33 @@ export interface Api {
   adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }): Promise<OrgRequest>;
   logout(): Promise<void>;
   me(): Promise<User>;
+  // ---- two-step sign-in
+  /** Finish signing in after MfaRequired, with a 6-digit code or a recovery code. */
+  verifyMfa(token: string, code: string): Promise<Session>;
+  mfaStatus(): Promise<MfaStatus>;
+  startMfaSetup(): Promise<MfaSetup>;
+  /** Turns it on; returns the recovery codes (shown once). */
+  enableMfa(code: string): Promise<string[]>;
+  disableMfa(code: string): Promise<void>;
+  newRecoveryCodes(code: string): Promise<string[]>;
+  setRequireMfa(required: boolean): Promise<Org>;
+  resetMemberMfa(userId: string): Promise<void>;
+  // ---- API keys
+  listApiKeys(all?: boolean): Promise<ApiKey[]>;
+  createApiKey(input: { name: string; access: "read" | "write"; expires_in_days?: number | null }): Promise<ApiKeyCreated>;
+  revokeApiKey(id: string): Promise<void>;
+  // ---- teams, and adding many people
+  listTeams(): Promise<Team[]>;
+  createTeam(input: { name: string; description?: string }): Promise<Team>;
+  updateTeam(id: string, patch: { name?: string; description?: string }): Promise<Team>;
+  deleteTeam(id: string): Promise<void>;
+  putTeamMember(teamId: string, userId: string, lead?: boolean): Promise<Team>;
+  removeTeamMember(teamId: string, userId: string): Promise<Team>;
+  listProjectTeams(projectId: string): Promise<ProjectTeam[]>;
+  putProjectTeam(projectId: string, teamId: string, role: TeamProjectRole): Promise<ProjectTeam[]>;
+  removeProjectTeam(projectId: string, teamId: string): Promise<ProjectTeam[]>;
+  /** preview=true: what would happen to each row, changing nothing. preview=false: make the accounts (all or none). */
+  importPeople(file: File, opts: { preview: boolean; delivery: "email" | "temporary"; default_role: AddableRole }): Promise<ImportResult>;
 
   listProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project>;
@@ -301,6 +340,13 @@ function toWireConfig(c: DashboardConfig) {
   };
 }
 
+type Challenge = { mfa_required: true; mfa_token: string };
+/** A sign-in answer: the session, or MfaRequired when a code is needed next. */
+export function signedIn(r: Session | Challenge): Session {
+  if ("mfa_required" in r && r.mfa_required) throw new MfaRequired(r.mfa_token);
+  return r as Session;
+}
+
 class HttpApi implements Api {
   /** Signed tile URLs from GET /projects/{id}/layers, filled in by listImagery(). */
   private tileUrls = new Map<string, string>();
@@ -333,18 +379,21 @@ class HttpApi implements Api {
     if (!res.ok) {
       let detail = res.statusText;
       let fields: Record<string, string> | undefined;
+      let code: string | undefined;
       try {
         const p = await res.json(); // { type, title, status, detail, code, fields?: { name: [messages] } }
         detail = p.detail || p.title || detail;
+        code = p.code;
         if (p.fields) fields = flattenFields(p.fields);
       } catch { /* not JSON */ }
-      throw new ApiError(res.status, detail, fields);
+      if (code === "mfa_setup_required" && typeof window !== "undefined") window.dispatchEvent(new Event(MFA_SETUP_EVENT));
+      throw new ApiError(res.status, detail, fields, code);
     }
     return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
   }
 
   async login(email: string, password: string) {
-    const s = await this.req<Session>("POST", "/auth/login", { email, password });
+    const s = signedIn(await this.req<Session | Challenge>("POST", "/auth/login", { email, password }));
     tokens.set(s);
     return s;
   }
@@ -668,7 +717,7 @@ class HttpApi implements Api {
   async sendSignInLink(userId: string) { await this.req("POST", `/org/members/${userId}/send-link`); }
   passwordLink(token: string) { return this.req<PasswordLink>("GET", `/auth/password-link/${encodeURIComponent(token)}`); }
   async setPassword(token: string, password: string) {
-    const s = await this.req<Session>("POST", "/auth/set-password", { token, password });
+    const s = signedIn(await this.req<Session | Challenge>("POST", "/auth/set-password", { token, password }));
     tokens.set(s);
     return s;
   }
@@ -681,8 +730,33 @@ class HttpApi implements Api {
     try { return (await this.req<{ providers: SsoProvider[] }>("GET", "/auth/providers")).providers; } catch { return []; }
   }
   ssoStartUrl(provider: SsoProvider, next: string) { return `${config.apiUrl}/auth/sso/${provider}/start?next=${encodeURIComponent(next)}`; }
-  async ssoExchange(code: string) { const s = await this.req<Session>("POST", "/auth/sso/exchange", { code }); tokens.set(s); return s; }
-  async joinOrganization(token: string) { const s = await this.req<Session>("POST", "/auth/join-organization", { token }); tokens.set(s); return s; }
+  async ssoExchange(code: string) { const s = signedIn(await this.req<Session | Challenge>("POST", "/auth/sso/exchange", { code })); tokens.set(s); return s; }
+  async joinOrganization(token: string) { const s = signedIn(await this.req<Session | Challenge>("POST", "/auth/join-organization", { token })); tokens.set(s); return s; }
+  async verifyMfa(token: string, code: string) { const s = await this.req<Session>("POST", "/auth/mfa/verify", { mfa_token: token, code }, false); tokens.set(s); return s; }
+  mfaStatus() { return this.req<MfaStatus>("GET", "/auth/mfa"); }
+  startMfaSetup() { return this.req<MfaSetup>("POST", "/auth/mfa/setup"); }
+  async enableMfa(code: string) { return (await this.req<{ recovery_codes: string[] }>("POST", "/auth/mfa/enable", { code })).recovery_codes; }
+  async disableMfa(code: string) { await this.req("POST", "/auth/mfa/disable", { code }); }
+  async newRecoveryCodes(code: string) { return (await this.req<{ recovery_codes: string[] }>("POST", "/auth/mfa/recovery-codes", { code })).recovery_codes; }
+  setRequireMfa(required: boolean) { return this.req<Org>("PATCH", "/org/security", { require_mfa: required }); }
+  async resetMemberMfa(userId: string) { await this.req("DELETE", `/org/members/${userId}/mfa`); }
+  listApiKeys(all = false) { return this.req<ApiKey[]>("GET", `/org/api-keys${all ? "?all=true" : ""}`); }
+  createApiKey(input: { name: string; access: "read" | "write"; expires_in_days?: number | null }) { return this.req<ApiKeyCreated>("POST", "/org/api-keys", input); }
+  async revokeApiKey(id: string) { await this.req("DELETE", `/org/api-keys/${id}`); }
+  listTeams() { return this.req<Team[]>("GET", "/org/teams"); }
+  createTeam(input: { name: string; description?: string }) { return this.req<Team>("POST", "/org/teams", input); }
+  updateTeam(id: string, patch: { name?: string; description?: string }) { return this.req<Team>("PATCH", `/org/teams/${id}`, patch); }
+  async deleteTeam(id: string) { await this.req("DELETE", `/org/teams/${id}`); }
+  putTeamMember(teamId: string, userId: string, lead?: boolean) { return this.req<Team>("PUT", `/org/teams/${teamId}/members/${userId}`, lead === undefined ? {} : { lead }); }
+  removeTeamMember(teamId: string, userId: string) { return this.req<Team>("DELETE", `/org/teams/${teamId}/members/${userId}`); }
+  listProjectTeams(projectId: string) { return this.req<ProjectTeam[]>("GET", `/projects/${projectId}/teams`); }
+  putProjectTeam(projectId: string, teamId: string, role: TeamProjectRole) { return this.req<ProjectTeam[]>("PUT", `/projects/${projectId}/teams/${teamId}`, { role }); }
+  removeProjectTeam(projectId: string, teamId: string) { return this.req<ProjectTeam[]>("DELETE", `/projects/${projectId}/teams/${teamId}`); }
+  importPeople(file: File, opts: { preview: boolean; delivery: "email" | "temporary"; default_role: AddableRole }) {
+    const fd = new FormData();
+    fd.append("file", file); fd.append("preview", String(opts.preview)); fd.append("delivery", opts.delivery); fd.append("default_role", opts.default_role);
+    return this.req<ImportResult>("POST", "/org/accounts/import", fd);
+  }
   listDomains() { return this.req<OrgDomain[]>("GET", "/org/domains"); }
   addDomain(domain: string) { return this.req<OrgDomain>("POST", "/org/domains", { domain }); }
   verifyDomain(domain: string) { return this.req<OrgDomain>("POST", `/org/domains/${encodeURIComponent(domain)}/verify`); }

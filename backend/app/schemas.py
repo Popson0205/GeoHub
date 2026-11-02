@@ -927,6 +927,7 @@ class OrgMemberOut(BaseModel):
     role: OrgRole
     status: Literal["active", "invited"]
     joined_at: datetime
+    mfa_enabled: bool | None = Field(None, description="Two-step sign-in is on (in the people list)")
 
 
 class OrgMemberIn(BaseModel):

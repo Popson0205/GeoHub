@@ -1,7 +1,7 @@
 import { applyBrand } from "./brand";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { ApiError, loadApi, tokens } from "./api";
+import { ApiError, loadApi, MFA_SETUP_EVENT, tokens } from "./api";
 import type { Session, User } from "./types";
 import { Loading } from "../components/ui";
 
@@ -58,11 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { const u = await (await loadApi()).me(); setUser(u); cacheUser(u); } catch { /* keep what we have */ }
   };
   const adopt = (s: Session) => { setUser(s.user); cacheUser(s.user); };
+  // the organization started requiring two-step sign-in while this person was signed in: read them again, and
+  // RequireAuth sends them to set it up
+  useEffect(() => {
+    const again = () => { void refresh(); };
+    window.addEventListener(MFA_SETUP_EVENT, again);
+    return () => window.removeEventListener(MFA_SETUP_EVENT, again);
+  }, []);
   // the organization's colour, for everyone in it
   const brandColor = user?.org?.brand?.color ?? null;
   useEffect(() => { applyBrand(brandColor ? { color: brandColor, logo_url: null } : null); }, [brandColor]);
   return <Ctx.Provider value={{ user, ready, login, register, logout, refresh, adopt }}>{children}</Ctx.Provider>;
 }
+
+export const SECURITY_PATH = "/settings/security";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -71,5 +80,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (!user) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
   // signed in with a temporary password: nothing else until they choose their own
   if (user.must_change_password && loc.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
+  // the organization requires two-step sign-in: nothing else until it is set up
+  if (user.mfa_setup_required && !user.must_change_password && loc.pathname !== SECURITY_PATH) return <Navigate to={SECURITY_PATH} replace />;
   return <>{children}</>;
 }

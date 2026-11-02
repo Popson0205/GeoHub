@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AuthFrame from "../components/AuthFrame";
 import { Button, Loading } from "../components/ui";
-import { loadApi } from "../lib/api";
+import MfaCodeStep from "../components/MfaCodeStep";
+import { loadApi, MfaRequired } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { PasswordLink } from "../lib/types";
 
@@ -28,6 +29,7 @@ export function SetPasswordPage() {
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mfa, setMfa] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) { setLinkError("This page needs the link from your email."); return; }
@@ -39,13 +41,17 @@ export function SetPasswordPage() {
     if (pw !== pw2) { setError("The two passwords are not the same."); return; }
     setBusy(true); setError("");
     try { adopt(await (await loadApi()).setPassword(token, pw)); nav("/", { replace: true }); }
-    catch (err) { setError(err instanceof Error ? err.message : "Could not set the password."); }
+    catch (err) {
+      // the password is saved; someone with two-step sign-in on still needs their code to come in
+      if (err instanceof MfaRequired) setMfa(err.token);
+      else setError(err instanceof Error ? err.message : "Could not set the password.");
+    }
     finally { setBusy(false); }
   }
 
   return (
     <AuthFrame>
-      {linkError ? (
+      {mfa ? <MfaCodeStep token={mfa} onSession={(s) => { adopt(s); nav("/", { replace: true }); }} /> : linkError ? (
         <div className="auth-msg">
           <h1>This link cannot be used</h1>
           <p role="alert">{linkError}</p>

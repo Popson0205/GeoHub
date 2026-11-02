@@ -93,12 +93,12 @@ organization of their own, and can later be added to a colleague's (an empty one
 yearly invoice. Plans differ only by how many people they hold; projects, forms, maps, dashboards and records are
 unlimited:
 
-| Plan | `plan` | Team seats | Field collectors | Viewers |
-| --- | --- | --- | --- | --- |
-| Individual (free) | `individual` | 1 | 5 | 5 |
-| Organization Standard ($500/year) | `standard` | 10 | 50 | 50 |
-| Organization Advanced ($1,000/year) | `advanced` | 30 | 300 | unlimited |
-| Custom (quoted) | `custom` | set in `limits` | set in `limits` | set in `limits` |
+| Plan | `plan` | Team seats | Field collectors | Viewers | Teams |
+| --- | --- | --- | --- | --- | --- |
+| Individual (free) | `individual` | 1 | 5 | 5 | none |
+| Organization Standard ($500/year) | `standard` | 10 | 50 | 50 | 2 |
+| Organization Advanced ($1,000/year) | `advanced` | 30 | 300 | unlimited | 10 |
+| Custom (quoted) | `custom` | set in `limits` | set in `limits` | set in `limits` | set in `limits` |
 
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
 counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
@@ -129,6 +129,40 @@ can reset a forgotten password from the sign-in page (2-hour link).
 Upgrading an existing deployment puts every existing account and all existing work into one organization named
 "My organization", owned by the earliest account and on the Advanced plan. Rename it and adjust roles on the
 Organization page.
+
+## Teams, adding many people, two-step sign-in and API keys
+
+**Teams (departments).** On the Organization page, admins make teams (Standard 2, Advanced 10) and choose their
+**leads**. A lead adds and removes the team's people (anyone already in the organization) and is an admin of every
+project the team has. Give a team a project from its card on the Organization page, or from a form's Share page: everyone
+in it gets the role there (collectors, viewers or admins), kept within their kind of place: field collectors at most
+collect and viewers only view. Leads must hold a team seat. Taking someone out of the team, or the organization,
+takes away what the team gave them.
+
+**Adding many people from a spreadsheet.** Organization page → **Add many people**. An Excel (.xlsx) or CSV file with
+the columns `email` and `name`, and optionally `role` (member, field collector, viewer, or admin for owners), `team`
+and `projects` (names separated by `;`). **Check the file** shows what happens to each row and whether the plan has
+room, changing nothing; **Add N people** then adds everyone, or no one if any row has a problem. Each person gets a
+welcome email with a set-password link, or a temporary password (downloadable as a CSV, shown once). Up to 500 rows
+and 1 MB per file. API: `POST /org/accounts/import` (multipart: `file`, `preview`, `delivery`, `default_role`).
+
+**Two-step sign-in.** Anyone can turn it on under **Account security** (account menu): scan the QR code with an
+authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…), confirm a code, and save the ten
+recovery codes. From then on signing in, with a password, Google / Microsoft or an emailed link, also asks for the
+6-digit code. On Organization plans, admins can **require** it for everyone: people without it are sent to set it up
+and can do nothing else until they have. For a lost phone, an admin chooses **Reset 2-step** next to the person
+(owners for admins and owners). The app's secret is stored encrypted with a key made from `JWT_SECRET`, so changing
+`JWT_SECRET` means everyone sets two-step sign-in up again.
+
+**API keys (Organization plans).** Under **Account security**, anyone can make keys for scripts and other systems.
+A key acts as the person who made it, with their permissions, **read only** (GET requests) or **read and write**,
+and can expire. It is shown once; only a hash is kept. Admins see and revoke everyone's keys. A key stops working
+when revoked, when it expires, or when its person leaves the organization. Keys cannot make keys, change passwords or
+two-step sign-in.
+
+```sh
+curl -H "Authorization: Bearer ghk_…" https://your-geohub.example.com/api/projects
+```
 
 ## Branding and private Data hub publishing (Organization plans)
 

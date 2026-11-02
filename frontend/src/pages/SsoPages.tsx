@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AuthFrame from "../components/AuthFrame";
 import { Button, Loading } from "../components/ui";
-import { loadApi } from "../lib/api";
+import MfaCodeStep from "../components/MfaCodeStep";
+import { loadApi, MfaRequired } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import type { PasswordLink } from "../lib/types";
+import type { PasswordLink, Session } from "../lib/types";
 
 const safeNext = (n: string | null) => (n && n.startsWith("/") && !n.startsWith("//") ? n : "/");
 
@@ -14,6 +15,7 @@ export function SsoReturnPage() {
   const { adopt } = useAuth();
   const nav = useNavigate();
   const [error, setError] = useState("");
+  const [mfa, setMfa] = useState<string | null>(null);
   const once = useRef(false);            // the code works once; React's development double effects must not spend it twice
 
   useEffect(() => {
@@ -21,15 +23,20 @@ export function SsoReturnPage() {
     once.current = true;
     const code = params.get("code");
     if (!code) { setError("This page needs the answer from Google or Microsoft. Sign in again."); return; }
-    loadApi().then((api) => api.ssoExchange(code)).then((s) => {
-      adopt(s);
-      nav(s.user.must_change_password ? "/change-password" : safeNext(params.get("next")), { replace: true });
-    }, (e) => setError(e instanceof Error ? e.message : "Could not sign in."));
+    loadApi().then((api) => api.ssoExchange(code)).then(done, (e) => {
+      if (e instanceof MfaRequired) setMfa(e.token);
+      else setError(e instanceof Error ? e.message : "Could not sign in.");
+    });
   }, [params, adopt, nav]);
+
+  function done(s: Session) {
+    adopt(s);
+    nav(s.user.must_change_password ? "/change-password" : safeNext(params.get("next")), { replace: true });
+  }
 
   return (
     <AuthFrame>
-      {error ? (
+      {mfa ? <MfaCodeStep token={mfa} onSession={done} /> : error ? (
         <div className="auth-msg">
           <h1>Sign-in did not finish</h1>
           <p role="alert">{error}</p>
@@ -49,6 +56,7 @@ export function JoinOrgPage() {
   const [info, setInfo] = useState<PasswordLink | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mfa, setMfa] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) { setError("This page needs the link from your email."); return; }
@@ -61,12 +69,16 @@ export function JoinOrgPage() {
   async function join() {
     setBusy(true); setError("");
     try { adopt(await (await loadApi()).joinOrganization(token)); nav("/", { replace: true }); }
-    catch (e) { setError(e instanceof Error ? e.message : "Could not join."); setBusy(false); }
+    catch (e) {
+      if (e instanceof MfaRequired) setMfa(e.token);
+      else setError(e instanceof Error ? e.message : "Could not join.");
+      setBusy(false);
+    }
   }
 
   return (
     <AuthFrame>
-      {error && !info ? (
+      {mfa ? <MfaCodeStep token={mfa} onSession={(s) => { adopt(s); nav("/", { replace: true }); }} /> : error && !info ? (
         <div className="auth-msg">
           <h1>This link cannot be used</h1>
           <p role="alert">{error}</p>

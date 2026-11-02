@@ -57,10 +57,11 @@ async def list_members(user=Depends(current_user), conn=Depends(get_conn)):
     m = await orgs.require_membership(conn, user)
     cur = await conn.execute(
         "SELECT * FROM ("
-        " SELECT u.id, u.id AS user_id, u.email, u.name, om.role, 'active' AS status, om.created_at AS joined_at "
+        " SELECT u.id, u.id AS user_id, u.email, u.name, om.role, 'active' AS status, om.created_at AS joined_at, "
+        "  (u.totp_enabled_at IS NOT NULL) AS mfa_enabled "
         "  FROM org_members om JOIN users u ON u.id = om.user_id WHERE om.org_id = %(o)s "
         " UNION ALL "
-        " SELECT i.id, NULL, i.email, NULL, i.role, 'invited', i.created_at FROM org_invitations i WHERE i.org_id = %(o)s"
+        " SELECT i.id, NULL, i.email, NULL, i.role, 'invited', i.created_at, NULL FROM org_invitations i WHERE i.org_id = %(o)s"
         ") x ORDER BY (status = 'active') DESC, array_position(ARRAY['owner','admin','member','collector','viewer'], role), lower(email)",
         {"o": m["org_id"]})
     return await cur.fetchall()
