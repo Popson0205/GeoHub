@@ -47,7 +47,9 @@ class Settings(BaseSettings):
     max_import_mb: int = 50
     photo_web_px: int = 2048
 
-    # Email: Resend's API when this is set (works where SMTP is blocked, e.g. Railway below Pro), else SMTP below.
+    # Email over HTTPS (works where SMTP is blocked, e.g. Railway below Pro): Brevo if its key is set, else Resend,
+    # else SMTP below, else emails are only logged.
+    brevo_api_key: str = ""
     resend_api_key: str = ""
     mail_reply_to: str = ""                   # where replies go, e.g. support@yourdomain.com
     smtp_host: str = ""
