@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from psycopg.types.json import Jsonb
 
-from .. import orgs, passwords, ratelimit
+from .. import domains, orgs, passwords, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -13,13 +13,15 @@ from ..deps import platform_admin, platform_admin_emails
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
-from ..schemas import AdminOrgIn, AdminOrgOut, AdminOrgPatch, OrgRequestIn, OrgRequestOut, OrgRequestPatch
+from ..schemas import OrgDomainIn, OrgDomainOut, AdminOrgIn, AdminOrgOut, AdminOrgPatch, OrgRequestIn, OrgRequestOut, OrgRequestPatch
 
 router = APIRouter(tags=["platform admin"])
 
 ORG_SQL = (
     "SELECT o.id, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, o.created_at, "
-    "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email "
+    "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email, "
+    "  ARRAY(SELECT domain || CASE WHEN verified_at IS NULL THEN ' (unverified)' ELSE '' END FROM org_domains "
+    "        WHERE org_id = o.id ORDER BY created_at) AS domains "
     "FROM organizations o "
     "LEFT JOIN LATERAL (SELECT u.name, u.email FROM org_members m JOIN users u ON u.id = m.user_id "
     "  WHERE m.org_id = o.id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1) ou ON true ")
@@ -119,6 +121,23 @@ async def update_org(org_id: UUID, body: AdminOrgPatch, request: Request, admin=
                     ip=client_ip(request), **body.model_dump(exclude_none=True, mode="json"))
     cur = await conn.execute(ORG_SQL + "WHERE o.id = %s", (org_id,))
     return await _org(conn, await cur.fetchone())
+
+
+@router.post("/admin/orgs/{org_id}/domains", response_model=OrgDomainOut, status_code=201,
+             summary="Add a company email domain, already verified (staff checked it)")
+async def admin_add_domain(org_id: UUID, body: OrgDomainIn, request: Request, admin=Depends(platform_admin), conn=Depends(get_conn)):
+    d = domains.normalize(body.domain)
+    cur = await conn.execute("SELECT org_id FROM org_domains WHERE domain = %s", (d,))
+    taken = await cur.fetchone()
+    if taken and taken["org_id"] != org_id:
+        raise Problem(409, f"{d} belongs to another organization. Remove it there first.", code="domain_taken", fields={"domain": ["taken"]})
+    cur = await conn.execute(
+        "INSERT INTO org_domains (domain, org_id, verify_token, verified_at) VALUES (%s, %s, %s, now()) "
+        "ON CONFLICT (domain) DO UPDATE SET verified_at = COALESCE(org_domains.verified_at, now()) RETURNING *",
+        (d, org_id, domains.new_token()))
+    await audit(conn, "org.domain_verify", actor_id=admin["id"], target_type="organization", target_id=org_id,
+                ip=client_ip(request), domain=d, via="platform_admin")
+    return domains.out(await cur.fetchone())
 
 
 # ---------- requests from the website ----------

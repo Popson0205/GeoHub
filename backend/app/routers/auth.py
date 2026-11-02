@@ -10,9 +10,9 @@ from ..db import get_conn
 from ..deps import current_user, is_platform_admin
 from ..errors import Problem
 from ..logging_setup import client_ip
-from .. import passwords
+from .. import passwords, signup
 from ..mailer import send_email
-from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, PasswordTokenOut, RefreshIn, RegisterIn,
+from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, PasswordTokenOut, RefreshIn, JoinOrgIn, RegisterIn,
                        SetPasswordIn, UserOut)
 from ..security import (burn_password_check, hash_password, hash_token, make_access_token, new_refresh_token,
                         verify_password)
@@ -45,16 +45,7 @@ async def register(body: RegisterIn, request: Request, conn=Depends(get_conn)):
         "INSERT INTO users (email, name, password_hash) VALUES (%s, %s, %s) RETURNING id, email, name",
         (body.email.lower(), body.name, await hash_password(body.password)))
     user = await cur.fetchone()
-    org = await orgs.join_on_signup(conn, user, body.organization)
-    # Turn pending project invitations for this email, in their organization, into memberships.
-    cur = await conn.execute(
-        "WITH inv AS (DELETE FROM invitations i USING projects p WHERE p.id = i.project_id AND p.org_id = %s "
-        "  AND lower(i.email) = lower(%s) RETURNING i.project_id, i.role) "
-        "INSERT INTO members (project_id, user_id, role) SELECT project_id, %s, role FROM inv "
-        "RETURNING project_id", (org["org_id"], body.email, user["id"]))
-    for r in await cur.fetchall():
-        await audit(conn, "member.join", actor_id=user["id"], project_id=r["project_id"], target_type="user",
-                    target_id=user["id"], ip=client_ip(request), via="invitation")
+    await signup.finish(conn, user, org_name=body.organization, ip=client_ip(request))
     return await _issue(conn, user)
 
 
@@ -103,7 +94,7 @@ async def password_link(token: str, conn=Depends(get_conn)):
 @router.post("/set-password", response_model=AuthOut, summary="Set a password from a one-time link, and sign in",
              dependencies=[Depends(ratelimit.limit("set-password", 20, 3600))])
 async def set_password(body: SetPasswordIn, request: Request, conn=Depends(get_conn)):
-    t = await passwords.lookup(conn, body.token, lock=True)
+    t = await passwords.lookup(conn, body.token, lock=True, purposes=("set", "reset"))
     await conn.execute("UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s",
                        (await hash_password(body.password), t["user_id"]))
     await conn.execute("UPDATE password_tokens SET used_at = now() WHERE id = %s", (t["id"],))
@@ -111,6 +102,23 @@ async def set_password(body: SetPasswordIn, request: Request, conn=Depends(get_c
     await conn.execute("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (t["user_id"],))
     await audit(conn, "user.password_set", actor_id=t["user_id"], target_type="user", target_id=t["user_id"],
                 ip=client_ip(request), via=t["purpose"])
+    return await _issue(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
+
+
+@router.post("/join-organization", response_model=AuthOut, summary="Confirm your email and join the organization of its domain",
+             dependencies=[Depends(ratelimit.limit("join-organization", 20, 3600))])
+async def join_organization(body: JoinOrgIn, request: Request, conn=Depends(get_conn)):
+    t = await passwords.lookup(conn, body.token, lock=True, purposes=("join",))
+    cur = await conn.execute("SELECT role FROM org_domains WHERE org_id = %s AND domain = %s AND verified_at IS NOT NULL",
+                             (t["org_id"], t["email"].rsplit("@", 1)[-1].lower()))
+    d = await cur.fetchone()
+    if not d:
+        raise Problem(410, "This organization no longer takes people by email domain. Ask its administrator to add you.",
+                      code="link_expired")
+    await orgs.bring_into(conn, t["user_id"], t["org_id"], d["role"])
+    await conn.execute("UPDATE password_tokens SET used_at = now() WHERE id = %s", (t["id"],))
+    await audit(conn, "org.join_domain", actor_id=t["user_id"], target_type="organization", target_id=t["org_id"],
+                ip=client_ip(request), role=d["role"])
     return await _issue(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
 
 

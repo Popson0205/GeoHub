@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "../components/icons";
+import OrgDomains from "../components/OrgDomains";
 import { Button, ErrorState, Loading, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -222,6 +223,8 @@ export default function OrgSettingsPage() {
               </ul>
             </section>
           )}
+
+          {admin && !isIndividual && <OrgDomains />}
         </div>
 
         <aside className="org-side">

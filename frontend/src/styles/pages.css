@@ -147,3 +147,7 @@
 .auth-company { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px solid var(--line); }
 .auth-msg { max-width: 420px; }
 .auth-msg h1 { margin-bottom: var(--s-3); }
+.auth-sso { display: flex; flex-direction: column; gap: var(--s-2); margin-bottom: var(--s-2); }
+.auth-sso .btn { width: 100%; justify-content: center; }
+.auth-or { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-2) 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }

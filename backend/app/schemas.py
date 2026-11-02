@@ -49,6 +49,14 @@ class UserOut(BaseModel):
     platform_admin: bool = Field(False, description="GeoEstate staff who manage client organizations")
 
 
+class SsoExchangeIn(BaseModel):
+    code: str = Field(min_length=10, max_length=200)
+
+
+class JoinOrgIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
 class AuthOut(BaseModel):
     access_token: str
     refresh_token: str
@@ -921,7 +929,7 @@ class AccountOut(BaseModel):
 class PasswordTokenOut(BaseModel):
     email: str
     name: str
-    purpose: Literal["set", "reset"]
+    purpose: Literal["set", "reset", "join"]
     org_name: str | None = None
 
 
@@ -993,6 +1001,7 @@ class AdminOrgOut(BaseModel):
     owner_name: str | None
     owner_email: str | None
     created_at: datetime
+    domains: list[str] = Field(default_factory=list, description="Company email domains; unverified ones say so")
 
 
 class AdminOrgIn(BaseModel):
@@ -1014,3 +1023,29 @@ class AdminOrgPatch(BaseModel):
     clear_dates: bool = False
     limits: dict[Literal["seats", "collectors", "viewers"], int | None] | None = Field(
         None, description="Replaces the one-off caps; {} goes back to the plan's numbers")
+
+
+# ---------- company email domains ----------
+class DomainRecord(BaseModel):
+    type: Literal["TXT"] = "TXT"
+    name: str = Field(description="Where to add it: the domain itself (the @ or root record)")
+    value: str
+
+
+class OrgDomainOut(BaseModel):
+    domain: str
+    verified: bool
+    verified_at: datetime | None = None
+    auto_join: bool = Field(description="People with a proven email on this domain join when they sign up")
+    role: Literal["member", "collector", "viewer"] = Field(description="The role they join with")
+    created_at: datetime
+    record: DomainRecord = Field(description="The DNS record that proves the organization owns the domain")
+
+
+class OrgDomainIn(BaseModel):
+    domain: str = Field(min_length=3, max_length=253)
+
+
+class OrgDomainPatch(BaseModel):
+    auto_join: bool | None = None
+    role: Literal["member", "collector", "viewer"] | None = None

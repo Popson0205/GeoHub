@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     # organization requests, and are copied on renewal reminders.
     platform_admins: str = ""
     reminders_enabled: bool = True            # check daily for subscriptions about to end
+    # Sign in with Google / Microsoft (OpenID Connect). Each is offered once its client id and secret are set. The
+    # redirect URI to register with the provider is {APP_URL}{API_PREFIX}/auth/sso/<google|microsoft>/callback.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
+    microsoft_tenant: str = "common"          # "common": any work, school or personal Microsoft account
     org_name: str = "GeoHub"                  # that organization's name when the first account creates it
     log_level: str = "INFO"
     backup_retention_days: int = 30

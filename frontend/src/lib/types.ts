@@ -37,7 +37,7 @@ export interface Org extends OrgBrief {
 }
 export interface AccountInput { name: string; email: string; role: AddableRole; delivery: "email" | "temporary"; projects?: { project_id: string; role?: "admin" | "collector" | "viewer" }[] }
 export interface AccountResult { member: OrgMember; temporary_password: string | null; email_sent: boolean }
-export interface PasswordLink { email: string; name: string; purpose: "set" | "reset"; org_name?: string | null }
+export interface PasswordLink { email: string; name: string; purpose: "set" | "reset" | "join"; org_name?: string | null }
 /** The result of the email check: each step and whether it passed. */
 export interface EmailCheck { ok: boolean; provider: string; steps: { status: "ok" | "warn" | "fail" | "info"; name: string; detail: string }[] }
 export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }
@@ -57,11 +57,23 @@ export interface AdminOrg {
   /** Days until the subscription ends; negative once it has ended; null without an end date. */
   days_left: number | null;
   owner_name: string | null; owner_email: string | null; created_at: string;
+  /** Company email domains; unverified ones say so. */
+  domains?: string[];
 }
 export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string;
   subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string }
 export interface AdminOrgPatch { name?: string; plan?: PlanId; subscription_starts?: string | null; subscription_ends?: string | null;
   clear_dates?: boolean; limits?: OrgLimits }
+// ---- sign-in providers and company email domains ----
+export type SsoProvider = "google" | "microsoft";
+export type DomainRole = "member" | "collector" | "viewer";
+export interface OrgDomain {
+  domain: string; verified: boolean; verified_at?: string | null;
+  /** People with a proven email on the domain join when they sign up. */
+  auto_join: boolean; role: DomainRole; created_at: string;
+  /** The DNS record that proves the organization owns the domain. */
+  record: { type: "TXT"; name: string; value: string };
+}
 export interface Session { access_token: string; refresh_token?: string; user: User }
 
 export interface Project {

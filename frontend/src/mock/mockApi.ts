@@ -6,7 +6,7 @@ import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from 
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
 import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
-  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -26,7 +26,7 @@ interface State {
   audit?: (AuditEvent & { project_id: string })[];
   org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null };
   orgMembers?: OrgMember[];
-  adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[];
+  adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
@@ -167,6 +167,62 @@ export class MockApi implements Api {
     return this.login(DEMO_USER.email, "demo");
   }
   async forgotPassword(_email: string) { await wait(); }
+  // ---- Google / Microsoft sign-in (the demo account stands in), and company domains
+  async listProviders(): Promise<SsoProvider[]> { await wait(); return ["google", "microsoft"]; }
+  ssoStartUrl(provider: SsoProvider, next: string) { return `/sso?code=demo-${provider}&next=${encodeURIComponent(next)}`; }
+  async ssoExchange(code: string) {
+    if (!code.startsWith("demo-")) { await wait(); throw new ApiError(401, "This sign-in has expired. Sign in again."); }
+    return this.login(DEMO_USER.email, "demo");
+  }
+  async joinOrganization(token: string) {
+    await wait();
+    if (token !== "demo-join") throw new ApiError(404, "This link is not valid. Ask for a new one.");
+    return this.login(DEMO_USER.email, "demo");
+  }
+  private get domainState() { return (this.s.orgDomains ??= []); }
+  private domainAdmin() {
+    this.auth(); this.orgAdmin();
+    if (this.orgState.org.plan === "individual") throw new ApiError(403, "Joining by company email domain comes with Organization plans. Ask GeoEstate for one.");
+  }
+  private domain(d: string) { const x = this.domainState.find((y) => y.domain === d); if (!x) throw new ApiError(404, "That domain is not one of your organization's."); return x; }
+  async listDomains() { await wait(); this.auth(); this.orgAdmin(); return [...this.domainState]; }
+  async addDomain(raw: string) {
+    await wait(); this.domainAdmin();
+    const d = raw.trim().toLowerCase().replace(/^@/, "").replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/.]+$/, "");
+    if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d)) throw new ApiError(422, "Enter a domain like yourcompany.com.", { domain: "not a domain" });
+    if (["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com"].includes(d)) throw new ApiError(422, `${d} is a public email service, not your company's domain.`, { domain: "public" });
+    if (this.domainState.some((x) => x.domain === d)) throw new ApiError(409, `${d} is already added to your organization.`);
+    const x: OrgDomain = { domain: d, verified: false, auto_join: true, role: "member", created_at: new Date().toISOString(),
+      record: { type: "TXT", name: d, value: `geohub-verification=${uuid().replace(/-/g, "").slice(0, 24)}` } };
+    this.domainState.push(x); this.save();
+    return x;
+  }
+  async verifyDomain(d: string) {
+    await wait(500); this.domainAdmin();
+    const x = this.domain(d);
+    // demo: a domain ending in .test verifies; others say the record is missing
+    if (!x.verified && !d.endsWith(".test")) throw new ApiError(422, `The TXT record was not found on ${d} yet. Add it at your domain registrar (name: @ or the domain itself; value: ${x.record.value}). New records can take up to an hour to appear.`);
+    Object.assign(x, { verified: true, verified_at: x.verified_at ?? new Date().toISOString() }); this.save();
+    return { ...x };
+  }
+  async updateDomain(d: string, patch: { auto_join?: boolean; role?: DomainRole }) {
+    await wait(); this.domainAdmin();
+    const x = this.domain(d);
+    Object.assign(x, patch); this.save();
+    return { ...x };
+  }
+  async removeDomain(d: string) { await wait(); this.auth(); this.orgAdmin(); this.domain(d); this.s.orgDomains = this.domainState.filter((x) => x.domain !== d); this.save(); }
+  async adminAddDomain(orgId: string, raw: string) {
+    await wait(); this.staff();
+    const o = this.adminState.orgs.find((x) => x.id === orgId);
+    if (!o) throw new ApiError(404, "Organization not found.");
+    const d = raw.trim().toLowerCase().replace(/^@/, "");
+    if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d)) throw new ApiError(422, "Enter a domain like yourcompany.com.");
+    if (this.adminState.orgs.some((x) => x.id !== orgId && (x.domains ?? []).includes(d))) throw new ApiError(409, `${d} belongs to another organization. Remove it there first.`);
+    o.domains = [...(o.domains ?? []).filter((x) => x.replace(" (unverified)", "") !== d), d]; this.save();
+    return { domain: d, verified: true, verified_at: new Date().toISOString(), auto_join: true, role: "member" as DomainRole,
+      created_at: new Date().toISOString(), record: { type: "TXT" as const, name: d, value: "geohub-verification=checked-by-staff" } };
+  }
   // ---- platform admin
   private get adminState() {
     if (!this.s.adminOrgs) {

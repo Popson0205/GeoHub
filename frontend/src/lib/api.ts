@@ -2,7 +2,7 @@ import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
 import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
-  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -41,6 +41,21 @@ export interface Api {
   setPassword(token: string, password: string): Promise<Session>;
   forgotPassword(email: string): Promise<void>;
   changePassword(current: string, next: string): Promise<void>;
+  // ---- Google / Microsoft sign-in, and joining by company domain
+  /** Which sign-in buttons to show. */
+  listProviders(): Promise<SsoProvider[]>;
+  /** Where the browser goes to sign in with a provider. */
+  ssoStartUrl(provider: SsoProvider, next: string): string;
+  /** Trade the one-time code the provider sign-in came back with for a session. */
+  ssoExchange(code: string): Promise<Session>;
+  /** Confirm your email from the link and join the organization that owns its domain. */
+  joinOrganization(token: string): Promise<Session>;
+  listDomains(): Promise<OrgDomain[]>;
+  addDomain(domain: string): Promise<OrgDomain>;
+  verifyDomain(domain: string): Promise<OrgDomain>;
+  updateDomain(domain: string, patch: { auto_join?: boolean; role?: DomainRole }): Promise<OrgDomain>;
+  removeDomain(domain: string): Promise<void>;
+  adminAddDomain(orgId: string, domain: string): Promise<OrgDomain>;
   // ---- requests and platform admin (GeoEstate staff)
   /** Public: ask GeoEstate to set up an organization. */
   requestOrganization(input: OrgRequestInput): Promise<void>;
@@ -656,6 +671,18 @@ class HttpApi implements Api {
   }
   async forgotPassword(email: string) { await this.req("POST", "/auth/forgot-password", { email }); }
   async changePassword(current: string, next: string) { await this.req("POST", "/auth/change-password", { current_password: current, new_password: next }); }
+  async listProviders() {
+    try { return (await this.req<{ providers: SsoProvider[] }>("GET", "/auth/providers")).providers; } catch { return []; }
+  }
+  ssoStartUrl(provider: SsoProvider, next: string) { return `${config.apiUrl}/auth/sso/${provider}/start?next=${encodeURIComponent(next)}`; }
+  async ssoExchange(code: string) { const s = await this.req<Session>("POST", "/auth/sso/exchange", { code }); tokens.set(s); return s; }
+  async joinOrganization(token: string) { const s = await this.req<Session>("POST", "/auth/join-organization", { token }); tokens.set(s); return s; }
+  listDomains() { return this.req<OrgDomain[]>("GET", "/org/domains"); }
+  addDomain(domain: string) { return this.req<OrgDomain>("POST", "/org/domains", { domain }); }
+  verifyDomain(domain: string) { return this.req<OrgDomain>("POST", `/org/domains/${encodeURIComponent(domain)}/verify`); }
+  updateDomain(domain: string, patch: { auto_join?: boolean; role?: DomainRole }) { return this.req<OrgDomain>("PATCH", `/org/domains/${encodeURIComponent(domain)}`, patch); }
+  async removeDomain(domain: string) { await this.req("DELETE", `/org/domains/${encodeURIComponent(domain)}`); }
+  adminAddDomain(orgId: string, domain: string) { return this.req<OrgDomain>("POST", `/admin/orgs/${orgId}/domains`, { domain }); }
   async requestOrganization(input: OrgRequestInput) { await this.req("POST", "/org-requests", input); }
   adminListOrgs(q?: string) { return this.req<AdminOrg[]>("GET", `/admin/orgs${q ? `?q=${encodeURIComponent(q)}` : ""}`); }
   adminCreateOrg(input: AdminOrgInput) { return this.req<AdminOrg>("POST", "/admin/orgs", input); }
