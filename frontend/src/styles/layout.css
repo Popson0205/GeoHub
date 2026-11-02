@@ -556,3 +556,40 @@ body.is-dnd * { cursor: grabbing !important; }
 .crash .crash-ref { font-size: var(--fs-sm); }
 .crash .crash-ref .mono { white-space: nowrap; }
 .crash .link-btn { border: 0; background: none; padding: 0; color: var(--link); font: 600 var(--fs-sm) var(--font-ui); text-decoration: underline; cursor: pointer; }
+
+/* ---- organization settings ---- */
+.menu-head .menu-org { display: block; margin-top: 4px; color: var(--ink-700); font-weight: 600; }
+.org-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s-6); align-items: start; margin-top: var(--s-6); }
+.org-main, .org-side { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
+.org .card h2, .org-h2 { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--fs-lg); }
+.org-h2 { margin-bottom: var(--s-3); }
+.org-invite { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-3); }
+.org-invite .field { margin: 0; }
+.org-invite .field.grow { flex: 1 1 240px; }
+.org-people td { vertical-align: middle; }
+.org-people select.input { width: auto; min-height: 34px; height: 34px; font-size: var(--fs-sm); }
+.topbar .menu-pop a.menu-item { color: var(--ink-900); }                 /* a link in the account menu, not a top bar link */
+.org-actions { text-align: right; white-space: nowrap; }
+.org-invites { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
+.org-invites li { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 10px var(--s-4); }
+.org-invites li + li { border-top: 1px solid var(--line); }
+.org-plan-name { text-transform: capitalize; }
+.org-usage { display: flex; flex-direction: column; gap: var(--s-3); margin: 0; }
+.org-usage dt { font-weight: 600; font-size: var(--fs-sm); }
+.org-usage dd { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 0; }
+.meter { display: block; height: 8px; border-radius: var(--r-full); background: var(--n-100); overflow: hidden; }
+.meter > span { display: block; height: 100%; border-radius: inherit; background: var(--green-600); }
+.meter.is-full > span { background: var(--danger-600); }
+.org-rename { display: flex; gap: var(--s-2); align-items: flex-start; }
+.org-rename .field { flex: 1; margin: 0; }
+@media (max-width: 900px) { .org-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  /* each person as a small card: name on top, role and Remove below */
+  .org-people thead { display: none; }
+  .org-people tr { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px var(--s-2); padding: 10px var(--s-3); }
+  .org-people tr + tr { border-top: 1px solid var(--line); }
+  .org-people td { display: block; padding: 0; border: 0; }
+  .org-people td:first-child { grid-column: 1 / -1; }
+  .org-people td:nth-child(3) { display: none; }
+  .org-invite .btn { width: 100%; }
+}

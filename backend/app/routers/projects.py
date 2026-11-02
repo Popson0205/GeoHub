@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 
-from .. import storage
+from .. import orgs, storage
 from ..audit import audit
 from ..db import get_conn
 from ..deps import RANK, current_user, require_role
@@ -18,23 +18,31 @@ from ..services.geo import check_geometry
 
 router = APIRouter(tags=["projects"])
 
+# The caller's role: their project membership, raised to owner/admin when they own or run the organization.
 PROJECT_SQL = (
-    "SELECT p.id, p.name, p.description, p.created_at, m.role, p.last_activity_at AS last_update, "
+    "SELECT p.id, p.name, p.description, p.created_at, "
+    "CASE WHEN om.role = 'owner' THEN 'owner' "
+    "     WHEN om.role = 'admin' AND (m.role IS NULL OR m.role IN ('collector','viewer')) THEN 'admin' ELSE m.role END AS role, "
+    "p.last_activity_at AS last_update, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL) AS feature_count, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL AND f.status = 'submitted') AS waiting_count, "
     "(SELECT count(*) FROM members mm WHERE mm.project_id = p.id AND mm.role = 'collector') AS collector_count "
-    "FROM projects p JOIN members m ON m.project_id = p.id AND m.user_id = %s ")
+    "FROM projects p LEFT JOIN members m ON m.project_id = p.id AND m.user_id = %(u)s "
+    "LEFT JOIN org_members om ON om.user_id = %(u)s AND om.org_id = p.org_id AND om.role IN ('owner','admin') "
+    "WHERE (m.user_id IS NOT NULL OR om.user_id IS NOT NULL) ")
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)
 async def create_project(body: ProjectIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
-    cur = await conn.execute("INSERT INTO projects (name, description, created_by) VALUES (%s, %s, %s) RETURNING id",
-                             (body.name, body.description, user["id"]))
+    org = await orgs.require_membership(conn, user)
+    await orgs.check_limit(conn, org["org_id"], "projects")
+    cur = await conn.execute("INSERT INTO projects (name, description, created_by, org_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                             (body.name, body.description, user["id"], org["org_id"]))
     pid = (await cur.fetchone())["id"]
     await conn.execute("INSERT INTO members (project_id, user_id, role) VALUES (%s, %s, 'owner')", (pid, user["id"]))
     await audit(conn, "project.create", actor_id=user["id"], project_id=pid, target_type="project", target_id=pid,
                 ip=client_ip(request))
-    cur = await conn.execute(PROJECT_SQL + "WHERE p.id = %s", (user["id"], pid))
+    cur = await conn.execute(PROJECT_SQL + "AND p.id = %(p)s", {"u": user["id"], "p": pid})
     return await cur.fetchone()
 
 
@@ -42,8 +50,8 @@ async def create_project(body: ProjectIn, request: Request, user=Depends(current
 async def list_projects(limit: int = Query(50, ge=1, le=200), cursor: str | None = None,
                         user=Depends(current_user), conn=Depends(get_conn)):
     off = decode_cursor(cursor).get("o", 0)
-    cur = await conn.execute(PROJECT_SQL + "ORDER BY p.last_activity_at DESC, p.id LIMIT %s OFFSET %s",
-                             (user["id"], limit + 1, off))
+    cur = await conn.execute(PROJECT_SQL + "ORDER BY p.last_activity_at DESC, p.id LIMIT %(l)s OFFSET %(o)s",
+                             {"u": user["id"], "l": limit + 1, "o": off})
     items, nxt = page_from_offset(await cur.fetchall(), limit, off)
     return {"items": items, "next_cursor": nxt}
 
@@ -51,7 +59,7 @@ async def list_projects(limit: int = Query(50, ge=1, le=200), cursor: str | None
 @router.get("/projects/{project_id}", response_model=ProjectOut)
 async def get_project(project_id: UUID, user=Depends(current_user), conn=Depends(get_conn)):
     await require_role(conn, project_id, user["id"])
-    cur = await conn.execute(PROJECT_SQL + "WHERE p.id = %s", (user["id"], project_id))
+    cur = await conn.execute(PROJECT_SQL + "AND p.id = %(p)s", {"u": user["id"], "p": project_id})
     return await cur.fetchone()
 
 
@@ -60,7 +68,7 @@ async def update_project(project_id: UUID, body: ProjectPatch, user=Depends(curr
     await require_role(conn, project_id, user["id"], "admin")
     await conn.execute("UPDATE projects SET name = COALESCE(%s, name), description = COALESCE(%s, description) "
                        "WHERE id = %s", (body.name, body.description, project_id))
-    cur = await conn.execute(PROJECT_SQL + "WHERE p.id = %s", (user["id"], project_id))
+    cur = await conn.execute(PROJECT_SQL + "AND p.id = %(p)s", {"u": user["id"], "p": project_id})
     return await cur.fetchone()
 
 
@@ -121,10 +129,16 @@ async def add_member(project_id: UUID, body: MemberIn, request: Request, user=De
     target = await cur.fetchone()
     cur = await conn.execute("SELECT name FROM projects WHERE id = %s", (project_id,))
     pname = (await cur.fetchone())["name"]
+    cur = await conn.execute("SELECT org_id FROM projects WHERE id = %s", (project_id,))
+    project_org = (await cur.fetchone())["org_id"]
     if target:
         cur = await conn.execute("SELECT 1 FROM members WHERE project_id = %s AND user_id = %s", (project_id, target["id"]))
         if await cur.fetchone():
             raise Problem(409, "That person is already a member.", code="already_member")
+        # projects are shared within an organization; a fresh sign-up is brought into it
+        if project_org and await orgs.bring_into(conn, target["id"], project_org):
+            await audit(conn, "org.member_join", actor_id=user["id"], project_id=project_id, target_type="user",
+                        target_id=target["id"], ip=ip, via="project")
         await conn.execute("INSERT INTO members (project_id, user_id, role, assigned_area) "
                            "VALUES (%s, %s, %s, geom_from_json(%s))", (project_id, target["id"], body.role, area))
         await audit(conn, "member.add", actor_id=user["id"], project_id=project_id, target_type="user",

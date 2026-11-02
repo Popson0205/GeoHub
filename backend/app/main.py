@@ -6,7 +6,7 @@ from . import errors, logging_setup, ratelimit
 from .config import settings
 from .db import lifespan as db_lifespan
 from .db import pool
-from .routers import auth, client_errors, dashboards, datasets, features, forms, imagery, jobs, maps, media, projects, sharing, sync, tiles
+from .routers import auth, client_errors, dashboards, org, datasets, features, forms, imagery, jobs, maps, media, projects, sharing, sync, tiles
 from contextlib import asynccontextmanager
 
 logging_setup.setup()
@@ -37,7 +37,7 @@ app.middleware("http")(ratelimit.ip_middleware)
 app.middleware("http")(logging_setup.access_middleware)
 
 for r in (auth.router, auth.me_router, projects.router, forms.router, dashboards.router, features.router, sync.router, media.router,
-          imagery.router, tiles.router, datasets.router, jobs.router, maps.router, sharing.router, client_errors.router):
+          imagery.router, tiles.router, datasets.router, jobs.router, maps.router, sharing.router, client_errors.router, org.router):
     app.include_router(r, prefix=P)
 
 

@@ -11,7 +11,20 @@ export type GeometryType = Geometry["type"];
 export const GEOMETRY_LABEL: Record<GeometryType, string> = { Point: "point", LineString: "line", Polygon: "polygon" };
 
 export type Role = "owner" | "admin" | "collector" | "viewer";
-export interface User { id: string; email: string; name: string }
+export type OrgRole = "owner" | "admin" | "member";
+/** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
+export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole }
+export interface User { id: string; email: string; name: string; org?: OrgBrief | null }
+/** Plan caps; a missing key means unlimited. */
+export interface OrgLimits { seats?: number; projects?: number; records?: number }
+export interface Org extends OrgBrief {
+  plan: string;
+  limits: OrgLimits;
+  usage: { seats: number; projects: number; records: number };
+  /** This deployment is a private copy for one organization. */
+  single_org: boolean;
+}
+export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }
 export interface Session { access_token: string; refresh_token?: string; user: User }
 
 export interface Project {

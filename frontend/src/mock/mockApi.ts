@@ -5,7 +5,7 @@ import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -23,6 +23,8 @@ interface State {
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
   audit?: (AuditEvent & { project_id: string })[];
+  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"] };
+  orgMembers?: OrgMember[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
@@ -53,6 +55,80 @@ export class MockApi implements Api {
     return { ...p, feature_count: mine.length, waiting_count: mine.filter((f) => f.status === "submitted").length };
   }
   private strip(r: Row): Feature { const { seq: _s, ...f } = r; return f; }
+  /** The demo organization: the demo account owns it, with three collectors and one invitation. */
+  private get orgState() {
+    if (!this.s.org) {
+      const day = 86400000, at = (d: number) => new Date(Date.now() - d * day).toISOString();
+      this.s.org = { id: "org1", name: "Osogbo Field Team", slug: "osogbo-field-team", plan: "free", limits: {} };
+      this.s.orgMembers = [
+        { id: DEMO_USER.id, user_id: DEMO_USER.id, email: DEMO_USER.email, name: DEMO_USER.name, role: "owner", status: "active", joined_at: at(30) },
+        { id: "u-ada", user_id: "u-ada", email: "ada@example.com", name: "Ada Okafor", role: "admin", status: "active", joined_at: at(20) },
+        { id: "u-musa", user_id: "u-musa", email: "musa@example.com", name: "Musa Bello", role: "member", status: "active", joined_at: at(18) },
+        { id: "u-tolu", user_id: "u-tolu", email: "tolu@example.com", name: "Tolu Adeyemi", role: "member", status: "active", joined_at: at(18) },
+        { id: "inv-1", user_id: null, email: "kemi@example.com", name: null, role: "member", status: "invited", joined_at: at(2) },
+      ];
+    }
+    return { org: this.s.org, members: this.s.orgMembers! };
+  }
+  private me_(): User {
+    const { org, members } = this.orgState;
+    const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role } };
+  }
+  async getOrg(): Promise<Org> {
+    await wait(); this.auth();
+    const { org, members } = this.orgState;
+    const me = this.me_().org!;
+    return { ...org, role: me.role, single_org: false,
+      usage: { seats: members.length, projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
+  }
+  private orgAdmin() { const r = this.me_().org!.role; if (r === "member") throw new ApiError(403, "This needs an organization admin."); return r; }
+  async renameOrg(name: string) { await wait(); this.auth(); this.orgAdmin(); this.orgState.org.name = name.trim(); this.save(); return this.getOrg(); }
+  async listOrgMembers() { await wait(); this.auth(); return [...this.orgState.members]; }
+  async inviteOrgMember(email: string, role: "admin" | "member"): Promise<OrgMember> {
+    await wait(); this.auth();
+    if (this.orgAdmin() !== "owner" && role === "admin") throw new ApiError(403, "Only an owner can add administrators.");
+    const { org, members } = this.orgState;
+    const e = email.trim().toLowerCase();
+    if (members.some((m) => m.email === e && m.status === "active")) throw new ApiError(409, "That person is already in your organization.");
+    if (org.limits.seats != null && members.length >= org.limits.seats) throw new ApiError(402, `Your organization's plan allows ${org.limits.seats} people. Ask the organization owner to upgrade, or remove some first.`);
+    const existing = members.find((m) => m.email === e);
+    if (existing) { existing.role = role; this.save(); return existing; }
+    const m: OrgMember = { id: uuid(), user_id: null, email: e, name: null, role, status: "invited", joined_at: new Date().toISOString() };
+    members.push(m); this.save();
+    return m;
+  }
+  async setOrgMemberRole(userId: string, role: OrgRole) {
+    await wait(); this.auth();
+    if (this.orgAdmin() !== "owner") throw new ApiError(403, "This needs an organization owner.");
+    const { members } = this.orgState;
+    const m = members.find((x) => x.user_id === userId);
+    if (!m) throw new ApiError(404, "That person is not in your organization.");
+    if (m.role === "owner" && role !== "owner" && members.filter((x) => x.role === "owner").length === 1) throw new ApiError(409, "An organization needs at least one owner. Make someone else an owner first.");
+    m.role = role; this.save();
+    return m;
+  }
+  async removeOrgMember(userId: string) {
+    await wait(); this.auth();
+    const me = this.orgAdmin();
+    const { members } = this.orgState;
+    const m = members.find((x) => x.user_id === userId);
+    if (!m) throw new ApiError(404, "That person is not in your organization.");
+    if (userId === DEMO_USER.id) throw new ApiError(409, "To leave the organization yourself, use Leave.");
+    if ((m.role === "owner" || m.role === "admin") && me !== "owner") throw new ApiError(403, "Only an owner can remove an owner or administrator.");
+    members.splice(members.indexOf(m), 1); this.save();
+  }
+  async cancelOrgInvite(invitationId: string) {
+    await wait(); this.auth(); this.orgAdmin();
+    const { members } = this.orgState;
+    const i = members.findIndex((x) => x.id === invitationId && x.status === "invited");
+    if (i < 0) throw new ApiError(404, "Invitation not found.");
+    members.splice(i, 1); this.save();
+  }
+  async leaveOrg() {
+    await wait(); this.auth();
+    throw new ApiError(409, "In demo mode you are the organization's only owner, so you cannot leave it.");
+  }
   /** The project's history, like the server's audit log. Seeded with a believable past the first time it is read. */
   private get auditLog() {
     if (!this.s.audit) {
@@ -97,13 +173,13 @@ export class MockApi implements Api {
   async login(email: string, password: string): Promise<Session> {
     await wait();
     if (email.trim().toLowerCase() !== DEMO_USER.email || password !== "demo") throw new ApiError(401, "Wrong email or password. In mock mode use demo@geohub.test / demo.");
-    const s: Session = { access_token: "mock-token", refresh_token: "mock-refresh", user: DEMO_USER };
+    const s: Session = { access_token: "mock-token", refresh_token: "mock-refresh", user: this.me_() };
     tokens.set(s);
     return s;
   }
   async logout() { tokens.clear(); }
   async register(): Promise<Session> { return this.login("demo@geohub.test", "demo"); }
-  async me(): Promise<User> { await wait(40); this.auth(); return DEMO_USER; }
+  async me(): Promise<User> { await wait(40); this.auth(); return this.me_(); }
 
   async listProjects() { await wait(); this.auth(); return this.s.projects.map((p) => this.counts(p)); }
   async getProject(id: string) {

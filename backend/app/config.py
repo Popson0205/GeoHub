@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     mail_from: str = "Mapping Hub <no-reply@example.org>"
     sentry_dsn: str = ""
+    # A private copy for one client: sign-up by invitation only, after the first account creates the organization.
+    single_org: bool = False
+    org_name: str = "GeoHub"                  # that organization's name when the first account creates it
     log_level: str = "INFO"
     backup_retention_days: int = 30
 

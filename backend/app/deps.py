@@ -34,10 +34,22 @@ async def optional_user(request: Request, creds: HTTPAuthorizationCredentials | 
     return await _user_from_token(conn, creds.credentials, request) if creds else None
 
 
+# An organization's owner is an owner of every project in it, and its admins are admins of every one, so work
+# never gets stranded when the person who made a project leaves.
+ORG_PROJECT_ROLE = {"owner": "owner", "admin": "admin"}
+
+
 async def role_in(conn, project_id, user_id) -> str | None:
-    cur = await conn.execute("SELECT role FROM members WHERE project_id = %s AND user_id = %s", (project_id, user_id))
+    cur = await conn.execute(
+        "SELECT m.role, om.role AS org_role FROM projects p "
+        "LEFT JOIN members m ON m.project_id = p.id AND m.user_id = %s "
+        "LEFT JOIN org_members om ON om.user_id = %s AND om.org_id = p.org_id "
+        "WHERE p.id = %s", (user_id, user_id, project_id))
     row = await cur.fetchone()
-    return row["role"] if row else None
+    if not row:
+        return None
+    roles = [r for r in (row["role"], ORG_PROJECT_ROLE.get(row["org_role"] or "")) if r]
+    return max(roles, key=RANK.__getitem__) if roles else None
 
 
 async def require_role(conn, project_id, user_id, minimum: str = "viewer") -> str:

@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Request, Response
 
 from .. import ratelimit
+from .. import orgs
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 async def _issue(conn, user: dict, family_id=None) -> dict:
+    org = orgs.org_out(await orgs.require_membership(conn, user))
     raw, digest = new_refresh_token()
     await conn.execute(
         "INSERT INTO refresh_tokens (user_id, family_id, token_hash, expires_at) "
@@ -24,7 +26,7 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
         (user["id"], family_id or uuid4(), digest, settings.refresh_token_days))
     return {"access_token": make_access_token(user["id"]), "refresh_token": raw,
             "expires_in": settings.access_token_minutes * 60,
-            "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
+            "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org}}
 
 
 @router.post("/register", response_model=AuthOut, status_code=201,
@@ -37,11 +39,13 @@ async def register(body: RegisterIn, request: Request, conn=Depends(get_conn)):
         "INSERT INTO users (email, name, password_hash) VALUES (%s, %s, %s) RETURNING id, email, name",
         (body.email.lower(), body.name, await hash_password(body.password)))
     user = await cur.fetchone()
-    # Turn any pending project invitations for this email into memberships.
+    org = await orgs.join_on_signup(conn, user, body.organization)
+    # Turn pending project invitations for this email, in their organization, into memberships.
     cur = await conn.execute(
-        "WITH inv AS (DELETE FROM invitations WHERE lower(email) = lower(%s) RETURNING project_id, role) "
+        "WITH inv AS (DELETE FROM invitations i USING projects p WHERE p.id = i.project_id AND p.org_id = %s "
+        "  AND lower(i.email) = lower(%s) RETURNING i.project_id, i.role) "
         "INSERT INTO members (project_id, user_id, role) SELECT project_id, %s, role FROM inv "
-        "RETURNING project_id", (body.email, user["id"]))
+        "RETURNING project_id", (org["org_id"], body.email, user["id"]))
     for r in await cur.fetchall():
         await audit(conn, "member.join", actor_id=user["id"], project_id=r["project_id"], target_type="user",
                     target_id=user["id"], ip=client_ip(request), via="invitation")
@@ -96,5 +100,5 @@ me_router = APIRouter(tags=["auth"])
 
 
 @me_router.get("/me", response_model=UserOut)
-async def me(user=Depends(current_user)):
-    return user
+async def me(user=Depends(current_user), conn=Depends(get_conn)):
+    return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user))}

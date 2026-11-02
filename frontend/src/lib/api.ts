@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -19,7 +19,16 @@ export class ApiError extends Error {
 /** Everything the UI needs from a backend. HttpApi talks to the real API; MockApi (src/mock) is in-memory. */
 export interface Api {
   login(email: string, password: string): Promise<Session>;
-  register(name: string, email: string, password: string): Promise<Session>;
+  register(name: string, email: string, password: string, organization?: string): Promise<Session>;
+  // ---- organization
+  getOrg(): Promise<Org>;
+  renameOrg(name: string): Promise<Org>;
+  listOrgMembers(): Promise<OrgMember[]>;
+  inviteOrgMember(email: string, role: "admin" | "member"): Promise<OrgMember>;
+  setOrgMemberRole(userId: string, role: OrgRole): Promise<OrgMember>;
+  removeOrgMember(userId: string): Promise<void>;
+  cancelOrgInvite(invitationId: string): Promise<void>;
+  leaveOrg(): Promise<void>;
   logout(): Promise<void>;
   me(): Promise<User>;
 
@@ -301,8 +310,8 @@ class HttpApi implements Api {
     tokens.set(s);
     return s;
   }
-  async register(name: string, email: string, password: string) {
-    const s = await this.req<Session>("POST", "/auth/register", { name, email, password });
+  async register(name: string, email: string, password: string, organization?: string) {
+    const s = await this.req<Session>("POST", "/auth/register", { name, email, password, organization: organization?.trim() || undefined });
     tokens.set(s);
     return s;
   }
@@ -608,6 +617,14 @@ class HttpApi implements Api {
   }
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
+  getOrg() { return this.req<Org>("GET", "/org"); }
+  renameOrg(name: string) { return this.req<Org>("PATCH", "/org", { name }); }
+  listOrgMembers() { return this.req<OrgMember[]>("GET", "/org/members"); }
+  inviteOrgMember(email: string, role: "admin" | "member") { return this.req<OrgMember>("POST", "/org/members", { email, role }); }
+  setOrgMemberRole(userId: string, role: OrgRole) { return this.req<OrgMember>("PATCH", `/org/members/${userId}`, { role }); }
+  async removeOrgMember(userId: string) { await this.req("DELETE", `/org/members/${userId}`); }
+  async cancelOrgInvite(invitationId: string) { await this.req("DELETE", `/org/invitations/${invitationId}`); }
+  async leaveOrg() { await this.req("POST", "/org/leave"); }
   async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
     const q = new URLSearchParams({ limit: "50" });
     if (opts.kind) q.set("kind", opts.kind);
