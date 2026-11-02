@@ -593,3 +593,14 @@ body.is-dnd * { cursor: grabbing !important; }
   .org-people td:nth-child(3) { display: none; }
   .org-invite .btn { width: 100%; }
 }
+
+/* email check on the organization page */
+.mail-check p { margin: 0 0 6px; }
+.mail-check .mail-ok { color: var(--green-700); }
+.mail-check .mail-bad { color: var(--danger-600); }
+.mail-check ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sm); }
+.mail-check li { display: flex; gap: 8px; align-items: flex-start; overflow-wrap: anywhere; }
+.mail-step { display: inline-flex; flex: none; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; font-weight: 700; background: var(--n-100); color: var(--ink-700); }
+.mail-check li.is-ok .mail-step { background: var(--green-soft); color: var(--green-700); }
+.mail-check li.is-fail .mail-step { background: var(--danger-50); color: var(--danger-600); }
+.mail-check li.is-warn .mail-step { background: var(--warning-50); color: var(--warning-600); }

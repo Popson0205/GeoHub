@@ -106,8 +106,10 @@ Geohub emails people when they are invited to an organization or a project. It s
 2. Create an API key: **SMTP & API → API Keys → Generate a new API key** (an API key, not the SMTP key).
 3. Set on the server: `BREVO_API_KEY=xkeysib-…`, `MAIL_FROM=Geohub <the-address-you-verified>` and, optionally,
    `MAIL_REPLY_TO=…`. `APP_URL` must be the web app's address, since the links in emails use it.
-4. Check it: `python -m app.ops.test_email someone@example.com` (on Railway: the service's "Run a command", or
-   `railway run`). It prints Brevo's error in full if something is wrong.
+4. Check it: on the Organization page (Account menu → Organization), press **Send me a test email**. It checks the
+   settings, the Brevo key and sender, sends you an email and reports what Brevo did with it (delivered, blocked,
+   bounced, and why). From a terminal on the server the same check is `python3 -m app.ops.check_email you@example.com`
+   (on Railway: `railway ssh` into the service, then run it).
 
 **Before inviting clients, use your own domain.** Gmail and Yahoo now filter mail sent *from* a Gmail address by
 another service, so invitations from a Gmail sender often land in spam or are dropped. In Brevo, add your domain under

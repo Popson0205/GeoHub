@@ -5,7 +5,7 @@ import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -124,6 +124,11 @@ export class MockApi implements Api {
     const i = members.findIndex((x) => x.id === invitationId && x.status === "invited");
     if (i < 0) throw new ApiError(404, "Invitation not found.");
     members.splice(i, 1); this.save();
+  }
+  async checkEmail(): Promise<EmailCheck> {
+    await wait(600); this.auth(); this.orgAdmin();
+    return { ok: false, provider: "log", steps: [{ status: "fail", name: "Email service",
+      detail: "Demo mode has no email server. On your own server, set BREVO_API_KEY and MAIL_FROM, then try again." }] };
   }
   async leaveOrg() {
     await wait(); this.auth();

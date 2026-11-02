@@ -4,7 +4,7 @@ import { Icon } from "../components/icons";
 import { Button, EmptyState, ErrorState, Loading, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import type { Org, OrgMember, OrgRole } from "../lib/types";
+import type { EmailCheck, Org, OrgMember, OrgRole } from "../lib/types";
 
 const ROLE: Record<OrgRole, { label: string; help: string }> = {
   owner: { label: "Owner", help: "Everything, including roles and the plan. Owner of every project." },
@@ -32,6 +32,7 @@ export default function OrgSettingsPage() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
   const [busy, setBusy] = useState<string | null>(null);
+  const [mailCheck, setMailCheck] = useState<EmailCheck | null>(null);
 
   async function load() {
     setError(null);
@@ -83,6 +84,11 @@ export default function OrgSettingsPage() {
     setBusy(m.id);
     try { await (await loadApi()).removeOrgMember(m.user_id!); toast(`${who} was removed.`, "success"); await load(); }
     catch (err) { fail(err, "Could not remove."); } finally { setBusy(null); }
+  }
+  async function checkEmail() {
+    setBusy("mail"); setMailCheck(null);
+    try { setMailCheck(await (await loadApi()).checkEmail()); }
+    catch (err) { fail(err, "Could not run the email check."); } finally { setBusy(null); }
   }
   async function leave() {
     if (!(await confirm({ title: `Leave ${org!.name}?`, danger: true, confirmLabel: "Leave organization",
@@ -181,6 +187,27 @@ export default function OrgSettingsPage() {
             </dl>
             <p className="field-hint">{owner ? "To change your plan, contact Geohub." : "The organization owner manages the plan."}</p>
           </section>
+
+          {admin && (
+            <section className="card" aria-labelledby="org-mail-h">
+              <h2 id="org-mail-h">Email delivery</h2>
+              <p className="field-hint">Invitations are sent by email. Check that they get through: this sends a test to {user?.email} and reports each step.</p>
+              <Button onClick={() => void checkEmail()} busy={busy === "mail"}>{busy === "mail" ? "Checking… (up to 30 s)" : "Send me a test email"}</Button>
+              {mailCheck && (
+                <div className="mail-check" role="status">
+                  <p className={mailCheck.ok ? "mail-ok" : "mail-bad"}><strong>{mailCheck.ok ? "Email works." : "Email is not working yet."}</strong></p>
+                  <ol>
+                    {mailCheck.steps.map((s, i) => (
+                      <li key={i} className={`is-${s.status}`}>
+                        <span className="mail-step">{s.status === "ok" ? "✓" : s.status === "fail" ? "✕" : s.status === "warn" ? "!" : "i"}<span className="sr-only"> {s.status === "ok" ? "passed" : s.status === "fail" ? "failed" : s.status === "warn" ? "warning" : "note"}:</span></span>
+                        <span><strong>{s.name}</strong> {s.detail}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </section>
+          )}
 
           {admin && (
             <section className="card" aria-labelledby="org-name-h">
