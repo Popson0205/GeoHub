@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole,
+import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -29,6 +29,8 @@ export interface Api {
   removeOrgMember(userId: string): Promise<void>;
   cancelOrgInvite(invitationId: string): Promise<void>;
   leaveOrg(): Promise<void>;
+  /** Send yourself a test email and get each step's result (organization admins). */
+  checkEmail(): Promise<EmailCheck>;
   logout(): Promise<void>;
   me(): Promise<User>;
 
@@ -625,6 +627,7 @@ class HttpApi implements Api {
   async removeOrgMember(userId: string) { await this.req("DELETE", `/org/members/${userId}`); }
   async cancelOrgInvite(invitationId: string) { await this.req("DELETE", `/org/invitations/${invitationId}`); }
   async leaveOrg() { await this.req("POST", "/org/leave"); }
+  checkEmail() { return this.req<EmailCheck>("POST", "/org/email-check"); }
   async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
     const q = new URLSearchParams({ limit: "50" });
     if (opts.kind) q.set("kind", opts.kind);

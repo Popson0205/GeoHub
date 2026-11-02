@@ -1,7 +1,7 @@
-"""Send one test email to check the email settings.   python -m app.ops.test_email you@example.com
+"""Send one test email.   python3 -m app.ops.test_email you@example.com
 
-On Railway: open the service, then "Run a command" (or `railway run`) with the line above. It prints which way
-email goes (Resend, SMTP, or only the log), and the provider's error in full if it fails."""
+For a full step-by-step check (key, sender, delivery) use `python3 -m app.ops.check_email`, or "Send me a test
+email" on the Organization page."""
 import sys
 
 import anyio

@@ -24,6 +24,8 @@ export interface Org extends OrgBrief {
   /** This deployment is a private copy for one organization. */
   single_org: boolean;
 }
+/** The result of the email check: each step and whether it passed. */
+export interface EmailCheck { ok: boolean; provider: string; steps: { status: "ok" | "warn" | "fail" | "info"; name: string; detail: string }[] }
 export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }
 export interface Session { access_token: string; refresh_token?: string; user: User }
 

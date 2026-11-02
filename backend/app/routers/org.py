@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from .. import orgs
+from .. import orgs, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -164,6 +164,16 @@ async def leave(request: Request, user=Depends(current_user), conn=Depends(get_c
     await audit(conn, "org.leave", actor_id=user["id"], target_type="user", target_id=user["id"],
                 ip=client_ip(request), org_id=str(m["org_id"]))
     return Response(status_code=204)
+
+
+@router.post("/email-check", summary="Send yourself a test email and report each step (admins)",
+             dependencies=[Depends(ratelimit.limit("email-check", 6, 3600))])
+async def email_check(user=Depends(current_user), conn=Depends(get_conn)):
+    """Checks the email settings, Brevo key and sender, sends a test email to your own address and reports what
+    happened to it. It only ever emails the person asking."""
+    from ..ops.check_email import diagnose
+    await orgs.require_org_role(conn, user, "admin")
+    return await diagnose(user["email"])
 
 
 @router.delete("/invitations/{invitation_id}", status_code=204, summary="Cancel an invitation (admins)")

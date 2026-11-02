@@ -62,6 +62,11 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await settle();
   ok(/plan allows 6 people/.test(document.body.textContent ?? ""), "going over the seat limit explains why it was refused");
 
+  // the email check reports each step
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send me a test email" })); });
+  await settle(); await settle();
+  ok(/Email is not working yet/.test(document.body.textContent ?? "") && /BREVO_API_KEY/.test(document.body.textContent ?? ""), "Send me a test email shows each step and what to fix");
+
   // a member sees the organization but cannot manage it
   cleanup();
   api.s.orgMembers.find((m: any) => m.email === "demo@geohub.test").role = "member";
