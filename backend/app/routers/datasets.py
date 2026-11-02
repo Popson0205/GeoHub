@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from .. import ratelimit
+from .. import orgs, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -19,13 +19,33 @@ router = APIRouter(tags=["datasets"])
 FORMATS = ["geojson", "gpkg", "shp", "csv"]
 EXT = {"geojson": "geojson", "gpkg": "gpkg", "shp": "zip", "csv": "csv"}
 
+# The organization a dataset belongs to: that of its project or map.
+ORG_OF = ("COALESCE((SELECT org_id FROM projects WHERE id = d.project_id), "
+          "(SELECT org_id FROM workspace_maps WHERE id = d.map_id))")
 SUMMARY_SQL = (
     "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, d.map_id, "
     "d.statuses, COALESCE(v.geometry_type, f.geometry_type, d.map_geometry) AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
-    "v.bbox, COALESCE(v.published_at, d.created_at) AS published_at, "
+    "v.bbox, COALESCE(v.published_at, d.created_at) AS published_at, " + ORG_OF + " AS org_id, "
     "(SELECT COALESCE(sum(x.download_count), 0)::bigint FROM dataset_versions x WHERE x.dataset_id = d.id) AS download_count "
     "FROM datasets d LEFT JOIN forms f ON f.id = d.form_id "
     "LEFT JOIN dataset_versions v ON v.dataset_id = d.id AND v.version = d.latest_version ")
+
+
+async def check_visibility(conn, user: dict, visibility: str | None) -> None:
+    """Publishing to your organization only comes with Organization plans."""
+    if visibility == "organization":
+        m = await orgs.require_membership(conn, user)
+        if m["plan"] == "individual":
+            raise Problem(403, "Publishing to your organization only comes with Organization plans. Publish privately "
+                               "or publicly, or ask GeoEstate for an organization.", code="plan_feature",
+                          fields={"visibility": ["needs an Organization plan"]})
+
+
+async def _user_org(conn, user) -> str | None:
+    if not user:
+        return None
+    m = await orgs.membership(conn, user["id"])
+    return m["org_id"] if m else None
 
 
 async def _anon_read_limit(request: Request, user):
@@ -61,7 +81,8 @@ async def _get_readable(conn, slug: str, user) -> tuple[dict, str | None]:
     cur = await conn.execute(SUMMARY_SQL + "WHERE d.slug = %s", (slug,))
     d = await cur.fetchone()
     role = await _dataset_role(conn, d, user) if d else None
-    if not d or (d["visibility"] != "public" and not role):
+    same_org = bool(d and user and d["visibility"] == "organization" and d["org_id"] and d["org_id"] == await _user_org(conn, user))
+    if not d or (d["visibility"] != "public" and not role and not same_org):
         raise Problem(404, "Dataset not found.", code="not_found")   # private datasets are invisible to outsiders
     return d, role
 
@@ -75,9 +96,11 @@ async def catalogue(request: Request, q: str | None = None, type: str | None = Q
     """Public catalogue. No login needed; signed-in users also see private datasets of their projects."""
     await _anon_read_limit(request, user)
     where, params = ["d.latest_version > 0",
-                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s) "
-                     "OR d.map_id IN (SELECT id FROM workspace_maps WHERE owner_id = %s UNION SELECT map_id FROM map_members WHERE user_id = %s))"], \
-                    [user["id"] if user else None] * 3
+                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s "
+                     "  UNION SELECT project_id FROM team_project_roles WHERE user_id = %s) "
+                     "OR d.map_id IN (SELECT id FROM workspace_maps WHERE owner_id = %s UNION SELECT map_id FROM map_members WHERE user_id = %s) "
+                     f"OR (d.visibility = 'organization' AND {ORG_OF} = %s))"], \
+                    [user["id"] if user else None] * 4 + [await _user_org(conn, user)]
     if q:
         where.append("(d.title ILIKE %s OR d.description ILIKE %s OR %s = ANY(d.tags))")
         params += [f"%{q}%", f"%{q}%", q.lower()]
@@ -154,6 +177,7 @@ async def publish_dataset(project_id: UUID, body: DatasetIn, request: Request, u
     """Creates the dataset and queues its first snapshot (version 1). Poll the job, then the dataset appears
     in the catalogue. Only approved features are included unless `statuses` says otherwise."""
     await require_role(conn, project_id, user["id"], "owner")
+    await check_visibility(conn, user, body.visibility)
     if body.license == "Private" and body.visibility == "public":
         raise Problem(422, "A Private licence cannot be published publicly.", code="validation",
                       fields={"license": ["Private datasets must have visibility private"]})
@@ -209,6 +233,8 @@ async def update_dataset(slug: str, body: DatasetPatch, request: Request, user=D
     if not d:
         raise Problem(404, "Dataset not found.", code="not_found")
     await _require_owner(conn, d, user)
+    if body.visibility != d["visibility"]:
+        await check_visibility(conn, user, body.visibility)
     lic, vis = body.license or d["license"], body.visibility or d["visibility"]
     if lic == "Private" and vis == "public":
         raise Problem(422, "A Private licence cannot be published publicly.", code="validation",

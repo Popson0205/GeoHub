@@ -1,7 +1,7 @@
 """What happens when a new account is made, however it was made (a password or Google / Microsoft sign-in)."""
 import logging
 
-from . import domains, orgs, passwords
+from . import branding, domains, orgs, passwords
 from .audit import audit
 from .config import settings
 from .mailer import send_email
@@ -29,5 +29,6 @@ async def finish(conn, user: dict, *, org_name: str | None = None, email_verifie
                              f"Hello {user['name'].split()[0]},\n\nYour email is on {domains.domain_of(user['email'])}, so you "
                              f"can join {d['name']} on Geohub. Confirm it is your email with the button below (the link "
                              "works once, within 72 hours).\n\nIf you did not sign up for Geohub, ignore this email.",
-                             action=(f"Join {d['name']}", f"{settings.app_url}/join-organization?token={raw}"))
+                             action=(f"Join {d['name']}", f"{settings.app_url}/join-organization?token={raw}"),
+                             brand=await branding.for_email(conn, d["org_id"]))
     return m

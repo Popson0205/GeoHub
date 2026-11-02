@@ -7,13 +7,13 @@ from .. import orgs
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
-from ..deps import current_user, is_platform_admin
+from ..deps import USER_SQL, is_platform_admin, session_user, signed_in_user
 from ..errors import Problem
 from ..logging_setup import client_ip
-from .. import passwords, signup
+from .. import mfa, passwords, signup
 from ..mailer import send_email
-from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, PasswordTokenOut, RefreshIn, JoinOrgIn, RegisterIn,
-                       SetPasswordIn, UserOut)
+from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, MfaChallengeOut, MfaVerifyIn, PasswordTokenOut,
+                       RefreshIn, JoinOrgIn, RegisterIn, SetPasswordIn, UserOut)
 from ..security import (burn_password_check, hash_password, hash_token, make_access_token, new_refresh_token,
                         verify_password)
 
@@ -22,8 +22,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 async def _issue(conn, user: dict, family_id=None) -> dict:
     org = orgs.org_out(await orgs.require_membership(conn, user))
-    cur = await conn.execute("SELECT must_change_password FROM users WHERE id = %s", (user["id"],))
-    must = (await cur.fetchone())["must_change_password"]
+    cur = await conn.execute(USER_SQL + "WHERE u.id = %s", (user["id"],))
+    u = await cur.fetchone()
     raw, digest = new_refresh_token()
     await conn.execute(
         "INSERT INTO refresh_tokens (user_id, family_id, token_hash, expires_at) "
@@ -32,7 +32,16 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
     return {"access_token": make_access_token(user["id"]), "refresh_token": raw,
             "expires_in": settings.access_token_minutes * 60,
             "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org,
-                     "must_change_password": must, "platform_admin": is_platform_admin(user)}}
+                     "must_change_password": u["must_change_password"], "platform_admin": is_platform_admin(user),
+                     "mfa_enabled": u["mfa_enabled"], "mfa_setup_required": u["mfa_setup_required"]}}
+
+
+async def sign_in(conn, user: dict) -> dict:
+    """Tokens, or, when the person has two-step sign-in on, a challenge to answer with a code first."""
+    cur = await conn.execute("SELECT totp_enabled_at IS NOT NULL AS on FROM users WHERE id = %s", (user["id"],))
+    if (await cur.fetchone())["on"]:
+        return {"mfa_required": True, "mfa_token": mfa.challenge_token(user["id"])}
+    return await _issue(conn, user)
 
 
 @router.post("/register", response_model=AuthOut, status_code=201,
@@ -49,7 +58,7 @@ async def register(body: RegisterIn, request: Request, conn=Depends(get_conn)):
     return await _issue(conn, user)
 
 
-@router.post("/login", response_model=AuthOut,
+@router.post("/login", response_model=AuthOut | MfaChallengeOut,
              dependencies=[Depends(ratelimit.limit("login", lambda: settings.rate_login_per_min, 60))])
 async def login(body: LoginIn, conn=Depends(get_conn)):
     await ratelimit.hit(f"login-email:{body.email.lower()}", settings.rate_login_per_min * 2, 900)
@@ -60,7 +69,7 @@ async def login(body: LoginIn, conn=Depends(get_conn)):
         await burn_password_check(body.password)
     if not user or not await verify_password(body.password, user["password_hash"]):
         raise Problem(401, "Wrong email or password.", code="bad_credentials")
-    return await _issue(conn, user)
+    return await sign_in(conn, user)
 
 
 @router.post("/refresh", response_model=AuthOut,
@@ -91,7 +100,7 @@ async def password_link(token: str, conn=Depends(get_conn)):
     return {"email": t["email"], "name": t["name"], "purpose": t["purpose"], "org_name": t["org_name"]}
 
 
-@router.post("/set-password", response_model=AuthOut, summary="Set a password from a one-time link, and sign in",
+@router.post("/set-password", response_model=AuthOut | MfaChallengeOut, summary="Set a password from a one-time link, and sign in",
              dependencies=[Depends(ratelimit.limit("set-password", 20, 3600))])
 async def set_password(body: SetPasswordIn, request: Request, conn=Depends(get_conn)):
     t = await passwords.lookup(conn, body.token, lock=True, purposes=("set", "reset"))
@@ -102,10 +111,10 @@ async def set_password(body: SetPasswordIn, request: Request, conn=Depends(get_c
     await conn.execute("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = %s AND revoked_at IS NULL", (t["user_id"],))
     await audit(conn, "user.password_set", actor_id=t["user_id"], target_type="user", target_id=t["user_id"],
                 ip=client_ip(request), via=t["purpose"])
-    return await _issue(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
+    return await sign_in(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
 
 
-@router.post("/join-organization", response_model=AuthOut, summary="Confirm your email and join the organization of its domain",
+@router.post("/join-organization", response_model=AuthOut | MfaChallengeOut, summary="Confirm your email and join the organization of its domain",
              dependencies=[Depends(ratelimit.limit("join-organization", 20, 3600))])
 async def join_organization(body: JoinOrgIn, request: Request, conn=Depends(get_conn)):
     t = await passwords.lookup(conn, body.token, lock=True, purposes=("join",))
@@ -119,7 +128,29 @@ async def join_organization(body: JoinOrgIn, request: Request, conn=Depends(get_
     await conn.execute("UPDATE password_tokens SET used_at = now() WHERE id = %s", (t["id"],))
     await audit(conn, "org.join_domain", actor_id=t["user_id"], target_type="organization", target_id=t["org_id"],
                 ip=client_ip(request), role=d["role"])
-    return await _issue(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
+    return await sign_in(conn, {"id": t["user_id"], "email": t["email"], "name": t["name"]})
+
+
+@router.post("/mfa/verify", response_model=AuthOut, summary="Finish signing in with a code from the authenticator app",
+             dependencies=[Depends(ratelimit.limit("mfa-verify", 30, 300))])
+async def mfa_verify(body: MfaVerifyIn, request: Request, conn=Depends(get_conn)):
+    """`mfa_token` comes from /auth/login (or another sign-in) when two-step sign-in is on. A recovery code works
+    once in place of the app's code."""
+    uid = mfa.read_challenge(body.mfa_token)
+    await ratelimit.hit(f"mfa-user:{uid}", 10, 900)          # guessing codes for one person is stopped quickly
+    cur = await conn.execute("SELECT id, email, name FROM users WHERE id = %s AND totp_enabled_at IS NOT NULL", (uid,))
+    user = await cur.fetchone()
+    if not user:
+        raise Problem(401, "Sign in again.", code="mfa_expired")
+    try:
+        how = await mfa.check(conn, uid, body.code)
+    except Problem as p:
+        await audit(conn, "user.mfa_failed", actor_id=uid, target_type="user", target_id=uid, ip=client_ip(request))
+        await conn.commit()          # keep the record of the failed try even though the request fails
+        raise p
+    if how == "recovery":
+        await audit(conn, "user.mfa_recovery_used", actor_id=uid, target_type="user", target_id=uid, ip=client_ip(request))
+    return await _issue(conn, user)
 
 
 @router.post("/forgot-password", status_code=202, summary="Email a link to choose a new password",
@@ -140,7 +171,7 @@ async def forgot_password(body: ForgotPasswordIn, conn=Depends(get_conn)):
 
 
 @router.post("/change-password", status_code=204, summary="Change your password (also after a temporary one)")
-async def change_password(body: ChangePasswordIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+async def change_password(body: ChangePasswordIn, request: Request, user=Depends(session_user), conn=Depends(get_conn)):
     cur = await conn.execute("SELECT password_hash FROM users WHERE id = %s", (user["id"],))
     if not await verify_password(body.current_password, (await cur.fetchone())["password_hash"]):
         raise Problem(422, "The current password is not right.", code="bad_credentials", fields={"current_password": ["not right"]})
@@ -164,6 +195,7 @@ me_router = APIRouter(tags=["auth"])
 
 
 @me_router.get("/me", response_model=UserOut)
-async def me(user=Depends(current_user), conn=Depends(get_conn)):
+async def me(user=Depends(signed_in_user), conn=Depends(get_conn)):
+    """Answers even while two-step sign-in still has to be set up (mfa_setup_required), so the app can ask for it."""
     return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user)),   # must_change_password: from the user row
             "platform_admin": is_platform_admin(user)}

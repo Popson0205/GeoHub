@@ -26,8 +26,8 @@ from ..db import get_conn
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..passwords import unusable_hash
-from ..schemas import AuthOut, SsoExchangeIn
-from .auth import _issue
+from ..schemas import AuthOut, MfaChallengeOut, SsoExchangeIn
+from .auth import sign_in
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 # Tests replace this with a mock transport.
@@ -185,7 +185,7 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
     return r
 
 
-@router.post("/sso/exchange", response_model=AuthOut, summary="Trade the one-time code from a Google / Microsoft sign-in for tokens",
+@router.post("/sso/exchange", response_model=AuthOut | MfaChallengeOut, summary="Trade the one-time code from a Google / Microsoft sign-in for tokens",
              dependencies=[Depends(ratelimit.limit("sso-exchange", 30, 60))])
 async def exchange(body: SsoExchangeIn, conn=Depends(get_conn)):
     uid = await ratelimit.redis.getdel(f"sso-code:{body.code}")
@@ -195,4 +195,4 @@ async def exchange(body: SsoExchangeIn, conn=Depends(get_conn)):
     user = await cur.fetchone()
     if not user:
         raise Problem(401, "This account no longer exists.", code="invalid_token")
-    return await _issue(conn, user)
+    return await sign_in(conn, user)

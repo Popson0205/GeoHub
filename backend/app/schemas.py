@@ -32,12 +32,18 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class OrgBrand(BaseModel):
+    color: str | None = Field(None, description="Main colour, #rrggbb, readable with white text")
+    logo_url: str | None = None
+
+
 class OrgBrief(BaseModel):
     id: UUID
     name: str
     slug: str
     role: Literal["owner", "admin", "member", "collector", "viewer"]
     plan: str = "individual"
+    brand: OrgBrand | None = Field(None, description="The organization's look, on Organization plans")
 
 
 class UserOut(BaseModel):
@@ -47,6 +53,9 @@ class UserOut(BaseModel):
     org: OrgBrief | None = None
     must_change_password: bool = Field(False, description="Signed in with a temporary password: choose a new one first")
     platform_admin: bool = Field(False, description="GeoEstate staff who manage client organizations")
+    mfa_enabled: bool = Field(False, description="Two-step sign-in is on")
+    mfa_setup_required: bool = Field(False, description="The organization requires two-step sign-in and it is not set "
+                                     "up yet: everything else is refused until it is")
 
 
 class SsoExchangeIn(BaseModel):
@@ -411,7 +420,9 @@ class DatasetIn(BaseModel):
     description: str = Field("", max_length=5000)
     license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] = "CC-BY-4.0"
     tags: list[str] = Field([], max_length=20)
-    visibility: Literal["private", "public"] = "private"
+    visibility: Literal["private", "organization", "public"] = Field(
+        "private", description="private: the project's people; organization: everyone in your organization (Organization "
+        "plans); public: anyone")
     statuses: list[Literal["submitted", "approved"]] = Field(
         ["approved"], min_length=1, description="Feature statuses included in snapshots")
 
@@ -421,7 +432,7 @@ class DatasetPatch(BaseModel):
     description: str | None = Field(None, max_length=5000)
     license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] | None = None
     tags: list[str] | None = Field(None, max_length=20)
-    visibility: Literal["private", "public"] | None = None
+    visibility: Literal["private", "organization", "public"] | None = None
 
 
 class NewVersionIn(BaseModel):
@@ -442,7 +453,7 @@ class DatasetSummary(BaseModel):
     description: str
     license: str
     tags: list[str]
-    visibility: Literal["private", "public"]
+    visibility: Literal["private", "organization", "public"]
     geometry_type: GeometryType
     latest_version: int
     feature_count: int
@@ -862,6 +873,7 @@ class OrgUsage(BaseModel):
     seats: int = Field(description="Owners, admins and members, plus pending invitations for them")
     collectors: int = Field(description="Field collectors, plus pending invitations")
     viewers: int = Field(description="Viewers, plus pending invitations")
+    teams: int = Field(0, description="Teams (departments)")
     projects: int
     records: int
 
@@ -870,6 +882,7 @@ class OrgCaps(BaseModel):
     seats: int | None = Field(None, description="Team seats; null = unlimited")
     collectors: int | None = None
     viewers: int | None = None
+    teams: int | None = Field(None, description="Teams (departments); null = unlimited, 0 = not on this plan")
 
 
 class OrgOut(BaseModel):
@@ -885,6 +898,21 @@ class OrgOut(BaseModel):
     subscription_starts: date | None = None
     subscription_ends: date | None = None
     single_org: bool = Field(description="This deployment is a private copy for one organization")
+    branding: "OrgBranding"
+    require_mfa: bool = Field(False, description="Everyone must use two-step sign-in")
+
+
+class OrgBranding(BaseModel):
+    color: str | None = None
+    logo_url: str | None = None
+    sender_name: str | None = Field(None, description="The name the organization's emails come from")
+    reply_to: str | None = Field(None, description="Where replies to its emails go")
+
+
+class OrgBrandingPatch(BaseModel):
+    color: str | None = Field(None, description="#rrggbb; an empty string goes back to Geohub green")
+    sender_name: str | None = Field(None, max_length=80, description="Empty: Geohub")
+    reply_to: str | None = Field(None, max_length=200, description="Empty: none")
 
 
 class OrgPatch(BaseModel):
@@ -899,6 +927,7 @@ class OrgMemberOut(BaseModel):
     role: OrgRole
     status: Literal["active", "invited"]
     joined_at: datetime
+    mfa_enabled: bool | None = Field(None, description="Two-step sign-in is on (in the people list)")
 
 
 class OrgMemberIn(BaseModel):
@@ -1011,7 +1040,7 @@ class AdminOrgIn(BaseModel):
     subscription_ends: date | None = None
     owner_name: str = Field(min_length=1, max_length=120)
     owner_email: EmailStr
-    limits: dict[Literal["seats", "collectors", "viewers"], int | None] = Field(default_factory=dict)
+    limits: dict[Literal["seats", "collectors", "viewers", "teams"], int | None] = Field(default_factory=dict)
     request_id: UUID | None = Field(None, description="The website request this answers; it is marked set up")
 
 
@@ -1021,7 +1050,7 @@ class AdminOrgPatch(BaseModel):
     subscription_starts: date | None = None
     subscription_ends: date | None = None
     clear_dates: bool = False
-    limits: dict[Literal["seats", "collectors", "viewers"], int | None] | None = Field(
+    limits: dict[Literal["seats", "collectors", "viewers", "teams"], int | None] | None = Field(
         None, description="Replaces the one-off caps; {} goes back to the plan's numbers")
 
 
@@ -1049,3 +1078,146 @@ class OrgDomainIn(BaseModel):
 class OrgDomainPatch(BaseModel):
     auto_join: bool | None = None
     role: Literal["member", "collector", "viewer"] | None = None
+
+
+# ---------- teams ----------
+class TeamIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field("", max_length=300)
+
+
+class TeamPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=80)
+    description: str | None = Field(None, max_length=300)
+
+
+class TeamPerson(BaseModel):
+    user_id: UUID
+    name: str
+    email: str
+    role: OrgRole = Field(description="Their role in the organization")
+    lead: bool
+
+
+class TeamProject(BaseModel):
+    project_id: UUID
+    name: str
+    role: Literal["admin", "collector", "viewer"]
+
+
+class TeamOut(BaseModel):
+    id: UUID
+    name: str
+    description: str
+    created_at: datetime
+    members: list[TeamPerson]
+    projects: list[TeamProject]
+    you_lead: bool = Field(description="The caller leads this team")
+    can_manage_people: bool = Field(description="The caller can add and remove its people (admins and leads)")
+    can_edit: bool = Field(description="The caller can rename or delete it and choose leads (admins)")
+
+
+class TeamMemberIn(BaseModel):
+    lead: bool | None = Field(None, description="Make them a lead (admins only); left out: unchanged, or not a lead when new")
+
+
+class ProjectTeamIn(BaseModel):
+    role: Literal["admin", "collector", "viewer"] = "collector"
+
+
+class ProjectTeamOut(BaseModel):
+    team_id: UUID
+    name: str
+    role: Literal["admin", "collector", "viewer"]
+    member_count: int
+
+
+# ---------- adding many people from a spreadsheet ----------
+class ImportRowOut(BaseModel):
+    row: int = Field(description="The row in the spreadsheet (the header is row 1)")
+    email: str
+    name: str
+    role: str
+    team: str | None = None
+    projects: list[str] = Field(default_factory=list)
+    status: Literal["new", "existing", "error", "created", "added"] = Field(
+        description="Preview: new account, existing account brought in, or error. After: created or added")
+    error: str | None = None
+    temporary_password: str | None = Field(None, description="With delivery=temporary, after creating; shown this once")
+
+
+class ImportCapacity(BaseModel):
+    kind: Literal["seats", "collectors", "viewers"]
+    needed: int
+    left: int | None = Field(description="Places left on the plan; null = unlimited")
+
+
+class ImportOut(BaseModel):
+    rows: list[ImportRowOut]
+    capacity: list[ImportCapacity]
+    ok: bool = Field(description="Every row can be added and the plan has room")
+    done: bool = Field(description="The accounts were made (false for a preview)")
+    emails_queued: int = 0
+
+
+# ---------- two-step sign-in ----------
+class MfaChallengeOut(BaseModel):
+    mfa_required: Literal[True] = True
+    mfa_token: str = Field(description="Send it back with a code to /auth/mfa/verify within 5 minutes")
+
+
+class MfaVerifyIn(BaseModel):
+    mfa_token: str = Field(min_length=20, max_length=2000)
+    code: str = Field(min_length=6, max_length=20, description="6 digits from the authenticator app, or a recovery code")
+
+
+class MfaStatusOut(BaseModel):
+    enabled: bool
+    enabled_at: datetime | None = None
+    recovery_codes_left: int = 0
+    required_by_org: bool = Field(description="The organization requires two-step sign-in")
+
+
+class MfaSetupOut(BaseModel):
+    secret: str = Field(description="For typing into the app by hand")
+    otpauth_url: str = Field(description="What the QR code holds")
+
+
+class MfaCodeIn(BaseModel):
+    code: str = Field(min_length=6, max_length=20)
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str] = Field(description="Each works once, instead of a code from the app. Shown this once")
+
+
+class OrgSecurityPatch(BaseModel):
+    require_mfa: bool
+
+
+# ---------- API keys ----------
+class ApiKeyIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    access: Literal["read", "write"] = "read"
+    expires_in_days: int | None = Field(None, ge=1, le=730, description="Left out: does not expire")
+
+
+class ApiKeyOut(BaseModel):
+    id: UUID
+    name: str
+    prefix: str = Field(description="The start of the key, to tell keys apart")
+    access: Literal["read", "write"]
+    created_at: datetime
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+    user_id: UUID
+    user_name: str = Field(description="Whose key it is: it acts as this person")
+    user_email: str
+
+
+class ApiKeyCreated(ApiKeyOut):
+    key: str = Field(description="The key itself. Shown this once; only a hash is kept")
+
+
+OrgOut.model_rebuild()

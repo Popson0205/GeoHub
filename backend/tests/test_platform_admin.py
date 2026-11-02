@@ -11,8 +11,8 @@ from conftest import Actor, uid
 def outbox(monkeypatch):
     sent = []
 
-    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False):
-        sent.append({"to": to, "subject": subject, "body": body, "action": action})
+    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False, brand=None):
+        sent.append({"to": to, "subject": subject, "body": body, "action": action, "brand": brand})
         return True
     from app import reminders
     from app.routers import admin, auth, org
@@ -46,7 +46,7 @@ def test_set_up_an_organization_with_a_new_owner(client, staff, outbox):
     assert r.status_code == 201, r.text
     o = r.json()
     assert o["plan_name"] == "Organization Standard" and o["owner_email"] == email and o["days_left"] == 365
-    assert o["caps"] == {"seats": 10, "collectors": 80, "viewers": 50} and o["usage"]["seats"] == 1
+    assert o["caps"] == {"seats": 10, "collectors": 80, "viewers": 50, "teams": 2} and o["usage"]["seats"] == 1
     mail = outbox[-1]
     assert mail["to"] == email and name in mail["subject"]
     token = re.search(r"token=([\w-]+)", mail["action"][1]).group(1)

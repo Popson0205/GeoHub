@@ -38,6 +38,8 @@ export default function HubPage() {
                 <div className="chips">
                   {d.formats.map((f) => <span className="chip" key={f}>{FORMAT_LABEL[f]}</span>)}
                   <span className="chip chip-plain">{d.license}</span>
+                  {d.visibility === "organization" && <span className="badge badge-info">Your organization only</span>}
+                  {d.visibility === "private" && <span className="badge badge-quiet">Members only</span>}
                 </div>
               </div>
               <Link className="btn btn-primary" to={`/hub/${d.slug}`}>View and download</Link>
