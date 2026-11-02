@@ -46,6 +46,7 @@ class UserOut(BaseModel):
     name: str
     org: OrgBrief | None = None
     must_change_password: bool = Field(False, description="Signed in with a temporary password: choose a new one first")
+    platform_admin: bool = Field(False, description="GeoEstate staff who manage client organizations")
 
 
 class AuthOut(BaseModel):
@@ -940,3 +941,76 @@ class ChangePasswordIn(BaseModel):
 
 class OrgMemberPatch(BaseModel):
     role: OrgRole
+
+
+# ---------- requests for an organization, and the platform admin's view ----------
+PlanId = Literal["individual", "standard", "advanced", "custom"]
+
+
+class OrgRequestIn(BaseModel):
+    organization: str = Field(min_length=2, max_length=160)
+    contact_name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    phone: str | None = Field(None, max_length=40)
+    plan: Literal["standard", "advanced", "custom", "unsure"] = "unsure"
+    team_size: str | None = Field(None, max_length=60, description="Roughly how many people, in their words")
+    message: str | None = Field(None, max_length=2000)
+    website: str | None = Field(None, max_length=200, description="Leave empty (a trap for spam robots)")
+
+
+class OrgRequestOut(BaseModel):
+    id: UUID
+    organization: str
+    contact_name: str
+    email: str
+    phone: str | None
+    plan: str
+    team_size: str | None
+    message: str | None
+    status: Literal["new", "contacted", "set_up", "declined"]
+    note: str | None
+    org_id: UUID | None
+    created_at: datetime
+
+
+class OrgRequestPatch(BaseModel):
+    status: Literal["new", "contacted", "set_up", "declined"] | None = None
+    note: str | None = Field(None, max_length=2000)
+
+
+class AdminOrgOut(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    plan: str
+    plan_name: str
+    caps: "OrgCaps"
+    limits: dict[str, int]
+    usage: "OrgUsage"
+    subscription_starts: date | None
+    subscription_ends: date | None
+    days_left: int | None = Field(description="Days until the subscription ends; negative once it has ended")
+    owner_name: str | None
+    owner_email: str | None
+    created_at: datetime
+
+
+class AdminOrgIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    plan: PlanId = "standard"
+    subscription_starts: date | None = None
+    subscription_ends: date | None = None
+    owner_name: str = Field(min_length=1, max_length=120)
+    owner_email: EmailStr
+    limits: dict[Literal["seats", "collectors", "viewers"], int | None] = Field(default_factory=dict)
+    request_id: UUID | None = Field(None, description="The website request this answers; it is marked set up")
+
+
+class AdminOrgPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=120)
+    plan: PlanId | None = None
+    subscription_starts: date | None = None
+    subscription_ends: date | None = None
+    clear_dates: bool = False
+    limits: dict[Literal["seats", "collectors", "viewers"], int | None] | None = Field(
+        None, description="Replaces the one-off caps; {} goes back to the plan's numbers")

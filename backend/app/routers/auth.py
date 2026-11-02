@@ -7,7 +7,7 @@ from .. import orgs
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
-from ..deps import current_user
+from ..deps import current_user, is_platform_admin
 from ..errors import Problem
 from ..logging_setup import client_ip
 from .. import passwords
@@ -32,7 +32,7 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
     return {"access_token": make_access_token(user["id"]), "refresh_token": raw,
             "expires_in": settings.access_token_minutes * 60,
             "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org,
-                     "must_change_password": must}}
+                     "must_change_password": must, "platform_admin": is_platform_admin(user)}}
 
 
 @router.post("/register", response_model=AuthOut, status_code=201,
@@ -157,4 +157,5 @@ me_router = APIRouter(tags=["auth"])
 
 @me_router.get("/me", response_model=UserOut)
 async def me(user=Depends(current_user), conn=Depends(get_conn)):
-    return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user))}   # must_change_password: from the user row
+    return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user)),   # must_change_password: from the user row
+            "platform_admin": is_platform_admin(user)}

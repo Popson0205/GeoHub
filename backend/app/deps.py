@@ -77,3 +77,18 @@ async def require_map(conn, map_id, user_id, minimum: str = "contributor") -> di
     if MAP_RANK[row["role"]] < MAP_RANK[minimum]:
         raise Problem(403, f"This action needs the {minimum} role on the map.", code="forbidden")
     return row
+
+
+def platform_admin_emails() -> set[str]:
+    return {e.strip().lower() for e in settings.platform_admins.split(",") if e.strip()}
+
+
+def is_platform_admin(user: dict | None) -> bool:
+    return bool(user) and user["email"].lower() in platform_admin_emails()
+
+
+async def platform_admin(user=Depends(current_user)) -> dict:
+    """GeoEstate staff (PLATFORM_ADMINS). Everyone else gets 404, so the admin pages are not revealed."""
+    if not is_platform_admin(user):
+        raise Problem(404, "Not found.", code="not_found")
+    return user

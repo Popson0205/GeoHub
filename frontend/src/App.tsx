@@ -12,6 +12,8 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const SetPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.SetPasswordPage })));
 const ForgotPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ForgotPasswordPage })));
 const ChangePasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ChangePasswordPage })));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const RequestOrgPage = lazy(() => import("./pages/RequestOrgPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
 const EditorPage = lazy(() => import("./pages/EditorPage"));
 const FormsPage = lazy(() => import("./pages/FormsPage"));
@@ -83,6 +85,7 @@ function CollectorRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/set-password" element={<SetPasswordPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/request-organization" element={<RequestOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
@@ -99,6 +102,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/set-password" element={<SetPasswordPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/request-organization" element={<RequestOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
@@ -125,6 +129,7 @@ export default function App() {
         <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
         <Route path="/collect/:projectId/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
         <Route path="/settings/organization" element={<RequireAuth><OrgSettingsPage /></RequireAuth>} />
+        <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
         {/* Dashboards: their own app. A gallery, a reports page, and the builder above */}
         <Route path="/dashboards" element={<RequireAuth><DashboardApp /></RequireAuth>} />
         <Route path="/dashboards/reports" element={<RequireAuth><DashboardReports /></RequireAuth>} />

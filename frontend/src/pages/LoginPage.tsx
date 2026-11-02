@@ -57,12 +57,10 @@ export default function LoginPage() {
             </a>
           </p>
         )}
-        {mode === "register" && (
+        {(
           <p className="meta auth-company">
             Setting up Geohub for a company or agency?{" "}
-            {config.contactEmail
-              ? <a href={`mailto:${config.contactEmail}?subject=${encodeURIComponent("Geohub organization request")}`}>Request an organization</a>
-              : "Ask GeoEstate for an organization."}
+            <Link to="/request-organization">Request an organization</Link>
           </p>
         )}
       </form>
