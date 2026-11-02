@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadApi } from "../lib/api";
 import { config } from "../lib/config";
+import { isPlainOsm, shortCredit } from "../lib/basemap";
 import type { Geometry } from "../lib/types";
 import { thumbStyle } from "./ui";
 
@@ -111,7 +112,7 @@ export default function FootprintThumb({ kind, id, version, height }: { kind: Ki
     <div ref={box} className={`thumb thumb-footprint${loaded > 0 ? " has-tiles" : ""}`} style={{ ...thumbStyle(id), ...(height ? { height } : {}) }} aria-hidden="true">
       {view && (
         <>
-          <div className="thumb-tiles">
+          <div className={`thumb-tiles${isPlainOsm(config.basemapLightUrl) ? " is-soft" : ""}`}>
             {tiles.map((t) => (
               <img key={t.key} src={t.src} alt="" width={t.size} height={t.size} loading="lazy" decoding="async" draggable={false} referrerPolicy="strict-origin-when-cross-origin"
                 style={{ left: t.x, top: t.y, width: t.size, height: t.size }}
@@ -127,7 +128,7 @@ export default function FootprintThumb({ kind, id, version, height }: { kind: Ki
               return <circle key={i} className="fp-point" cx={x.toFixed(1)} cy={y.toFixed(1)} r={3.6} />;
             })}
           </svg>
-          {loaded > 0 && <span className="thumb-credit">© OpenStreetMap{config.basemapLightUrl.includes("carto") ? " © CARTO" : ""}</span>}
+          {loaded > 0 && <span className="thumb-credit">{shortCredit(config.basemapLightUrl)}</span>}
         </>
       )}
     </div>

@@ -334,6 +334,7 @@ th[aria-sort] { color: var(--ink-900); }
 .thumb-tiles { position: absolute; inset: 0; overflow: hidden; }
 .thumb-tiles img { position: absolute; max-width: none; opacity: 0; transition: opacity .25s ease-out; user-select: none; pointer-events: none; }
 .thumb-tiles img.is-in { opacity: 1; }
+.thumb-tiles.is-soft img { filter: saturate(.4) brightness(1.04) contrast(.92); }   /* the street map, quietened so the points stand out */
 .thumb-credit { position: absolute; right: 0; bottom: 0; padding: 1px 5px; border-top-left-radius: var(--r-sm); background: rgba(255, 255, 255, .78); color: #3c4a44; font-size: 9.5px; line-height: 1.4; pointer-events: none; }
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .thumb-tiles img { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.6); }
