@@ -227,3 +227,13 @@ def test_app_url_with_a_trailing_slash():
     s = Settings(app_url="https://geohub.example.com/", database_url="x", jwt_secret="x", s3_endpoint="x",
                  s3_public_endpoint="x", s3_access_key="x", s3_secret_key="x")
     assert s.app_url == "https://geohub.example.com"
+
+
+def test_a_refused_token_request_says_why(client, idp, monkeypatch):
+    from app.routers import sso
+    def refuse(request):
+        return httpx.Response(401, json={"error": "invalid_client", "error_description":
+                              "AADSTS7000215: Invalid client secret provided. Trace ID: abc"})
+    monkeypatch.setattr(sso, "transport", httpx.MockTransport(refuse))
+    msg = sign_in(client, idp, "microsoft", email=f"{uid()}@example.com")
+    assert "AADSTS7000215" in msg and "Value, not its Secret ID" in msg

@@ -149,6 +149,28 @@ async def _resolve(conn, provider: str, subject: str, email: str | None, verifie
     return user
 
 
+# What the provider's error codes usually mean for whoever set the sign-in up.
+HINTS = {
+    "AADSTS7000215": "The client secret is not right: MICROSOFT_CLIENT_SECRET must be the secret's Value, not its Secret ID.",
+    "AADSTS7000222": "The client secret has expired: make a new one in Azure and update MICROSOFT_CLIENT_SECRET.",
+    "AADSTS9002327": "The redirect address is registered as a single-page application: register it under Web instead.",
+    "AADSTS700016": "MICROSOFT_CLIENT_ID does not match an app registration (use the Application (client) ID).",
+    "AADSTS50011": "The redirect address registered in Azure does not match this server's.",
+    "invalid_client": "The client ID or secret is not right.",
+    "redirect_uri_mismatch": "The redirect address registered with the provider does not match this server's.",
+}
+
+
+def _refusal(provider: str, answer: dict) -> str:
+    """The provider refused to give tokens: say why, briefly, so whoever set it up can fix it. Logged in full."""
+    err, desc = str(answer.get("error", "")), str(answer.get("error_description", ""))
+    log.warning("sso token request refused (%s): %s %s", provider, err, desc[:500])
+    code = next((c for c in HINTS if c.startswith("AADSTS") and c in desc), None) or (err if err in HINTS else None)
+    found = desc.split(":", 1)[0] if desc.startswith("AADSTS") else err
+    msg = f"{NAMES[provider]} did not accept the sign-in" + (f" ({found})" if found else "") + "."
+    return msg + (" " + HINTS[code] if code else " Try again.")
+
+
 @router.get("/sso/{provider}/callback", include_in_schema=False)
 async def callback(provider: str, request: Request, code: str | None = None, state: str | None = None,
                    error: str | None = None, conn=Depends(get_conn)):
@@ -172,8 +194,12 @@ async def callback(provider: str, request: Request, code: str | None = None, sta
                                  headers={"accept": "application/json"})
         except httpx.HTTPError:
             raise Problem(502, f"Could not reach {NAMES[provider]}. Try again.", code="sso_failed")
-        if r.status_code >= 400 or "id_token" not in r.json():
-            raise Problem(400, f"{NAMES[provider]} did not accept the sign-in. Try again.", code="sso_failed")
+        try:
+            answer = r.json()
+        except ValueError:
+            answer = {}
+        if r.status_code >= 400 or "id_token" not in answer:
+            raise Problem(400, _refusal(provider, answer), code="sso_failed")
         claims = jwt.decode(r.json()["id_token"], options={"verify_signature": False})
         subject, email, verified, name = _check_claims(provider, claims, c["id"], st["n"])
         async with conn.transaction():              # all or nothing: no half-made account if joining fails
