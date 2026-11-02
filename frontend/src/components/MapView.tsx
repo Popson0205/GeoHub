@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import maplibregl, { type GeoJSONSource, type Map as MLMap, type StyleSpecification } from "maplibre-gl";
 import { config } from "../lib/config";
+import { basemapCredit, isPlainOsm } from "../lib/basemap";
 import { bboxOf } from "../lib/forms";
 import { translate } from "../lib/geoops";
 import { draftFeatures, measure } from "../lib/sketch";
@@ -98,10 +99,12 @@ const DEFAULT_CENTER: [number, number] = [4.5418, 7.7827];
 const STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    base: { type: "raster", tiles: [config.basemapUrl], tileSize: 256, attribution: "© OpenStreetMap contributors", maxzoom: 19 },
-    "base-light": { type: "raster", tiles: [config.basemapLightUrl], tileSize: 256, attribution: "© OpenStreetMap contributors © CARTO", maxzoom: 19 },
+    base: { type: "raster", tiles: [config.basemapUrl], tileSize: 256, attribution: basemapCredit(config.basemapUrl), maxzoom: 19 },
+    "base-light": { type: "raster", tiles: [config.basemapLightUrl], tileSize: 256, attribution: basemapCredit(config.basemapLightUrl), maxzoom: 19 },
   },
-  layers: [{ id: "base", type: "raster", source: "base" }, { id: "base-light", type: "raster", source: "base-light", layout: { visibility: "none" } }],
+  layers: [{ id: "base", type: "raster", source: "base" }, { id: "base-light", type: "raster", source: "base-light", layout: { visibility: "none" },
+    // with no light style configured, the light map is the street map softened, so drawn shapes stand out
+    ...(isPlainOsm(config.basemapLightUrl) ? { paint: { "raster-saturation": -0.6, "raster-brightness-min": 0.08, "raster-contrast": -0.08 } } : {}) }],
 };
 const FEATURE_LAYERS = ["features-fill", "features-line", "features-point", "features-icon", "cluster-point", "cluster-icon"];
 const empty = { type: "FeatureCollection", features: [] };
