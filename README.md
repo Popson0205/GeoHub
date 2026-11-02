@@ -96,6 +96,22 @@ A missing key means unlimited. Going over a limit is refused with a clear messag
 Upgrading an existing deployment puts every existing account and all existing work into one organization named
 "My organization", owned by the earliest account. Rename it and adjust roles on the Organization page.
 
+## Email (Resend)
+
+Geohub emails people when they are invited to an organization or a project. It sends through
+[Resend](https://resend.com)'s HTTPS API, which works on any host (Railway blocks outgoing SMTP below its Pro plan).
+
+1. In Resend, add and verify your domain (**Domains**: add the DNS records it shows, then wait for "Verified").
+2. Create an API key (**API Keys**, "Sending access").
+3. Set on the server: `RESEND_API_KEY=re_…`, `MAIL_FROM=Geohub <no-reply@yourdomain.com>` (an address on the verified
+   domain) and, optionally, `MAIL_REPLY_TO=support@yourdomain.com`. `APP_URL` must be the web app's address, since the
+   links in emails use it.
+4. Check it: `python -m app.ops.test_email you@yourdomain.com` (on Railway: the service's "Run a command", or
+   `railway run`). It prints the provider's error in full if something is wrong.
+
+Without `RESEND_API_KEY`, SMTP is used when `SMTP_HOST` is set (ports 587 or 465); with neither, emails are only
+written to the log. A failed email is logged and never stops the action that sent it.
+
 ## Error reporting
 
 When a page fails, people see a recovery screen with a short reference (such as `GH-7Q2KX`) instead of a blank page.

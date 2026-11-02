@@ -1,4 +1,5 @@
 """The caller's organization: its details, plan and usage, and its people."""
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -66,7 +67,9 @@ async def add_member(body: OrgMemberIn, request: Request, user=Depends(current_u
         await audit(conn, "org.member_add", actor_id=user["id"], target_type="user", target_id=target["id"], ip=ip,
                     org_id=str(m["org_id"]), role=body.role)
         await send_email(email, f"You joined {m['name']} on Geohub",
-                         f"{user['name']} added you to the organization \"{m['name']}\".\n{settings.app_url}")
+                         f"{user['name']} added you to the organization \"{m['name']}\" on Geohub. "
+                         "You can now be added to its projects and maps.",
+                         action=("Open Geohub", settings.app_url), key=f"org-join/{m['org_id']}/{target['id']}")
         cur = await conn.execute("SELECT created_at FROM org_members WHERE user_id = %s", (target["id"],))
         return {"id": target["id"], "user_id": target["id"], "email": email, "name": target["name"], "role": body.role,
                 "status": "active", "joined_at": (await cur.fetchone())["created_at"]}
@@ -81,8 +84,11 @@ async def add_member(body: OrgMemberIn, request: Request, user=Depends(current_u
     await audit(conn, "org.member_invite", actor_id=user["id"], target_type="invitation", target_id=inv["id"], ip=ip,
                 org_id=str(m["org_id"]), role=body.role, email=email)
     await send_email(email, f"Join {m['name']} on Geohub",
-                     f"{user['name']} invited you to the organization \"{m['name']}\" on Geohub.\n"
-                     f"Create your account with this email address to join: {settings.app_url}/login?signup=1&email={email}")
+                     f"{user['name']} invited you to join \"{m['name']}\" on Geohub, where the team maps places, "
+                     f"collects field data and shares it.\n\nCreate your account with this email address ({email}) "
+                     "and you will join the organization straight away.",
+                     action=("Create your account", f"{settings.app_url}/login?signup=1&email={quote(email)}"),
+                     key=f"org-invite/{inv['id']}/{body.role}")
     return {"id": inv["id"], "user_id": None, "email": email, "name": None, "role": body.role, "status": "invited",
             "joined_at": inv["created_at"]}
 
