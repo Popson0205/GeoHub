@@ -96,10 +96,11 @@ async def catalogue(request: Request, q: str | None = None, type: str | None = Q
     """Public catalogue. No login needed; signed-in users also see private datasets of their projects."""
     await _anon_read_limit(request, user)
     where, params = ["d.latest_version > 0",
-                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s) "
+                     "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s "
+                     "  UNION SELECT project_id FROM team_project_roles WHERE user_id = %s) "
                      "OR d.map_id IN (SELECT id FROM workspace_maps WHERE owner_id = %s UNION SELECT map_id FROM map_members WHERE user_id = %s) "
                      f"OR (d.visibility = 'organization' AND {ORG_OF} = %s))"], \
-                    [user["id"] if user else None] * 3 + [await _user_org(conn, user)]
+                    [user["id"] if user else None] * 4 + [await _user_org(conn, user)]
     if q:
         where.append("(d.title ILIKE %s OR d.description ILIKE %s OR %s = ANY(d.tags))")
         params += [f"%{q}%", f"%{q}%", q.lower()]

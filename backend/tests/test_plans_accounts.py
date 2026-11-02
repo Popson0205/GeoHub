@@ -27,7 +27,7 @@ def _token(mail) -> str:
 def test_individual_plan_holds_one_person_plus_collectors_and_viewers(client, outbox):
     me = Actor(client, "Student", plan=None)
     o = me.get("/org").json()
-    assert o["plan"] == "individual" and o["plan_name"] == "Individual" and o["caps"] == {"seats": 1, "collectors": 5, "viewers": 5}
+    assert o["plan"] == "individual" and o["plan_name"] == "Individual" and o["caps"] == {"seats": 1, "collectors": 5, "viewers": 5, "teams": 0}
     for i in range(5):
         assert me.post("/org/accounts", json={"name": f"C{i}", "email": f"{uid()}@example.com", "role": "collector"}).status_code == 201
     over = me.post("/org/accounts", json={"name": "C6", "email": f"{uid()}@example.com", "role": "collector"})
@@ -106,7 +106,7 @@ def test_people_are_counted_by_kind_and_roles_follow(client, outbox, project, ac
     o = project.owner
     set_plan(o.org_id, "standard", seats=2, collectors=1, viewers=1)
     caps = o.get("/org").json()["caps"]
-    assert caps == {"seats": 2, "collectors": 1, "viewers": 1}
+    assert caps == {"seats": 2, "collectors": 1, "viewers": 1, "teams": 2}
     m = o.post("/org/accounts", json={"name": "Member", "email": f"{uid()}@example.com", "role": "member",
                                       "projects": [{"project_id": project.id}]}).json()["member"]
     assert o.post("/org/accounts", json={"name": "Another", "email": f"{uid()}@example.com", "role": "admin"}).status_code == 402

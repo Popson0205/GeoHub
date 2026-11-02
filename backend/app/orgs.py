@@ -15,18 +15,20 @@ ORG_ROLES = ("owner", "admin", "member", "collector", "viewer")
 # Plans differ by how many people they hold, in three kinds; projects, maps, forms and records are unlimited.
 # None = unlimited. A Custom plan's numbers, or any one-off change, go in the organization's `limits`.
 PLANS = {
-    "individual": {"seats": 1, "collectors": 5, "viewers": 5},
-    "standard": {"seats": 10, "collectors": 50, "viewers": 50},
-    "advanced": {"seats": 30, "collectors": 300, "viewers": None},
-    "custom": {"seats": None, "collectors": None, "viewers": None},
+    "individual": {"seats": 1, "collectors": 5, "viewers": 5, "teams": 0},
+    "standard": {"seats": 10, "collectors": 50, "viewers": 50, "teams": 2},
+    "advanced": {"seats": 30, "collectors": 300, "viewers": None, "teams": 10},
+    "custom": {"seats": None, "collectors": None, "viewers": None, "teams": None},
 }
 PLAN_NAMES = {"individual": "Individual", "standard": "Organization Standard", "advanced": "Organization Advanced",
               "custom": "Custom"}
 PEOPLE_KINDS = ("seats", "collectors", "viewers")
+# What a plan caps: its people, and how many teams (departments) it can have.
+PLAN_CAPS = (*PEOPLE_KINDS, "teams")
 # Which count a role uses: team seats for those who build and run the work.
 KIND_OF_ROLE = {"owner": "seats", "admin": "seats", "member": "seats", "collector": "collectors", "viewer": "viewers"}
 # What each limit counts, in words. Projects and records are only capped when set by hand in `limits`.
-LIMIT_LABEL = {"seats": "team seats", "collectors": "field collectors", "viewers": "viewers",
+LIMIT_LABEL = {"seats": "team seats", "collectors": "field collectors", "viewers": "viewers", "teams": "teams",
                "projects": "projects", "records": "records"}
 
 
@@ -64,7 +66,7 @@ async def membership(conn, user_id) -> dict | None:
     """The person's organization and their role in it: {org_id, role, name, slug, plan, limits}."""
     cur = await conn.execute(
         "SELECT om.org_id, om.role, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, "
-        "  o.brand_color, o.logo_updated_at, o.email_sender_name, o.email_reply_to "
+        "  o.brand_color, o.logo_updated_at, o.email_sender_name, o.email_reply_to, o.require_mfa "
         "FROM org_members om "
         "JOIN organizations o ON o.id = om.org_id WHERE om.user_id = %s", (user_id,))
     return await cur.fetchone()
@@ -99,6 +101,7 @@ async def usage(conn, org_id) -> dict:
         "     + (SELECT count(*) FROM org_invitations WHERE org_id = %(o)s AND role = 'collector') AS collectors, "
         "  (SELECT count(*) FROM org_members WHERE org_id = %(o)s AND role = 'viewer') "
         "     + (SELECT count(*) FROM org_invitations WHERE org_id = %(o)s AND role = 'viewer') AS viewers, "
+        "  (SELECT count(*) FROM org_teams WHERE org_id = %(o)s) AS teams, "
         "  (SELECT count(*) FROM projects WHERE org_id = %(o)s) AS projects, "
         "  (SELECT count(*) FROM features f JOIN projects p ON p.id = f.project_id "
         "     WHERE p.org_id = %(o)s AND f.deleted_at IS NULL) AS records", {"o": org_id})
@@ -112,14 +115,18 @@ async def check_limit(conn, org_id, kind: str, adding: int = 1) -> None:
     row = await cur.fetchone()
     if not row:
         return
-    cap = caps(row["plan"], row["limits"]).get(kind) if kind in PEOPLE_KINDS else (row["limits"] or {}).get(kind)
+    cap = caps(row["plan"], row["limits"]).get(kind) if kind in PLAN_CAPS else (row["limits"] or {}).get(kind)
     if cap is None:
         return
     used = (await usage(conn, org_id))[kind]
     if used + adding > int(cap):
         plan = PLAN_NAMES.get(row["plan"], row["plan"])
+        if kind == "teams" and not cap:
+            raise Problem(402, "Teams come with Organization plans. Ask GeoEstate for one.", code="plan_limit",
+                          fields={kind: ["not on this plan"]})
         raise Problem(402, f"Your plan ({plan}) includes {cap} {LIMIT_LABEL[kind]}, and all are in use. "
-                           "Remove someone first, or contact GeoEstate to add more.",
+                           + ("Delete a team first" if kind == "teams" else "Remove someone first")
+                           + ", or contact GeoEstate to add more.",
                       code="plan_limit", fields={kind: [f"limit {cap}, using {used}"]})
 
 
