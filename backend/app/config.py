@@ -47,11 +47,14 @@ class Settings(BaseSettings):
     max_import_mb: int = 50
     photo_web_px: int = 2048
 
+    # Email: Resend's API when this is set (works where SMTP is blocked, e.g. Railway below Pro), else SMTP below.
+    resend_api_key: str = ""
+    mail_reply_to: str = ""                   # where replies go, e.g. support@yourdomain.com
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
-    mail_from: str = "Mapping Hub <no-reply@example.org>"
+    mail_from: str = "Geohub <no-reply@example.org>"   # with Resend: an address on a domain you verified there
     sentry_dsn: str = ""
     # A private copy for one client: sign-up by invitation only, after the first account creates the organization.
     single_org: bool = False

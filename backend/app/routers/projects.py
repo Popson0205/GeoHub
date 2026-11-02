@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote
 from typing import Literal
 from uuid import UUID
 
@@ -144,7 +145,9 @@ async def add_member(project_id: UUID, body: MemberIn, request: Request, user=De
         await audit(conn, "member.add", actor_id=user["id"], project_id=project_id, target_type="user",
                     target_id=target["id"], ip=ip, role=body.role)
         await send_email(body.email, f"You were added to {pname}",
-                         f"{user['name']} added you to the project \"{pname}\" as {body.role}.\n{settings.app_url}")
+                         f"{user['name']} added you to the project \"{pname}\" on Geohub as {body.role}.",
+                         action=("Open the project", f"{settings.app_url}/collect/{project_id}"),
+                         key=f"project-add/{project_id}/{target['id']}")
         return {"id": target["id"], "user_id": target["id"], "email": body.email.lower(), "name": target["name"],
                 "role": body.role, "status": "active", "assigned_area": body.assigned_area}
     cur = await conn.execute(
@@ -155,7 +158,10 @@ async def add_member(project_id: UUID, body: MemberIn, request: Request, user=De
     await audit(conn, "member.invite", actor_id=user["id"], project_id=project_id, target_type="invitation",
                 target_id=inv["id"], ip=ip, email=body.email.lower(), role=body.role)
     await send_email(body.email, f"{user['name']} invited you to {pname}",
-                     f"Create an account with this email address to join \"{pname}\" as {body.role}:\n{settings.app_url}")
+                     f"{user['name']} invited you to the project \"{pname}\" on Geohub as {body.role}.\n\n"
+                     f"Create your account with this email address ({body.email.lower()}) to join.",
+                     action=("Create your account", f"{settings.app_url}/login?signup=1&email={quote(body.email.lower())}"),
+                     key=f"project-invite/{inv['id']}/{body.role}")
     return {"id": inv["id"], "user_id": None, "email": body.email.lower(), "name": None, "role": body.role,
             "status": "invited", "assigned_area": None}
 
