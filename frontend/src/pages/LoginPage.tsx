@@ -1,9 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AuthFrame from "../components/AuthFrame";
 import { Button } from "../components/ui";
+import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { config } from "../lib/config";
+import type { SsoProvider } from "../lib/types";
+
+const PROVIDER_NAME: Record<SsoProvider, string> = { google: "Google", microsoft: "Microsoft" };
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -16,8 +20,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState(config.useMock ? "demo" : "");
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"signin" | "register">(params.get("signup") === "1" && !config.useMock ? "register" : "signin");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(params.get("sso_error") ?? "");
   const [busy, setBusy] = useState(false);
+  const [providers, setProviders] = useState<SsoProvider[]>([]);
+  const [going, setGoing] = useState<SsoProvider | null>(null);
+  useEffect(() => { void loadApi().then((api) => api.listProviders()).then(setProviders, () => setProviders([])); }, []);
+
+  async function withProvider(p: SsoProvider) {
+    setGoing(p);
+    const url = (await loadApi()).ssoStartUrl(p, from);
+    if (url.startsWith("/")) nav(url); else window.location.assign(url);
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -40,6 +53,14 @@ export default function LoginPage() {
         <h1>{mode === "register" ? "Create a free account" : "Sign in to Geohub"}</h1>
         {config.useMock && <div className="state"><span>Mock mode: no server needed. Use the filled-in demo account.</span></div>}
         {mode === "register" && <p className="field-hint">A free Individual account, for students and anyone working on their own. If your organization uses Geohub, your administrator creates your account instead.</p>}
+        {providers.length > 0 && (
+          <div className="auth-sso">
+            {providers.map((p) => (
+              <Button key={p} type="button" busy={going === p} onClick={() => void withProvider(p)}>Continue with {PROVIDER_NAME[p]}</Button>
+            ))}
+            <p className="auth-or"><span>or with email</span></p>
+          </div>
+        )}
         {mode === "register" && <div className="field"><label htmlFor="name">Your name</label><input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} /></div>}
         <div className="field"><label htmlFor="email">Email</label><input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div className="field">

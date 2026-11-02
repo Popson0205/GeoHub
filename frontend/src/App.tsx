@@ -12,6 +12,8 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const SetPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.SetPasswordPage })));
 const ForgotPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ForgotPasswordPage })));
 const ChangePasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ChangePasswordPage })));
+const SsoReturnPage = lazy(() => import("./pages/SsoPages").then((m) => ({ default: m.SsoReturnPage })));
+const JoinOrgPage = lazy(() => import("./pages/SsoPages").then((m) => ({ default: m.JoinOrgPage })));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const RequestOrgPage = lazy(() => import("./pages/RequestOrgPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
@@ -86,6 +88,8 @@ function CollectorRoutes() {
       <Route path="/set-password" element={<SetPasswordPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/request-organization" element={<RequestOrgPage />} />
+      <Route path="/sso" element={<SsoReturnPage />} />
+      <Route path="/join-organization" element={<JoinOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
@@ -103,6 +107,8 @@ export default function App() {
       <Route path="/set-password" element={<SetPasswordPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/request-organization" element={<RequestOrgPage />} />
+      <Route path="/sso" element={<SsoReturnPage />} />
+      <Route path="/join-organization" element={<JoinOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />

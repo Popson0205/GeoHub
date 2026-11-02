@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from .. import orgs, ratelimit
+from .. import domains, orgs, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -13,7 +13,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from .. import passwords
-from ..schemas import AccountIn, AccountOut, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from ..schemas import AccountIn, AccountOut, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
 
@@ -281,3 +281,85 @@ async def send_link(user_id: UUID, request: Request, user=Depends(current_user),
     await audit(conn, "org.send_link", actor_id=user["id"], target_type="user", target_id=user_id,
                 ip=client_ip(request), org_id=str(m["org_id"]))
     return {"sent": sent}
+
+
+# ---------- company email domains ----------
+async def _domain_admin(conn, user) -> dict:
+    m = await orgs.require_org_role(conn, user, "admin")
+    if m["plan"] == "individual":
+        raise Problem(403, "Joining by company email domain comes with Organization plans. Ask GeoEstate for one.",
+                      code="plan_feature")
+    return m
+
+
+async def _own_domain(conn, org_id, domain: str) -> dict:
+    cur = await conn.execute("SELECT * FROM org_domains WHERE domain = %s AND org_id = %s", (domain.lower(), org_id))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "That domain is not one of your organization's.", code="not_found")
+    return row
+
+
+@router.get("/domains", response_model=list[OrgDomainOut], summary="Company email domains (admins)")
+async def list_domains(user=Depends(current_user), conn=Depends(get_conn)):
+    m = await orgs.require_org_role(conn, user, "admin")
+    cur = await conn.execute("SELECT * FROM org_domains WHERE org_id = %s ORDER BY created_at", (m["org_id"],))
+    return [domains.out(r) for r in await cur.fetchall()]
+
+
+@router.post("/domains", response_model=OrgDomainOut, status_code=201, summary="Add a company email domain (admins)")
+async def add_domain(body: OrgDomainIn, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    """Added unverified, with the DNS TXT record that proves ownership. Nobody joins by it until it is verified."""
+    m = await _domain_admin(conn, user)
+    d = domains.normalize(body.domain)
+    cur = await conn.execute("SELECT org_id FROM org_domains WHERE domain = %s", (d,))
+    taken = await cur.fetchone()
+    if taken:
+        raise Problem(409, f"{d} is already added" + (" to your organization." if taken["org_id"] == m["org_id"] else
+                      " to another organization. If it is yours, contact GeoEstate."), code="domain_taken", fields={"domain": ["taken"]})
+    cur = await conn.execute("INSERT INTO org_domains (domain, org_id, verify_token) VALUES (%s, %s, %s) RETURNING *",
+                             (d, m["org_id"], domains.new_token()))
+    await audit(conn, "org.domain_add", actor_id=user["id"], target_type="organization", target_id=m["org_id"], ip=client_ip(request), domain=d)
+    return domains.out(await cur.fetchone())
+
+
+@router.post("/domains/{domain}/verify", response_model=OrgDomainOut, summary="Check the domain's DNS record now (admins)",
+             dependencies=[Depends(ratelimit.limit("domain-verify", 20, 3600))])
+async def verify_domain(domain: str, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await _domain_admin(conn, user)
+    row = await _own_domain(conn, m["org_id"], domain)
+    if row["verified_at"] is None:
+        try:
+            found = await domains.has_txt(row["domain"], row["verify_token"])
+        except Exception:  # noqa: BLE001
+            raise Problem(502, "Could not look up the domain's DNS just now. Try again in a minute.", code="dns_unavailable")
+        if not found:
+            raise Problem(422, f"The TXT record was not found on {row['domain']} yet. Add it at your domain registrar "
+                               "(name: @ or the domain itself; value: " + domains.txt_value(row["verify_token"]) + "). "
+                               "New records can take up to an hour to appear.", code="not_verified")
+        cur = await conn.execute("UPDATE org_domains SET verified_at = now() WHERE domain = %s RETURNING *", (row["domain"],))
+        row = await cur.fetchone()
+        await audit(conn, "org.domain_verify", actor_id=user["id"], target_type="organization", target_id=m["org_id"],
+                    ip=client_ip(request), domain=row["domain"], via="dns")
+    return domains.out(row)
+
+
+@router.patch("/domains/{domain}", response_model=OrgDomainOut, summary="Turn joining on or off, or change the role (admins)")
+async def update_domain(domain: str, body: OrgDomainPatch, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await _domain_admin(conn, user)
+    row = await _own_domain(conn, m["org_id"], domain)
+    cur = await conn.execute("UPDATE org_domains SET auto_join = COALESCE(%s, auto_join), role = COALESCE(%s, role) "
+                             "WHERE domain = %s RETURNING *", (body.auto_join, body.role, row["domain"]))
+    await audit(conn, "org.domain_update", actor_id=user["id"], target_type="organization", target_id=m["org_id"],
+                ip=client_ip(request), domain=row["domain"], **body.model_dump(exclude_none=True))
+    return domains.out(await cur.fetchone())
+
+
+@router.delete("/domains/{domain}", status_code=204, summary="Remove a company email domain (admins)")
+async def remove_domain(domain: str, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await orgs.require_org_role(conn, user, "admin")
+    row = await _own_domain(conn, m["org_id"], domain)
+    await conn.execute("DELETE FROM org_domains WHERE domain = %s", (row["domain"],))
+    await audit(conn, "org.domain_remove", actor_id=user["id"], target_type="organization", target_id=m["org_id"],
+                ip=client_ip(request), domain=row["domain"])
+    return Response(status_code=204)

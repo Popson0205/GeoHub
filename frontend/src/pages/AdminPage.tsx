@@ -64,6 +64,7 @@ export default function AdminPage() {
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [newDomain, setNewDomain] = useState("");
 
   async function load() {
     setError(null);
@@ -131,6 +132,17 @@ export default function AdminPage() {
     } catch (e) { toast(fail(e, "Could not update the request."), "error"); } finally { setBusy(null); }
   }
 
+  async function addDomain(orgId: string) {
+    setBusy("domain"); setFormError("");
+    try {
+      const api = await loadApi();
+      const d = await api.adminAddDomain(orgId, newDomain);
+      setNewDomain("");
+      setOrgs(await api.adminListOrgs());
+      toast(`${d.domain} is verified for this organization.`, "success");
+    } catch (e) { setFormError(fail(e, "Could not add the domain.")); } finally { setBusy(null); }
+  }
+
   function setUpFrom(r: OrgRequest) {
     const plan: PlanId = r.plan === "advanced" ? "advanced" : r.plan === "custom" ? "custom" : "standard";
     open(null, { ...blank(), name: r.organization, plan, owner_name: r.contact_name, owner_email: r.email, request_id: r.id });
@@ -194,6 +206,21 @@ export default function AdminPage() {
                   );
                 })}
               </fieldset>
+              {editing.id && (
+                <fieldset className="admin-domains">
+                  <legend>Company email domains</legend>
+                  {(() => {
+                    const ds = orgs.find((o) => o.id === editing.id)?.domains ?? [];
+                    return ds.length ? <ul>{ds.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="muted">None yet. The organization's admins can add one and prove it with a DNS record.</p>;
+                  })()}
+                  <div className="org-rename">
+                    <div className="field"><label htmlFor="ao-domain" className="sr-only">Domain to verify</label>
+                      <input id="ao-domain" placeholder="theircompany.com" value={newDomain} onChange={(e) => setNewDomain(e.target.value)} autoComplete="off" spellCheck={false} aria-describedby="ao-domain-hint" /></div>
+                    <Button type="button" busy={busy === "domain"} disabled={!newDomain.trim()} onClick={() => void addDomain(editing.id!)}>Add as verified</Button>
+                  </div>
+                  <span id="ao-domain-hint" className="field-hint">Only once you have checked the client owns it (for example, an email from their domain's administrator).</span>
+                </fieldset>
+              )}
               {formError && <div className="field-error" role="alert">{formError}</div>}
               <div className="admin-form-actions">
                 <Button type="submit" variant="primary" busy={busy === "save"}>{editing.id ? "Save changes" : "Set up and email the owner"}</Button>
@@ -221,7 +248,8 @@ export default function AdminPage() {
                     const r = renewal(o.days_left);
                     return (
                       <tr key={o.id}>
-                        <td><strong>{o.name}</strong><br /><span className="muted">{o.owner_name ? `${o.owner_name} · ${o.owner_email}` : "No owner"}</span></td>
+                        <td><strong>{o.name}</strong><br /><span className="muted">{o.owner_name ? `${o.owner_name} · ${o.owner_email}` : "No owner"}</span>
+                          {o.domains && o.domains.length > 0 && <><br /><span className="muted">@ {o.domains.join(", ")}</span></>}</td>
                         <td><span className="badge badge-quiet">{o.plan_name}</span></td>
                         <td className="admin-people tnum">
                           {KINDS.map((k) => {

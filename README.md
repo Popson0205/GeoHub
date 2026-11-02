@@ -130,6 +130,40 @@ Upgrading an existing deployment puts every existing account and all existing wo
 "My organization", owned by the earliest account and on the Advanced plan. Rename it and adjust roles on the
 Organization page.
 
+## Sign in with Google or Microsoft
+
+Every plan can sign in with Google or Microsoft. Each button appears once its two variables are set on the server.
+The **redirect URI** to register is your app's address, the API prefix (`/api` on the single Railway deployment),
+then `/auth/sso/google/callback` or `/auth/sso/microsoft/callback`, e.g.
+`https://your-app.up.railway.app/api/auth/sso/google/callback`. It must match `APP_URL` exactly.
+
+**Google** (console.cloud.google.com → APIs & Services):
+1. OAuth consent screen: External, app name "Geohub", your support email; scopes `openid`, `email`, `profile`.
+   Publish it (Testing mode only lets listed test users in).
+2. Credentials → Create credentials → OAuth client ID → Web application. Add the redirect URI above.
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+**Microsoft** (portal.azure.com → Microsoft Entra ID → App registrations → New registration):
+1. Supported accounts: "Accounts in any organizational directory and personal Microsoft accounts". Redirect URI:
+   platform Web, the address above.
+2. Certificates & secrets → New client secret (note its expiry date and renew it before then).
+3. Token configuration → Add optional claim → ID → `email` and `xms_edov`. Without `xms_edov`, work accounts are
+   refused, because their email is only what their administrator typed; personal Microsoft accounts work either way.
+4. Set `MICROSOFT_CLIENT_ID` (the Application ID) and `MICROSOFT_CLIENT_SECRET`. For one client's private copy, set
+   `MICROSOFT_TENANT` to their tenant ID so only their accounts get in (default `common`).
+
+People are matched by their Google or Microsoft account; the first time, by a confirmed email, so someone with a
+password account can also use the button. Someone new gets an account as if they had signed up (joining the
+organization that invited them, or that owns their email's domain).
+
+**Company email domains** (Organization plans). Admins add their domain on the Organization page and prove it with a
+DNS TXT record (`geohub-verification=…`, shown there; checked over DNS-over-HTTPS), or a platform admin adds it
+already verified from the platform admin page. Then people with an email on it join when they sign up: at once with
+Google or Microsoft, or, with a password, after clicking a "Join …" link emailed to them (an email is only trusted
+once proven). Admins choose the role they join with (member, field collector or viewer) and can turn joining off.
+They count against the plan; when it is full, the person gets a free account of their own instead. Public email
+services (gmail.com and the like) cannot be added.
+
 ## Email (Brevo)
 
 Geohub emails people when they are invited to an organization or a project. It sends through

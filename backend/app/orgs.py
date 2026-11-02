@@ -150,9 +150,10 @@ async def bring_into(conn, user_id, org_id, role: str = "member") -> bool:
     return True
 
 
-async def join_on_signup(conn, user: dict, org_name: str | None) -> dict:
+async def join_on_signup(conn, user: dict, org_name: str | None, email_verified: bool = False) -> dict:
     """Put a new account in an organization: the one that invited them (to the organization or to one of its
-    projects), else a new one they own. On a private copy only the very first account may create it."""
+    projects), else the one that owns their email's domain (only when the email is proven), else a new one they own.
+    On a private copy only the very first account may create it."""
     cur = await conn.execute(
         "DELETE FROM org_invitations WHERE id = (SELECT id FROM org_invitations WHERE lower(email) = lower(%s) "
         "ORDER BY created_at LIMIT 1) RETURNING org_id, role", (user["email"],))
@@ -172,6 +173,17 @@ async def join_on_signup(conn, user: dict, org_name: str | None) -> dict:
         await check_limit(conn, via_project["org_id"], KIND_OF_ROLE[role])
         await conn.execute("INSERT INTO org_members (user_id, org_id, role) VALUES (%s, %s, %s)", (user["id"], via_project["org_id"], role))
         return await membership(conn, user["id"])
+    if email_verified:
+        from . import domains
+        d = await domains.find_join(conn, user["email"])
+        if d:
+            try:
+                await check_limit(conn, d["org_id"], KIND_OF_ROLE[d["role"]])
+                await conn.execute("INSERT INTO org_members (user_id, org_id, role) VALUES (%s, %s, %s)", (user["id"], d["org_id"], d["role"]))
+                return await membership(conn, user["id"])
+            except Problem as e:                       # the organization is full: they get an account of their own
+                if e.status != 402:
+                    raise
     if settings.single_org:
         cur = await conn.execute("SELECT 1 FROM organizations LIMIT 1")
         if await cur.fetchone():
