@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Icon } from "../components/icons";
 import OrgDomains from "../components/OrgDomains";
+import OrgBranding from "../components/OrgBranding";
+import OrgTeams from "../components/OrgTeams";
+import ImportPeople from "../components/ImportPeople";
 import { Button, ErrorState, Loading, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -109,6 +112,21 @@ export default function OrgSettingsPage() {
     try { await (await loadApi()).removeOrgMember(m.user_id!); toast(`${who} was removed.`, "success"); await load(); }
     catch (err) { fail(err, "Could not remove."); } finally { setBusy(null); }
   }
+  async function resetMfa(m: OrgMember) {
+    const who = m.name ?? m.email;
+    if (!(await confirm({ title: `Turn off two-step sign-in for ${who}?`, confirmLabel: "Turn it off",
+      message: `For a lost or new phone. ${who} signs in with their password alone next time${org!.require_mfa ? ", then sets it up again" : ""}. They get an email saying so.` }))) return;
+    setBusy(m.id);
+    try { await (await loadApi()).resetMemberMfa(m.user_id!); toast(`Two-step sign-in is off for ${who}.`, "success"); await load(); }
+    catch (err) { fail(err, "Could not turn it off."); } finally { setBusy(null); }
+  }
+  async function requireMfa(on: boolean) {
+    if (on && !(await confirm({ title: "Require two-step sign-in?", confirmLabel: "Require it",
+      message: "Everyone without it is asked to set it up the next time they use Geohub, and can do nothing else until they have. They need a phone with an authenticator app." }))) return;
+    setBusy("mfa");
+    try { setOrg(await (await loadApi()).setRequireMfa(on)); toast(on ? "Two-step sign-in is now required." : "Two-step sign-in is no longer required.", "success"); }
+    catch (err) { fail(err, "Could not change it."); } finally { setBusy(null); }
+  }
   async function checkEmail() {
     setBusy("mail"); setMailCheck(null);
     try { setMailCheck(await (await loadApi()).checkEmail()); }
@@ -176,6 +194,8 @@ export default function OrgSettingsPage() {
             </section>
           )}
 
+          {admin && <ImportPeople org={org} onDone={() => void load()} />}
+
           <section aria-labelledby="org-people">
             <h2 id="org-people" className="org-h2">People <span className="muted">{active.length}</span></h2>
             <div className="table-wrap">
@@ -187,7 +207,7 @@ export default function OrgSettingsPage() {
                     const canManage = admin && !self && (owner || !["owner", "admin"].includes(m.role));
                     return (
                       <tr key={m.id}>
-                        <td><strong>{m.name}{self && <span className="muted"> (you)</span>}</strong><br /><span className="muted">{m.email}</span></td>
+                        <td><strong>{m.name}{self && <span className="muted"> (you)</span>}</strong>{m.mfa_enabled && <span className="badge badge-quiet org-mfa" title="Two-step sign-in is on">2-step</span>}<br /><span className="muted">{m.email}</span></td>
                         <td>
                           {owner && !self ? (
                             <select className="input" aria-label={`Role of ${m.name ?? m.email}`} value={m.role} disabled={busy === m.id} onChange={(e) => void changeRole(m, e.target.value as OrgRole)}>
@@ -199,6 +219,7 @@ export default function OrgSettingsPage() {
                         {admin && (
                           <td className="org-actions">
                             {canManage && <Button small variant="ghost" onClick={() => void sendLink(m)} disabled={busy === m.id} aria-label={`Send a sign-in link to ${m.name ?? m.email}`}>Send link</Button>}
+                            {canManage && m.mfa_enabled && <Button small variant="ghost" onClick={() => void resetMfa(m)} disabled={busy === m.id} aria-label={`Turn off two-step sign-in for ${m.name ?? m.email}`}>Reset 2-step</Button>}
                             {canManage && <Button small variant="ghost" onClick={() => void remove(m)} disabled={busy === m.id} aria-label={`Remove ${m.name ?? m.email}`}>Remove</Button>}
                           </td>
                         )}
@@ -224,6 +245,8 @@ export default function OrgSettingsPage() {
             </section>
           )}
 
+          {!isIndividual && <OrgTeams org={org} people={members} projects={projects} onChanged={() => void load()} />}
+          {admin && !isIndividual && <OrgBranding org={org} onSaved={(o) => { setOrg(o); void refresh(); }} />}
           {admin && !isIndividual && <OrgDomains />}
         </div>
 
@@ -247,8 +270,26 @@ export default function OrgSettingsPage() {
                 );
               })}
             </dl>
+            {org.caps.teams !== 0 && <p className="org-teams-count">Teams <span className="tnum"><strong>{org.usage.teams ?? 0}</strong>{org.caps.teams != null ? ` of ${org.caps.teams}` : ""}</span></p>}
             <p className="field-hint">{isIndividual ? "For a team, ask GeoEstate for an organization." : owner ? "For more people or another plan, contact GeoEstate." : "The organization owner manages the plan."}</p>
           </section>
+
+          {admin && !isIndividual && (
+            <section className="card" aria-labelledby="org-sec-h">
+              <h2 id="org-sec-h">Two-step sign-in</h2>
+              <p className="field-hint">{active.filter((m) => m.mfa_enabled).length} of {active.length} people have it on.</p>
+              {org.require_mfa ? (
+                <>
+                  <p><span className="badge badge-ok">Required</span> Everyone must use it.</p>
+                  <Button small variant="ghost" busy={busy === "mfa"} onClick={() => void requireMfa(false)}>Stop requiring it</Button>
+                </>
+              ) : user?.mfa_enabled ? (
+                <Button busy={busy === "mfa"} onClick={() => void requireMfa(true)}>Require it for everyone</Button>
+              ) : (
+                <p className="field-hint">To require it for everyone, first <Link to="/settings/security">turn it on for yourself</Link>.</p>
+              )}
+            </section>
+          )}
 
           {admin && (
             <section className="card" aria-labelledby="org-mail-h">

@@ -75,6 +75,7 @@ export default function DatasetPage() {
           <h2>About this data</h2>
           <dl className="kv">
             <dt>Licence</dt><dd>{d.license}</dd>
+            {d.visibility && d.visibility !== "public" && <><dt>Who can see it</dt><dd>{d.visibility === "organization" ? "Your organization only" : "Members only"}</dd></>}
             <dt>Features</dt><dd>{d.feature_count}</dd>
             <dt>Version</dt><dd>{d.latest_version}</dd>
             <dt>Updated</dt><dd>{new Date(d.updated_at).toLocaleDateString()}</dd>

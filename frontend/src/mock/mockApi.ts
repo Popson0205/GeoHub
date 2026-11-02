@@ -1,16 +1,18 @@
 import { toKml } from "../lib/kml";
-import { ApiError, tokens, type Api } from "../lib/api";
+import { readable } from "../lib/brand";
+import { ApiError, MfaRequired, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
 import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
-  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider,
+import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
+  Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
 import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects, seedSharedMaps } from "./seed";
@@ -24,9 +26,14 @@ interface State {
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
   audit?: (AuditEvent & { project_id: string })[];
-  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null };
+  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null;
+    branding?: OrgBranding; require_mfa?: boolean };
   orgMembers?: OrgMember[];
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
+  teams?: { id: string; name: string; description: string; created_at: string; members: { user_id: string; lead: boolean }[] }[];
+  projectTeams?: { project_id: string; team_id: string; role: TeamProjectRole }[];
+  mfa?: { enabled_at: string | null; pending: boolean; recovery: string[] };
+  apiKeys?: ApiKey[];
 }
 /** The mock keeps who owns a map and who drew each feature, like the real backend does. */
 type MockMap = Omit<WorkMap, "role" | "owner_name" | "member_count" | "campaign_status" | "feature_count"> & { owner_id: string; owner_name: string; feature_count?: number };
@@ -36,9 +43,11 @@ const GEOM_KIND = (g: Geometry): "point" | "line" | "area" => (g.type === "Point
 
 const PLAN_NAMES: Record<string, string> = { individual: "Individual", standard: "Organization Standard", advanced: "Organization Advanced", custom: "Custom" };
 const PLAN_CAPS: Record<string, Org["caps"]> = {
-  individual: { seats: 1, collectors: 5, viewers: 5 }, standard: { seats: 10, collectors: 50, viewers: 50 },
-  advanced: { seats: 30, collectors: 300, viewers: null }, custom: { seats: null, collectors: null, viewers: null },
+  individual: { seats: 1, collectors: 5, viewers: 5, teams: 0 }, standard: { seats: 10, collectors: 50, viewers: 50, teams: 2 },
+  advanced: { seats: 30, collectors: 300, viewers: null, teams: 10 }, custom: { seats: null, collectors: null, viewers: null, teams: null },
 };
+/** In demo mode the authenticator app's code is always this. */
+export const MOCK_MFA_CODE = "123456";
 const KEY = "geohub.mock.v1";
 const wait = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
@@ -84,7 +93,11 @@ export class MockApi implements Api {
     const { org, members } = this.orgState;
     const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
     // the demo account also plays GeoEstate staff, so the platform admin page can be tried
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan }, must_change_password: false, platform_admin: true };
+    const b = org.branding;
+    const brand = org.plan !== "individual" && (b?.color || b?.logo_url) ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null } : null;
+    const mfaOn = !!this.s.mfa?.enabled_at;
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand }, must_change_password: false, platform_admin: true,
+      mfa_enabled: mfaOn, mfa_setup_required: !!org.require_mfa && !mfaOn };
   }
   async getOrg(): Promise<Org> {
     await wait(); this.auth();
@@ -93,13 +106,17 @@ export class MockApi implements Api {
     const kind = (r: OrgRole) => (r === "collector" ? "collectors" : r === "viewer" ? "viewers" : "seats");
     const count = (k: string) => members.filter((m) => kind(m.role) === k).length;
     return { ...org, role: me.role, single_org: false, plan_name: PLAN_NAMES[org.plan] ?? org.plan,
-      caps: { ...(PLAN_CAPS[org.plan] ?? PLAN_CAPS.individual), ...org.limits } as Org["caps"],
-      usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"),
+      branding: org.branding ?? { color: null, logo_url: null, sender_name: null, reply_to: null },
+      caps: { ...(PLAN_CAPS[org.plan] ?? PLAN_CAPS.individual), ...org.limits } as Org["caps"], require_mfa: !!org.require_mfa,
+      usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"), teams: (this.s.teams ?? []).length,
         projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
   }
   private orgAdmin() { const r = this.me_().org!.role; if (r === "member") throw new ApiError(403, "This needs an organization admin."); return r; }
   async renameOrg(name: string) { await wait(); this.auth(); this.orgAdmin(); this.orgState.org.name = name.trim(); this.save(); return this.getOrg(); }
-  async listOrgMembers() { await wait(); this.auth(); return [...this.orgState.members]; }
+  async listOrgMembers() {
+    await wait(); this.auth();
+    return this.orgState.members.map((m) => (m.user_id === DEMO_USER.id ? { ...m, mfa_enabled: !!this.s.mfa?.enabled_at } : m));
+  }
   async inviteOrgMember(email: string, role: "admin" | "member"): Promise<OrgMember> {
     await wait(); this.auth();
     if (this.orgAdmin() !== "owner" && role === "admin") throw new ApiError(403, "Only an owner can add administrators.");
@@ -167,6 +184,35 @@ export class MockApi implements Api {
     return this.login(DEMO_USER.email, "demo");
   }
   async forgotPassword(_email: string) { await wait(); }
+  // ---- branding
+  private brandAdmin() {
+    this.auth(); this.orgAdmin();
+    if (this.orgState.org.plan === "individual") throw new ApiError(403, "Your own logo, colour and email sender come with Organization plans. Ask GeoEstate for one.");
+    return (this.orgState.org.branding ??= { color: null, logo_url: null, sender_name: null, reply_to: null });
+  }
+  async updateBranding(patch: { color?: string; sender_name?: string; reply_to?: string }) {
+    await wait(); const b = this.brandAdmin();
+    if (patch.color != null) {
+      const c = patch.color.trim();
+      if (c && !/^#?[0-9a-f]{6}$/i.test(c)) throw new ApiError(422, "Use a colour like #0b5cad.", { color: "not a colour" });
+      b.color = c ? readable(c.startsWith("#") ? c.toLowerCase() : `#${c.toLowerCase()}`) : null;
+    }
+    if (patch.sender_name != null) b.sender_name = patch.sender_name.replace(/[<>"]/g, "").trim() || null;
+    if (patch.reply_to != null) {
+      const r = patch.reply_to.trim().toLowerCase();
+      if (r && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(r)) throw new ApiError(422, "Enter an email address for replies.", { reply_to: "not an email" });
+      b.reply_to = r || null;
+    }
+    this.save(); return this.getOrg();
+  }
+  async uploadLogo(file: File) {
+    await wait(); const b = this.brandAdmin();
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new ApiError(422, "Use a PNG, JPEG or WebP image for the logo.");
+    if (file.size > 1_000_000) throw new ApiError(413, "The logo is larger than 1 MB. Use a smaller image.");
+    b.logo_url = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => res(""); r.readAsDataURL(file); });
+    this.save(); return this.getOrg();
+  }
+  async removeLogo() { await wait(); const b = this.brandAdmin(); b.logo_url = null; this.save(); return this.getOrg(); }
   // ---- Google / Microsoft sign-in (the demo account stands in), and company domains
   async listProviders(): Promise<SsoProvider[]> { await wait(); return ["google", "microsoft"]; }
   ssoStartUrl(provider: SsoProvider, next: string) { return `/sso?code=demo-${provider}&next=${encodeURIComponent(next)}`; }
@@ -362,9 +408,215 @@ export class MockApi implements Api {
   async login(email: string, password: string): Promise<Session> {
     await wait();
     if (email.trim().toLowerCase() !== DEMO_USER.email || password !== "demo") throw new ApiError(401, "Wrong email or password. In mock mode use demo@geohub.test / demo.");
+    if (this.s.mfa?.enabled_at) throw new MfaRequired("mock-mfa");
     const s: Session = { access_token: "mock-token", refresh_token: "mock-refresh", user: this.me_() };
     tokens.set(s);
     return s;
+  }
+  // ---- two-step sign-in (demo: the app's code is always 123456)
+  private get mfaState() { return (this.s.mfa ??= { enabled_at: null, pending: false, recovery: [] }); }
+  private checkCode(code: string) {
+    const c = code.replace(/\s/g, "").toLowerCase();
+    if (c === MOCK_MFA_CODE) return;
+    const i = this.mfaState.recovery.indexOf(c);
+    if (i >= 0) { this.mfaState.recovery.splice(i, 1); this.save(); return; }
+    throw new ApiError(401, `That code is not right. In demo mode the code is ${MOCK_MFA_CODE}.`);
+  }
+  async verifyMfa(token: string, code: string): Promise<Session> {
+    await wait();
+    if (token !== "mock-mfa") throw new ApiError(401, "The sign-in took too long. Sign in again.");
+    this.checkCode(code);
+    const s: Session = { access_token: "mock-token", refresh_token: "mock-refresh", user: this.me_() };
+    tokens.set(s);
+    return s;
+  }
+  async mfaStatus(): Promise<MfaStatus> {
+    await wait(40); this.auth();
+    const m = this.mfaState;
+    return { enabled: !!m.enabled_at, enabled_at: m.enabled_at, recovery_codes_left: m.enabled_at ? m.recovery.length : 0, required_by_org: !!this.orgState.org.require_mfa };
+  }
+  async startMfaSetup() {
+    await wait(); this.auth();
+    if (this.mfaState.enabled_at) throw new ApiError(409, "Two-step sign-in is already on.");
+    this.mfaState.pending = true; this.save();
+    const secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+    return { secret, otpauth_url: `otpauth://totp/Geohub:${encodeURIComponent(DEMO_USER.email)}?secret=${secret}&issuer=Geohub` };
+  }
+  private newCodes() { return Array.from({ length: 10 }, (_, i) => `demo${i}-code${i}`); }
+  async enableMfa(code: string) {
+    await wait(); this.auth();
+    if (!this.mfaState.pending) throw new ApiError(409, "Start the setup first.");
+    if (code.replace(/\s/g, "") !== MOCK_MFA_CODE) throw new ApiError(422, `That code is not right. In demo mode the code is ${MOCK_MFA_CODE}.`, { code: "not right" });
+    const codes = this.newCodes();
+    Object.assign(this.mfaState, { enabled_at: new Date().toISOString(), pending: false, recovery: codes.map((c) => c.toLowerCase()) });
+    this.save();
+    return codes;
+  }
+  async disableMfa(code: string) {
+    await wait(); this.auth();
+    if (this.orgState.org.require_mfa) throw new ApiError(409, "Your organization requires two-step sign-in, so it cannot be turned off.");
+    this.checkCode(code);
+    this.s.mfa = { enabled_at: null, pending: false, recovery: [] }; this.save();
+  }
+  async newRecoveryCodes(code: string) {
+    await wait(); this.auth(); this.checkCode(code);
+    const codes = this.newCodes(); this.mfaState.recovery = codes.map((c) => c.toLowerCase()); this.save();
+    return codes;
+  }
+  async setRequireMfa(required: boolean) {
+    await wait(); this.auth(); this.orgAdmin();
+    if (this.orgState.org.plan === "individual") throw new ApiError(403, "Requiring two-step sign-in comes with Organization plans.");
+    if (required && !this.mfaState.enabled_at) throw new ApiError(409, "Turn on two-step sign-in for yourself first, so you are not locked out.");
+    this.orgState.org.require_mfa = required; this.save();
+    return this.getOrg();
+  }
+  async resetMemberMfa(userId: string) {
+    await wait(); this.auth(); this.orgAdmin();
+    if (userId === DEMO_USER.id) throw new ApiError(409, "Turn off your own under Account security.");
+  }
+  // ---- API keys
+  private get keyState() { return (this.s.apiKeys ??= []); }
+  private paidOnly(what: string) { if (this.orgState.org.plan === "individual") throw new ApiError(403, `${what} come with Organization plans. Ask GeoEstate for one.`); }
+  async listApiKeys(all = false) {
+    await wait(); this.auth(); this.paidOnly("API keys");
+    if (all) this.orgAdmin();
+    return this.keyState.filter((k) => all || k.user_id === DEMO_USER.id).sort((a, b) => Number(!!a.revoked_at) - Number(!!b.revoked_at) || b.created_at.localeCompare(a.created_at));
+  }
+  async createApiKey(input: { name: string; access: "read" | "write"; expires_in_days?: number | null }) {
+    await wait(); this.auth(); this.paidOnly("API keys");
+    const key = `ghk_${uuid().replace(/-/g, "")}`;
+    const k: ApiKey = { id: uuid(), name: input.name.trim(), prefix: key.slice(0, 12), access: input.access, created_at: new Date().toISOString(),
+      expires_at: input.expires_in_days ? new Date(Date.now() + input.expires_in_days * 86400000).toISOString() : null,
+      last_used_at: null, revoked_at: null, user_id: DEMO_USER.id, user_name: DEMO_USER.name, user_email: DEMO_USER.email };
+    this.keyState.push(k); this.save();
+    return { ...k, key };
+  }
+  async revokeApiKey(id: string) {
+    await wait(); this.auth();
+    const k = this.keyState.find((x) => x.id === id);
+    if (!k) throw new ApiError(404, "Key not found.");
+    k.revoked_at ??= new Date().toISOString(); this.save();
+  }
+  // ---- teams
+  private get teamState() { return (this.s.teams ??= []); }
+  private teamOut(t: NonNullable<State["teams"]>[number]): Team {
+    const { members } = this.orgState;
+    const admin = ["owner", "admin"].includes(this.me_().org!.role);
+    const lead = t.members.some((m) => m.user_id === DEMO_USER.id && m.lead);
+    return { id: t.id, name: t.name, description: t.description, created_at: t.created_at,
+      members: t.members.flatMap((tm) => { const p = members.find((m) => m.user_id === tm.user_id); return p ? [{ user_id: tm.user_id, name: p.name ?? p.email, email: p.email, role: p.role, lead: tm.lead }] : []; })
+        .sort((a, b) => Number(b.lead) - Number(a.lead) || a.name.localeCompare(b.name)),
+      projects: (this.s.projectTeams ?? []).filter((pt) => pt.team_id === t.id).flatMap((pt) => { const p = this.s.projects.find((x) => x.id === pt.project_id); return p ? [{ project_id: p.id, name: p.name, role: pt.role }] : []; }),
+      you_lead: lead, can_manage_people: admin || lead, can_edit: admin };
+  }
+  private team(id: string) { const t = this.teamState.find((x) => x.id === id); if (!t) throw new ApiError(404, "Team not found."); return t; }
+  async listTeams() { await wait(); this.auth(); return this.teamState.map((t) => this.teamOut(t)).sort((a, b) => a.name.localeCompare(b.name)); }
+  async createTeam(input: { name: string; description?: string }) {
+    await wait(); this.auth(); this.orgAdmin();
+    const cap = (await this.getOrg()).caps.teams;
+    if (cap === 0) throw new ApiError(402, "Teams come with Organization plans. Ask GeoEstate for one.");
+    if (cap != null && this.teamState.length >= cap) throw new ApiError(402, `Your plan includes ${cap} teams, and all are in use. Delete a team first, or contact GeoEstate to add more.`);
+    if (this.teamState.some((t) => t.name.toLowerCase() === input.name.trim().toLowerCase())) throw new ApiError(409, "There is already a team with that name.", { name: "taken" });
+    const t = { id: uuid(), name: input.name.trim(), description: input.description?.trim() ?? "", created_at: new Date().toISOString(), members: [] };
+    this.teamState.push(t); this.save();
+    return this.teamOut(t);
+  }
+  async updateTeam(id: string, patch: { name?: string; description?: string }) {
+    await wait(); this.auth(); this.orgAdmin();
+    const t = this.team(id);
+    if (patch.name != null) t.name = patch.name.trim();
+    if (patch.description != null) t.description = patch.description.trim();
+    this.save(); return this.teamOut(t);
+  }
+  async deleteTeam(id: string) {
+    await wait(); this.auth(); this.orgAdmin(); this.team(id);
+    this.s.teams = this.teamState.filter((t) => t.id !== id);
+    this.s.projectTeams = (this.s.projectTeams ?? []).filter((pt) => pt.team_id !== id); this.save();
+  }
+  async putTeamMember(teamId: string, userId: string, lead?: boolean) {
+    await wait(); this.auth();
+    const t = this.team(teamId), out = this.teamOut(t);
+    if (!out.can_manage_people) throw new ApiError(403, "Only administrators and the team's leads can change who is in it.");
+    const person = this.orgState.members.find((m) => m.user_id === userId);
+    if (!person) throw new ApiError(404, "That person is not in your organization.");
+    const cur = t.members.find((m) => m.user_id === userId);
+    const next = lead ?? !!cur?.lead;
+    if (next !== !!cur?.lead && !out.can_edit) throw new ApiError(403, "Only administrators choose a team's leads.");
+    if (next && (person.role === "collector" || person.role === "viewer")) throw new ApiError(422, "A team lead needs a team seat (a member, administrator or owner).", { lead: "needs a team seat" });
+    if (cur) cur.lead = next; else t.members.push({ user_id: userId, lead: next });
+    this.save(); return this.teamOut(t);
+  }
+  async removeTeamMember(teamId: string, userId: string) {
+    await wait(); this.auth();
+    const t = this.team(teamId);
+    if (!this.teamOut(t).can_manage_people) throw new ApiError(403, "Only administrators and the team's leads can change who is in it.");
+    t.members = t.members.filter((m) => m.user_id !== userId); this.save();
+    return this.teamOut(t);
+  }
+  private projectTeamsOut(projectId: string): ProjectTeam[] {
+    return (this.s.projectTeams ?? []).filter((pt) => pt.project_id === projectId).flatMap((pt) => {
+      const t = this.teamState.find((x) => x.id === pt.team_id);
+      return t ? [{ team_id: t.id, name: t.name, role: pt.role, member_count: t.members.length }] : [];
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  async listProjectTeams(projectId: string) { await wait(40); this.auth(); return this.projectTeamsOut(projectId); }
+  async putProjectTeam(projectId: string, teamId: string, role: TeamProjectRole) {
+    await wait(); this.auth(); this.team(teamId);
+    const list = (this.s.projectTeams ??= []);
+    const cur = list.find((pt) => pt.project_id === projectId && pt.team_id === teamId);
+    if (cur) cur.role = role; else list.push({ project_id: projectId, team_id: teamId, role });
+    this.save(); return this.projectTeamsOut(projectId);
+  }
+  async removeProjectTeam(projectId: string, teamId: string) {
+    await wait(); this.auth();
+    this.s.projectTeams = (this.s.projectTeams ?? []).filter((pt) => !(pt.project_id === projectId && pt.team_id === teamId));
+    this.save(); return this.projectTeamsOut(projectId);
+  }
+  // ---- adding many people from a spreadsheet (demo: CSV only)
+  async importPeople(file: File, opts: { preview: boolean; delivery: "email" | "temporary"; default_role: AddableRole }): Promise<ImportResult> {
+    await wait(); this.auth(); this.orgAdmin();
+    if (/\.xlsx$/i.test(file.name)) throw new ApiError(422, "In demo mode, choose a CSV file. The real server also reads Excel (.xlsx).", { file: "csv only in demo" });
+    const parsed = parseCsv(await file.text());
+    const head = parsed.headers.map((h) => h.trim().toLowerCase());
+    const col = (...names: string[]) => head.findIndex((h) => names.includes(h));
+    const ci = { email: col("email", "e-mail"), name: col("name", "full name"), role: col("role"), team: col("team", "department"), projects: col("projects", "project") };
+    if (ci.email < 0 || ci.name < 0) throw new ApiError(422, "The first row must name the columns, with at least “email” and “name”.", { file: "missing columns" });
+    const ROLES: Record<string, AddableRole> = { admin: "admin", administrator: "admin", member: "member", collector: "collector", "field collector": "collector", viewer: "viewer" };
+    const { members } = this.orgState;
+    const seen = new Set<string>();
+    const needed: Record<PeopleKind, number> = { seats: 0, collectors: 0, viewers: 0 };
+    const rows: ImportRow[] = parsed.rows.map((r, i) => {
+      const cell = (k: number) => (k >= 0 ? (r[k] ?? "").trim() : "");
+      const email = cell(ci.email).toLowerCase(), name = cell(ci.name), rawRole = cell(ci.role).toLowerCase();
+      const role = rawRole ? ROLES[rawRole] : opts.default_role;
+      const team = cell(ci.team) || null, projects = cell(ci.projects).split(";").map((x) => x.trim()).filter(Boolean);
+      const errs: string[] = [];
+      if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) errs.push("Not an email address.");
+      if (!name) errs.push("Name is empty.");
+      if (seen.has(email)) errs.push("This email is in the file twice.");
+      seen.add(email);
+      if (!role) errs.push(`Unknown role “${rawRole}”.`);
+      if (team && !this.teamState.some((t) => t.name.toLowerCase() === team.toLowerCase())) errs.push(`No team called “${team}”. Make it under Teams first.`);
+      for (const p of projects) if (!this.s.projects.some((x) => x.name.toLowerCase() === p.toLowerCase())) errs.push(`No project called “${p}”.`);
+      if (members.some((m) => m.email === email)) errs.push("Already in your organization.");
+      if (!errs.length && role) needed[role === "collector" ? "collectors" : role === "viewer" ? "viewers" : "seats"]++;
+      return { row: i + 2, email, name, role: role ?? rawRole, team, projects, status: errs.length ? "error" : "new", error: errs.join(" ") || null };
+    });
+    const o = await this.getOrg();
+    const capacity = (Object.keys(needed) as PeopleKind[]).filter((k) => needed[k]).map((k) => ({ kind: k, needed: needed[k], left: o.caps[k] == null ? null : Math.max(0, o.caps[k]! - o.usage[k]) }));
+    const ok = rows.every((r) => r.status !== "error") && capacity.every((c) => c.left == null || c.needed <= c.left);
+    if (opts.preview) return { rows, capacity, ok, done: false };
+    if (!ok) throw new ApiError(422, "Nothing was added. Fix the rows marked in the preview (or make room on the plan), then try again.");
+    for (const r of rows) {
+      const id = uuid();
+      members.push({ id, user_id: id, email: r.email, name: r.name, role: r.role as OrgRole, status: "active", joined_at: new Date().toISOString() });
+      const t = r.team ? this.teamState.find((x) => x.name.toLowerCase() === r.team!.toLowerCase()) : undefined;
+      if (t) t.members.push({ user_id: id, lead: false });
+      r.status = "created";
+      if (opts.delivery === "temporary") r.temporary_password = `Demo-${String(r.row).padStart(4, "0")}-Pass`;
+    }
+    this.save();
+    return { rows, capacity, ok: true, done: true, emails_queued: opts.delivery === "email" ? rows.length : 0 };
   }
   async logout() { tokens.clear(); }
   async register(): Promise<Session> { return this.login("demo@geohub.test", "demo"); }
@@ -970,7 +1222,7 @@ export class MockApi implements Api {
     const d: Dataset = {
       slug: input.slug, project_id: "", title: input.title, description: input.description, license: input.license, tags: input.tags, kind: "vector",
       feature_count: feats.length, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
-      visibility: input.license === "Private" ? "private" : input.visibility, map_id: mapId,
+      visibility: input.license === "Private" && input.visibility === "public" ? "private" : input.visibility, map_id: mapId,
       contributors: input.credit_contributors ? this.credits(m, input.geometry_type) : undefined,
     };
     this.s.datasets.push(d);
@@ -1018,15 +1270,17 @@ export class MockApi implements Api {
         .map((f) => ({ type: "Feature" as const, id: f.id, geometry: f.geometry, properties: f.properties }))),
     };
   }
-  async publishDataset(projectId: string, input: { form_id?: string; title: string; description: string; license: License }) {
+  async publishDataset(projectId: string, input: { form_id?: string; title: string; description: string; license: License; visibility?: DatasetVisibility }) {
     await wait(); this.auth();
+    const vis: DatasetVisibility = input.license === "Private" && (input.visibility ?? "public") === "public" ? "private" : (input.visibility ?? "public");
+    if (vis === "organization" && this.orgState.org.plan === "individual") throw new ApiError(403, "Publishing to your organization only comes with Organization plans.");
     const slug = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuid().slice(0, 8);
     const existing = this.s.datasets.find((d) => d.slug === slug);
     const doneJob: Job = { id: uuid(), kind: "snapshot", status: "done", progress: 100 };
     if (existing) { existing.latest_version += 1; existing.updated_at = new Date().toISOString(); this.save(); return { dataset: existing, job: doneJob }; }
     const d: Dataset = {
       slug, project_id: projectId, title: input.title, description: input.description, license: input.license, tags: [], kind: "vector",
-      feature_count: 0, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
+      feature_count: 0, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"], visibility: vis,
     };
     this.s.datasets.push(d); this.save();
     return { dataset: d, job: doneJob };

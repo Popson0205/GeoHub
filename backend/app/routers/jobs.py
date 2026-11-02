@@ -35,8 +35,10 @@ async def get_job(job_id: UUID, request: Request, user=Depends(optional_user), c
     else:
         if not user:
             raise Problem(401, "Sign in to continue.", code="unauthenticated")
-        if j["project_id"]:
+        if j["created_by"] == user["id"]:
+            pass                                   # your own job, e.g. an export of a dataset shared with your organization
+        elif j["project_id"]:
             await require_role(conn, j["project_id"], user["id"])
-        elif j["created_by"] != user["id"]:
+        else:
             raise Problem(404, "Job not found.", code="not_found")
     return job_out(j)

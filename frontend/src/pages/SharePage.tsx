@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import ProjectNav from "../components/ProjectNav";
+import ProjectTeams from "../components/ProjectTeams";
 import ShareOptions from "../components/ShareOptions";
 import { Button, EmptyState, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
@@ -146,6 +147,7 @@ export default function SharePage() {
           </div>
         ))}
       </section>
+      <ProjectTeams projectId={projectId} canManage />
     </div>
     </>
   );

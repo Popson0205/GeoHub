@@ -19,18 +19,22 @@ from ..services.geo import check_geometry
 
 router = APIRouter(tags=["projects"])
 
-# The caller's role: their project membership, raised to owner/admin when they own or run the organization.
+# The caller's role: the highest of their project membership, their teams' role, and owner/admin when they own or
+# run the organization.
 PROJECT_SQL = (
     "SELECT p.id, p.name, p.description, p.created_at, "
-    "CASE WHEN om.role = 'owner' THEN 'owner' "
-    "     WHEN om.role = 'admin' AND (m.role IS NULL OR m.role IN ('collector','viewer')) THEN 'admin' ELSE m.role END AS role, "
+    "(ARRAY['viewer','collector','admin','owner'])[GREATEST("
+    "   array_position(ARRAY['viewer','collector','admin','owner'], m.role), "
+    "   array_position(ARRAY['viewer','collector','admin','owner'], t.role), "
+    "   CASE om.role WHEN 'owner' THEN 4 WHEN 'admin' THEN 3 END)] AS role, "
     "p.last_activity_at AS last_update, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL) AS feature_count, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL AND f.status = 'submitted') AS waiting_count, "
     "(SELECT count(*) FROM members mm WHERE mm.project_id = p.id AND mm.role = 'collector') AS collector_count "
     "FROM projects p LEFT JOIN members m ON m.project_id = p.id AND m.user_id = %(u)s "
     "LEFT JOIN org_members om ON om.user_id = %(u)s AND om.org_id = p.org_id AND om.role IN ('owner','admin') "
-    "WHERE (m.user_id IS NOT NULL OR om.user_id IS NOT NULL) ")
+    "LEFT JOIN team_project_roles t ON t.project_id = p.id AND t.user_id = %(u)s "
+    "WHERE (m.user_id IS NOT NULL OR om.user_id IS NOT NULL OR t.user_id IS NOT NULL) ")
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)

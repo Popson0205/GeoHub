@@ -34,6 +34,7 @@ const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const OrgSettingsPage = lazy(() => import("./pages/OrgSettingsPage"));
+const SecurityPage = lazy(() => import("./pages/SecurityPage"));
 const DashboardApp = lazy(() => import("./pages/DashboardApp"));
 const DashboardReports = lazy(() => import("./pages/DashboardReports"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -91,6 +92,7 @@ function CollectorRoutes() {
       <Route path="/sso" element={<SsoReturnPage />} />
       <Route path="/join-organization" element={<JoinOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
+      <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
       <Route path="/f/:token" element={<PublicFormPage />} />
       <Route path="/collect" element={<RequireAuth><CollectHomePage /></RequireAuth>} />
       <Route path="/collect/:projectId" element={<RequireAuth><CollectPage /></RequireAuth>} />
@@ -135,6 +137,7 @@ export default function App() {
         <Route path="/collect/:projectId/data" element={<RequireAuth><DataPage /></RequireAuth>} />
         <Route path="/collect/:projectId/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
         <Route path="/settings/organization" element={<RequireAuth><OrgSettingsPage /></RequireAuth>} />
+        <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
         {/* Dashboards: their own app. A gallery, a reports page, and the builder above */}
         <Route path="/dashboards" element={<RequireAuth><DashboardApp /></RequireAuth>} />

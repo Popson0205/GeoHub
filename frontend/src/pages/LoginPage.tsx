@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AuthFrame from "../components/AuthFrame";
 import { Button } from "../components/ui";
-import { loadApi } from "../lib/api";
+import MfaCodeStep from "../components/MfaCodeStep";
+import { loadApi, MfaRequired } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { config } from "../lib/config";
 import type { SsoProvider } from "../lib/types";
@@ -10,7 +11,7 @@ import type { SsoProvider } from "../lib/types";
 const PROVIDER_NAME: Record<SsoProvider, string> = { google: "Google", microsoft: "Microsoft" };
 
 export default function LoginPage() {
-  const { login, register } = useAuth();
+  const { login, register, adopt } = useAuth();
   const nav = useNavigate();
   const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
   // An older invitation email links here with ?signup=1&email=…, so the invited address is filled in.
@@ -24,6 +25,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [going, setGoing] = useState<SsoProvider | null>(null);
+  const [mfa, setMfa] = useState<string | null>(null);
   useEffect(() => { void loadApi().then((api) => api.listProviders()).then(setProviders, () => setProviders([])); }, []);
 
   async function withProvider(p: SsoProvider) {
@@ -41,11 +43,18 @@ export default function LoginPage() {
       else await login(email, password);
       nav(from, { replace: true });
     } catch (err) {
+      if (err instanceof MfaRequired) { setMfa(err.token); return; }
       setError(err instanceof Error ? err.message : "Could not sign in.");
     } finally {
       setBusy(false);
     }
   }
+
+  if (mfa) return (
+    <AuthFrame>
+      <MfaCodeStep token={mfa} onSession={(s) => { adopt(s); nav(from, { replace: true }); }} onCancel={() => { setMfa(null); setPassword(""); }} />
+    </AuthFrame>
+  );
 
   return (
     <AuthFrame>

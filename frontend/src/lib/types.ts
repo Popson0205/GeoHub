@@ -16,31 +16,48 @@ export type OrgRole = "owner" | "admin" | "member" | "collector" | "viewer";
 export type AddableRole = Exclude<OrgRole, "owner">;
 export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
-export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string }
+/** An organization's look (Organization plans): its colour and logo, shown to all its people. */
+export interface OrgBrand { color: string | null; logo_url: string | null }
+export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null }
 export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean;
   /** GeoEstate staff who set up client organizations (PLATFORM_ADMINS on the server). */
-  platform_admin?: boolean }
+  platform_admin?: boolean;
+  /** Two-step sign-in is on. */
+  mfa_enabled?: boolean;
+  /** The organization requires two-step sign-in and it is not set up yet: nothing else works until it is. */
+  mfa_setup_required?: boolean }
 /** One-off caps set by hand; a missing key means the plan's number. */
-export interface OrgLimits { seats?: number; collectors?: number; viewers?: number; projects?: number; records?: number }
+export interface OrgLimits { seats?: number; collectors?: number; viewers?: number; teams?: number; projects?: number; records?: number }
 export type PeopleKind = "seats" | "collectors" | "viewers";
+/** What a plan caps: people of each kind, and teams (null = unlimited, 0 = not on the plan). */
+export type PlanCaps = Record<PeopleKind, number | null> & { teams?: number | null };
+export type PlanUsage = Record<PeopleKind, number> & { teams?: number; projects: number; records: number };
 export interface Org extends OrgBrief {
   plan: PlanId | string;
   plan_name: string;
-  /** How many people of each kind the plan includes; null = unlimited. */
-  caps: Record<PeopleKind, number | null>;
+  /** How many people of each kind (and teams) the plan includes; null = unlimited. */
+  caps: PlanCaps;
   limits: OrgLimits;
-  usage: Record<PeopleKind, number> & { projects: number; records: number };
+  usage: PlanUsage;
   subscription_starts?: string | null;
   subscription_ends?: string | null;
   /** This deployment is a private copy for one organization. */
   single_org: boolean;
+  branding?: OrgBranding;
+  /** Everyone must use two-step sign-in. */
+  require_mfa?: boolean;
 }
+export interface OrgBranding { color: string | null; logo_url: string | null; sender_name: string | null; reply_to: string | null }
+/** Who can see a Data hub dataset: anyone, the organization's people (Organization plans), or the project's / map's people. */
+export type DatasetVisibility = "public" | "organization" | "private";
 export interface AccountInput { name: string; email: string; role: AddableRole; delivery: "email" | "temporary"; projects?: { project_id: string; role?: "admin" | "collector" | "viewer" }[] }
 export interface AccountResult { member: OrgMember; temporary_password: string | null; email_sent: boolean }
 export interface PasswordLink { email: string; name: string; purpose: "set" | "reset" | "join"; org_name?: string | null }
 /** The result of the email check: each step and whether it passed. */
 export interface EmailCheck { ok: boolean; provider: string; steps: { status: "ok" | "warn" | "fail" | "info"; name: string; detail: string }[] }
-export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string }
+export interface OrgMember { id: string; user_id: string | null; email: string; name: string | null; role: OrgRole; status: "active" | "invited"; joined_at: string;
+  /** Two-step sign-in is on (in the people list). */
+  mfa_enabled?: boolean | null }
 // ---- platform admin (GeoEstate staff) ----
 export type RequestPlan = "standard" | "advanced" | "custom" | "unsure";
 export type RequestStatus = "new" | "contacted" | "set_up" | "declined";
@@ -52,7 +69,7 @@ export interface OrgRequest extends OrgRequestInput { id: string; status: Reques
 /** A client organization as GeoEstate staff see it. */
 export interface AdminOrg {
   id: string; name: string; slug: string; plan: PlanId | string; plan_name: string;
-  caps: Record<PeopleKind, number | null>; limits: OrgLimits; usage: Record<PeopleKind, number> & { projects: number; records: number };
+  caps: PlanCaps; limits: OrgLimits; usage: PlanUsage;
   subscription_starts: string | null; subscription_ends: string | null;
   /** Days until the subscription ends; negative once it has ended; null without an end date. */
   days_left: number | null;
@@ -232,7 +249,7 @@ export interface Dataset {
   latest_version: number;
   updated_at: string;
   formats: ExportFormat[];
-  visibility?: "public" | "private";
+  visibility?: DatasetVisibility;
   /** Set when the dataset was published from a map (only visible to that map's members). */
   map_id?: string;
   /** People credited for the latest version of a dataset published from a map. */
@@ -323,7 +340,7 @@ export interface AuditEvent {
 export type AuditKind = "records" | "forms" | "people" | "publishing" | "dashboards" | "project";
 export interface Activity { feature_id: string; user_id?: string; name?: string; action: "added" | "edited"; at: string; geometry_type: "point" | "line" | "area"; status: ReviewStatus }
 export interface PublishInput {
-  title: string; slug: string; description: string; license: License; visibility: "public" | "private";
+  title: string; slug: string; description: string; license: License; visibility: DatasetVisibility;
   geometry_type: "point" | "line" | "area"; tags: string[]; credit_contributors: boolean;
 }
 export interface MapLayers {
@@ -453,3 +470,38 @@ export interface Dashboard { id: string; project_id: string; name: string; confi
 export interface DashboardSharing { public: boolean; share_token: string | null }
 /** A dashboard seen through its public link: the saved layout and the approved records it draws, never anything else. */
 export interface PublicDashboard { token: string; name: string; project_name: string; config: DashboardConfig; updated_at: string; truncated: boolean; forms: Form[]; features: Feature[] }
+
+// ---- teams (departments) ----
+export type TeamProjectRole = "admin" | "collector" | "viewer";
+export interface TeamPerson { user_id: string; name: string; email: string; role: OrgRole; lead: boolean }
+export interface Team {
+  id: string; name: string; description: string; created_at: string;
+  members: TeamPerson[];
+  projects: { project_id: string; name: string; role: TeamProjectRole }[];
+  /** The signed-in person leads it. */
+  you_lead: boolean;
+  /** Can add and remove its people (administrators and leads). */
+  can_manage_people: boolean;
+  /** Can rename or delete it and choose leads (administrators). */
+  can_edit: boolean;
+}
+export interface ProjectTeam { team_id: string; name: string; role: TeamProjectRole; member_count: number }
+// ---- adding many people from a spreadsheet ----
+export interface ImportRow {
+  row: number; email: string; name: string; role: string; team: string | null; projects: string[];
+  status: "new" | "existing" | "error" | "created" | "added"; error: string | null; temporary_password?: string | null;
+}
+export interface ImportResult {
+  rows: ImportRow[];
+  capacity: { kind: PeopleKind; needed: number; left: number | null }[];
+  ok: boolean; done: boolean; emails_queued?: number;
+}
+// ---- two-step sign-in and API keys ----
+export interface MfaStatus { enabled: boolean; enabled_at: string | null; recovery_codes_left: number; required_by_org: boolean }
+export interface MfaSetup { secret: string; otpauth_url: string }
+export interface ApiKey {
+  id: string; name: string; prefix: string; access: "read" | "write";
+  created_at: string; expires_at: string | null; last_used_at: string | null; revoked_at: string | null;
+  user_id: string; user_name: string; user_email: string;
+}
+export interface ApiKeyCreated extends ApiKey { key: string }
