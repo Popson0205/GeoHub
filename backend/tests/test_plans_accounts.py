@@ -11,8 +11,8 @@ def outbox(monkeypatch):
     """Every email the app sends, as (to, subject, body, action)."""
     sent = []
 
-    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False):
-        sent.append({"to": to, "subject": subject, "body": body, "action": action})
+    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False, brand=None):
+        sent.append({"to": to, "subject": subject, "body": body, "action": action, "brand": brand})
         return True
     from app.routers import auth, org
     monkeypatch.setattr(org, "send_email", fake)

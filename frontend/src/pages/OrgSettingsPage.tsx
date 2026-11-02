@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "../components/icons";
 import OrgDomains from "../components/OrgDomains";
+import OrgBranding from "../components/OrgBranding";
 import { Button, ErrorState, Loading, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -224,6 +225,7 @@ export default function OrgSettingsPage() {
             </section>
           )}
 
+          {admin && !isIndividual && <OrgBranding org={org} onSaved={(o) => { setOrg(o); void refresh(); }} />}
           {admin && !isIndividual && <OrgDomains />}
         </div>
 

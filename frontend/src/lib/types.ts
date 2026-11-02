@@ -16,7 +16,9 @@ export type OrgRole = "owner" | "admin" | "member" | "collector" | "viewer";
 export type AddableRole = Exclude<OrgRole, "owner">;
 export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
-export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string }
+/** An organization's look (Organization plans): its colour and logo, shown to all its people. */
+export interface OrgBrand { color: string | null; logo_url: string | null }
+export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null }
 export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean;
   /** GeoEstate staff who set up client organizations (PLATFORM_ADMINS on the server). */
   platform_admin?: boolean }
@@ -34,7 +36,11 @@ export interface Org extends OrgBrief {
   subscription_ends?: string | null;
   /** This deployment is a private copy for one organization. */
   single_org: boolean;
+  branding?: OrgBranding;
 }
+export interface OrgBranding { color: string | null; logo_url: string | null; sender_name: string | null; reply_to: string | null }
+/** Who can see a Data hub dataset: anyone, the organization's people (Organization plans), or the project's / map's people. */
+export type DatasetVisibility = "public" | "organization" | "private";
 export interface AccountInput { name: string; email: string; role: AddableRole; delivery: "email" | "temporary"; projects?: { project_id: string; role?: "admin" | "collector" | "viewer" }[] }
 export interface AccountResult { member: OrgMember; temporary_password: string | null; email_sent: boolean }
 export interface PasswordLink { email: string; name: string; purpose: "set" | "reset" | "join"; org_name?: string | null }
@@ -232,7 +238,7 @@ export interface Dataset {
   latest_version: number;
   updated_at: string;
   formats: ExportFormat[];
-  visibility?: "public" | "private";
+  visibility?: DatasetVisibility;
   /** Set when the dataset was published from a map (only visible to that map's members). */
   map_id?: string;
   /** People credited for the latest version of a dataset published from a map. */
@@ -323,7 +329,7 @@ export interface AuditEvent {
 export type AuditKind = "records" | "forms" | "people" | "publishing" | "dashboards" | "project";
 export interface Activity { feature_id: string; user_id?: string; name?: string; action: "added" | "edited"; at: string; geometry_type: "point" | "line" | "area"; status: ReviewStatus }
 export interface PublishInput {
-  title: string; slug: string; description: string; license: License; visibility: "public" | "private";
+  title: string; slug: string; description: string; license: License; visibility: DatasetVisibility;
   geometry_type: "point" | "line" | "area"; tags: string[]; credit_contributors: boolean;
 }
 export interface MapLayers {

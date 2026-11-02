@@ -24,7 +24,7 @@ from ..schemas import DatasetCreated, DatasetSummary, Geometry, GeometryType
 from ..security import make_tile_token
 from ..config import settings
 from ..services.geo import check_geometry
-from .datasets import SUMMARY_SQL
+from .datasets import SUMMARY_SQL, check_visibility
 from .jobs import job_out
 
 router = APIRouter(tags=["maps"])
@@ -179,7 +179,7 @@ class PublishIn(BaseModel):
     description: str = Field("", max_length=5000)
     license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] = "CC-BY-4.0"
     tags: list[str] = Field([], max_length=20)
-    visibility: Literal["private", "public"] = "private"
+    visibility: Literal["private", "organization", "public"] = "private"
     geometry_type: GeometryType = Field(description="A dataset holds one kind of feature. Publish points, lines and areas as separate datasets.")
     credit_contributors: bool = Field(True, description="List contributor names on the dataset page")
 
@@ -653,6 +653,7 @@ async def publish_map(map_id: UUID, body: PublishIn, user=Depends(current_user),
     """Publish the approved features of one kind (points, lines or areas) as a Data hub dataset. Features that are
     waiting for review or were rejected are left out. Publish again later with POST /datasets/{slug}/versions."""
     await require_map(conn, map_id, user["id"], "owner")
+    await check_visibility(conn, user, body.visibility)
     if body.license == "Private" and body.visibility == "public":
         raise Problem(422, "A Private licence cannot be published publicly.", code="validation",
                       fields={"license": ["Private datasets must have visibility private"]})

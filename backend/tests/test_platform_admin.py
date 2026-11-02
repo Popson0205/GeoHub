@@ -11,8 +11,8 @@ from conftest import Actor, uid
 def outbox(monkeypatch):
     sent = []
 
-    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False):
-        sent.append({"to": to, "subject": subject, "body": body, "action": action})
+    async def fake(to, subject, body, *, action=None, key=None, raise_errors=False, brand=None):
+        sent.append({"to": to, "subject": subject, "body": body, "action": action, "brand": brand})
         return True
     from app import reminders
     from app.routers import admin, auth, org

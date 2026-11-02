@@ -1,12 +1,13 @@
 import { toKml } from "../lib/kml";
+import { readable } from "../lib/brand";
 import { ApiError, tokens, type Api } from "../lib/api";
 import { normalizeConfig } from "../lib/dashboard";
 import { publicDashboard } from "../lib/dashboardShare";
 import { coerceCell, importableFields, parseCsv, parseNumber, parseShape } from "../lib/csvImport";
 import { topLevelFields } from "../lib/fieldSpec";
 import { validateProperties, uuid } from "../lib/forms";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
-  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider,
+import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Dashboard, DashboardConfig, ImportOptions,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
@@ -24,7 +25,8 @@ interface State {
   mapMembers?: { map_id: string; user_id: string; name: string; role: Exclude<MapRole, "owner">; joined_at: string }[];
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
   audit?: (AuditEvent & { project_id: string })[];
-  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null };
+  org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null;
+    branding?: OrgBranding };
   orgMembers?: OrgMember[];
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
 }
@@ -84,7 +86,9 @@ export class MockApi implements Api {
     const { org, members } = this.orgState;
     const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
     // the demo account also plays GeoEstate staff, so the platform admin page can be tried
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan }, must_change_password: false, platform_admin: true };
+    const b = org.branding;
+    const brand = org.plan !== "individual" && (b?.color || b?.logo_url) ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null } : null;
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand }, must_change_password: false, platform_admin: true };
   }
   async getOrg(): Promise<Org> {
     await wait(); this.auth();
@@ -93,6 +97,7 @@ export class MockApi implements Api {
     const kind = (r: OrgRole) => (r === "collector" ? "collectors" : r === "viewer" ? "viewers" : "seats");
     const count = (k: string) => members.filter((m) => kind(m.role) === k).length;
     return { ...org, role: me.role, single_org: false, plan_name: PLAN_NAMES[org.plan] ?? org.plan,
+      branding: org.branding ?? { color: null, logo_url: null, sender_name: null, reply_to: null },
       caps: { ...(PLAN_CAPS[org.plan] ?? PLAN_CAPS.individual), ...org.limits } as Org["caps"],
       usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"),
         projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
@@ -167,6 +172,35 @@ export class MockApi implements Api {
     return this.login(DEMO_USER.email, "demo");
   }
   async forgotPassword(_email: string) { await wait(); }
+  // ---- branding
+  private brandAdmin() {
+    this.auth(); this.orgAdmin();
+    if (this.orgState.org.plan === "individual") throw new ApiError(403, "Your own logo, colour and email sender come with Organization plans. Ask GeoEstate for one.");
+    return (this.orgState.org.branding ??= { color: null, logo_url: null, sender_name: null, reply_to: null });
+  }
+  async updateBranding(patch: { color?: string; sender_name?: string; reply_to?: string }) {
+    await wait(); const b = this.brandAdmin();
+    if (patch.color != null) {
+      const c = patch.color.trim();
+      if (c && !/^#?[0-9a-f]{6}$/i.test(c)) throw new ApiError(422, "Use a colour like #0b5cad.", { color: "not a colour" });
+      b.color = c ? readable(c.startsWith("#") ? c.toLowerCase() : `#${c.toLowerCase()}`) : null;
+    }
+    if (patch.sender_name != null) b.sender_name = patch.sender_name.replace(/[<>"]/g, "").trim() || null;
+    if (patch.reply_to != null) {
+      const r = patch.reply_to.trim().toLowerCase();
+      if (r && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(r)) throw new ApiError(422, "Enter an email address for replies.", { reply_to: "not an email" });
+      b.reply_to = r || null;
+    }
+    this.save(); return this.getOrg();
+  }
+  async uploadLogo(file: File) {
+    await wait(); const b = this.brandAdmin();
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new ApiError(422, "Use a PNG, JPEG or WebP image for the logo.");
+    if (file.size > 1_000_000) throw new ApiError(413, "The logo is larger than 1 MB. Use a smaller image.");
+    b.logo_url = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => res(""); r.readAsDataURL(file); });
+    this.save(); return this.getOrg();
+  }
+  async removeLogo() { await wait(); const b = this.brandAdmin(); b.logo_url = null; this.save(); return this.getOrg(); }
   // ---- Google / Microsoft sign-in (the demo account stands in), and company domains
   async listProviders(): Promise<SsoProvider[]> { await wait(); return ["google", "microsoft"]; }
   ssoStartUrl(provider: SsoProvider, next: string) { return `/sso?code=demo-${provider}&next=${encodeURIComponent(next)}`; }
@@ -970,7 +1004,7 @@ export class MockApi implements Api {
     const d: Dataset = {
       slug: input.slug, project_id: "", title: input.title, description: input.description, license: input.license, tags: input.tags, kind: "vector",
       feature_count: feats.length, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
-      visibility: input.license === "Private" ? "private" : input.visibility, map_id: mapId,
+      visibility: input.license === "Private" && input.visibility === "public" ? "private" : input.visibility, map_id: mapId,
       contributors: input.credit_contributors ? this.credits(m, input.geometry_type) : undefined,
     };
     this.s.datasets.push(d);
@@ -1018,15 +1052,17 @@ export class MockApi implements Api {
         .map((f) => ({ type: "Feature" as const, id: f.id, geometry: f.geometry, properties: f.properties }))),
     };
   }
-  async publishDataset(projectId: string, input: { form_id?: string; title: string; description: string; license: License }) {
+  async publishDataset(projectId: string, input: { form_id?: string; title: string; description: string; license: License; visibility?: DatasetVisibility }) {
     await wait(); this.auth();
+    const vis: DatasetVisibility = input.license === "Private" && (input.visibility ?? "public") === "public" ? "private" : (input.visibility ?? "public");
+    if (vis === "organization" && this.orgState.org.plan === "individual") throw new ApiError(403, "Publishing to your organization only comes with Organization plans.");
     const slug = input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuid().slice(0, 8);
     const existing = this.s.datasets.find((d) => d.slug === slug);
     const doneJob: Job = { id: uuid(), kind: "snapshot", status: "done", progress: 100 };
     if (existing) { existing.latest_version += 1; existing.updated_at = new Date().toISOString(); this.save(); return { dataset: existing, job: doneJob }; }
     const d: Dataset = {
       slug, project_id: projectId, title: input.title, description: input.description, license: input.license, tags: [], kind: "vector",
-      feature_count: 0, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"],
+      feature_count: 0, latest_version: 1, updated_at: new Date().toISOString(), formats: ["geojson", "csv", "gpkg", "shp"], visibility: vis,
     };
     this.s.datasets.push(d); this.save();
     return { dataset: d, job: doneJob };

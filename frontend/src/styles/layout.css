@@ -694,3 +694,21 @@ body.is-dnd * { cursor: grabbing !important; }
 .admin-domains { display: flex; flex-direction: column; gap: var(--s-2); }
 .admin-domains ul { margin: 0; padding-left: 1.2em; font-size: var(--fs-sm); }
 .admin-domains p { margin: 0; font-size: var(--fs-sm); }
+/* an organization's logo beside the Geohub mark, on a light chip so dark logos show on the dark bar */
+.brand-org { display: inline-flex; align-items: center; height: 32px; max-width: 160px; margin: 0 var(--s-4) 0 calc(-1 * var(--s-2)); padding: 3px 8px; border-radius: var(--r-md); background: #fff; flex: none; }
+.brand-org img { display: block; max-height: 26px; max-width: 144px; object-fit: contain; }
+@media (max-width: 700px) { .brand-org { display: none; } }
+.org-branding { display: flex; flex-direction: column; gap: var(--s-4); }
+.org-branding > p { margin: 0; }
+.org-brand-logo { display: flex; gap: var(--s-4); align-items: center; flex-wrap: wrap; }
+.org-brand-logo-box { display: grid; place-items: center; width: 200px; height: 72px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: var(--r-md); background: #fff; }
+.org-brand-logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.org-brand-logo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); flex: 1 1 220px; }
+.org-brand-logo-actions .field-hint { flex-basis: 100%; }
+.org-brand-form { display: flex; flex-direction: column; gap: var(--s-3); align-items: flex-start; }
+.org-brand-form .field { margin: 0; width: 100%; }
+.org-brand-color { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; }
+.org-brand-color input[type="color"] { width: 44px; height: var(--control-h); padding: 2px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--card); cursor: pointer; }
+.org-brand-color input:not([type]) { width: 12ch; font-family: var(--font-mono); }
+.org-brand-preview { display: flex; align-items: center; gap: var(--s-4); margin-top: var(--s-2); font-size: var(--fs-sm); }
+.org-brand-btn { display: inline-block; padding: 6px 14px; border-radius: var(--r-md); color: #fff; font-weight: 600; }

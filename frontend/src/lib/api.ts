@@ -2,7 +2,7 @@ import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
 import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
-  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider,
+  AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
@@ -43,6 +43,9 @@ export interface Api {
   changePassword(current: string, next: string): Promise<void>;
   // ---- Google / Microsoft sign-in, and joining by company domain
   /** Which sign-in buttons to show. */
+  updateBranding(patch: { color?: string; sender_name?: string; reply_to?: string }): Promise<Org>;
+  uploadLogo(file: File): Promise<Org>;
+  removeLogo(): Promise<Org>;
   listProviders(): Promise<SsoProvider[]>;
   /** Where the browser goes to sign in with a provider. */
   ssoStartUrl(provider: SsoProvider, next: string): string;
@@ -165,7 +168,7 @@ export interface Api {
   /** All features of a dataset; `limit` stops after that many (enough for a preview). */
   datasetFeatures(slug: string, opts?: { limit?: number }): Promise<FeatureCollection>;
   /** Starts publishing. The snapshot is built by a background job: poll `job` with getJob before saying it worked. */
-  publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }): Promise<{ dataset: Dataset; job: Job }>;
+  publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License; visibility?: DatasetVisibility }): Promise<{ dataset: Dataset; job: Job }>;
   createExport(slug: string, format: ExportFormat): Promise<Job>;
   /** One form's collected records as a GIS file, made in the background: poll the job for `download_url`. */
   /** The project's history, newest first, 50 at a time. Owners and administrators only. */
@@ -573,7 +576,7 @@ class HttpApi implements Api {
   async publishMap(mapId: string, input: PublishInput) {
     const r = await this.req<Wire>("POST", `/maps/${mapId}/publish`, {
       slug: input.slug, title: input.title, description: input.description, license: LICENSE_TO_API[input.license],
-      tags: input.tags, visibility: input.license === "Private" ? "private" : input.visibility,
+      tags: input.tags, visibility: input.license === "Private" && input.visibility === "public" ? "private" : input.visibility,
       geometry_type: input.geometry_type, credit_contributors: input.credit_contributors,
     });
     return { dataset: toDataset(r.dataset), job: toJob(r.job) };
@@ -637,14 +640,14 @@ class HttpApi implements Api {
     } while (cursor && (!cap || out.features.length < cap));
     return out;
   }
-  async publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License }) {
+  async publishDataset(projectId: string, input: { form_id: string; title: string; description: string; license: License; visibility?: DatasetVisibility }) {
     const r = await this.req<Wire>("POST", `/projects/${projectId}/datasets`, {
       form_id: input.form_id,
       slug: slugify(input.title),
       title: input.title,
       description: input.description,
       license: LICENSE_TO_API[input.license],
-      visibility: input.license === "Private" ? "private" : "public",
+      visibility: input.license === "Private" && (input.visibility ?? "public") === "public" ? "private" : (input.visibility ?? "public"),
       // There is no review screen in the web app yet, so new features stay "submitted". Include them.
       statuses: ["submitted", "approved"],
     });
@@ -671,6 +674,9 @@ class HttpApi implements Api {
   }
   async forgotPassword(email: string) { await this.req("POST", "/auth/forgot-password", { email }); }
   async changePassword(current: string, next: string) { await this.req("POST", "/auth/change-password", { current_password: current, new_password: next }); }
+  updateBranding(patch: { color?: string; sender_name?: string; reply_to?: string }) { return this.req<Org>("PATCH", "/org/branding", patch); }
+  uploadLogo(file: File) { const fd = new FormData(); fd.append("file", file); return this.req<Org>("PUT", "/org/branding/logo", fd); }
+  removeLogo() { return this.req<Org>("DELETE", "/org/branding/logo"); }
   async listProviders() {
     try { return (await this.req<{ providers: SsoProvider[] }>("GET", "/auth/providers")).providers; } catch { return []; }
   }
