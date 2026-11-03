@@ -80,7 +80,7 @@ def test_public_request_form_reaches_staff_and_can_be_set_up(client, staff, outb
     r = client.post("/org-requests", json={"organization": "Abuja Estates", "contact_name": "Musa Bello", "email": email,
                                            "plan": "advanced", "team_size": "20 staff, 100 collectors", "message": "Hi"})
     assert r.status_code == 202
-    assert {m["to"] for m in outbox} == {"someone@example.com", staff.email.lower(), email}
+    assert {"someone@example.com", staff.email.lower(), email} <= {m["to"] for m in outbox}   # plus any staff from the console
     # robots that fill the hidden field are thanked and forgotten
     assert client.post("/org-requests", json={"organization": "Spam", "contact_name": "Bot", "email": f"{uid()}@example.com",
                                               "plan": "unsure", "website": "http://spam"}).status_code == 202

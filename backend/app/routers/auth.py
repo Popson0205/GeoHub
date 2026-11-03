@@ -7,10 +7,10 @@ from .. import orgs
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
-from ..deps import USER_SQL, is_platform_admin, session_user, signed_in_user
+from ..deps import USER_SQL, session_user, signed_in_user
 from ..errors import Problem
 from ..logging_setup import client_ip
-from .. import mfa, passwords, signup
+from .. import mfa, passwords, signup, staff
 from ..mailer import send_email
 from ..schemas import (AuthOut, ChangePasswordIn, ForgotPasswordIn, LoginIn, MfaChallengeOut, MfaVerifyIn, PasswordTokenOut,
                        RefreshIn, JoinOrgIn, RegisterIn, SetPasswordIn, UserOut)
@@ -24,6 +24,8 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
     org = orgs.org_out(await orgs.require_membership(conn, user))
     cur = await conn.execute(USER_SQL + "WHERE u.id = %s", (user["id"],))
     u = await cur.fetchone()
+    role = await staff.role_of(conn, user)
+    await conn.execute("UPDATE users SET last_sign_in_at = now() WHERE id = %s", (user["id"],))
     raw, digest = new_refresh_token()
     await conn.execute(
         "INSERT INTO refresh_tokens (user_id, family_id, token_hash, expires_at) "
@@ -32,7 +34,7 @@ async def _issue(conn, user: dict, family_id=None) -> dict:
     return {"access_token": make_access_token(user["id"]), "refresh_token": raw,
             "expires_in": settings.access_token_minutes * 60,
             "user": {"id": user["id"], "email": user["email"], "name": user["name"], "org": org,
-                     "must_change_password": u["must_change_password"], "platform_admin": is_platform_admin(user),
+                     "must_change_password": u["must_change_password"], "platform_admin": bool(role), "staff_role": role,
                      "mfa_enabled": u["mfa_enabled"], "mfa_setup_required": u["mfa_setup_required"]}}
 
 
@@ -197,5 +199,6 @@ me_router = APIRouter(tags=["auth"])
 @me_router.get("/me", response_model=UserOut)
 async def me(user=Depends(signed_in_user), conn=Depends(get_conn)):
     """Answers even while two-step sign-in still has to be set up (mfa_setup_required), so the app can ask for it."""
+    role = await staff.role_of(conn, user)
     return {**user, "org": orgs.org_out(await orgs.require_membership(conn, user)),   # must_change_password: from the user row
-            "platform_admin": is_platform_admin(user)}
+            "platform_admin": bool(role), "staff_role": role}

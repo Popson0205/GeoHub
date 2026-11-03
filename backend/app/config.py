@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     single_org: bool = False
     # GeoEstate staff who run the platform: comma-separated emails. They see the platform admin page, get
     # organization requests, and are copied on renewal reminders.
-    platform_admins: str = ""
+    platform_admins: str = ""                 # GeoEstate staff emails, always super admins in the staff console
+    staff_require_mfa: bool = True            # staff must use two-step sign-in to open the staff console
     reminders_enabled: bool = True            # check daily for subscriptions about to end
     # Sign in with Google / Microsoft (OpenID Connect). Each is offered once its client id and secret are set. The
     # redirect URI to register with the provider is {APP_URL}{API_PREFIX}/auth/sso/<google|microsoft>/callback.
