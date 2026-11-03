@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     platform_admins: str = ""                 # GeoEstate staff emails, always super admins in the staff console
     staff_require_mfa: bool = True            # staff must use two-step sign-in to open the staff console
     reminders_enabled: bool = True            # check daily for subscriptions about to end
+    crm_link_key: str = ""                    # shared with the GeoEstate CRM (GEOHUB_LINK_KEY there); empty = no link
     # Sign in with Google / Microsoft (OpenID Connect). Each is offered once its client id and secret are set. The
     # redirect URI to register with the provider is {APP_URL}{API_PREFIX}/auth/sso/<google|microsoft>/callback.
     google_client_id: str = ""
@@ -80,6 +81,9 @@ class Settings(BaseSettings):
     def _prod_checks(self):
         # "https://example.com/" and "https://example.com" mean the same: links are built as app_url + "/path"
         self.app_url = self.app_url.strip().rstrip("/")
+        self.crm_link_key = self.crm_link_key.strip()
+        if self.crm_link_key and len(self.crm_link_key) < 32:
+            raise ValueError("CRM_LINK_KEY must be a random string of 32+ characters")
         self.public_base_url = self.public_base_url.strip().rstrip("/")
         if self.env == "prod" and (len(self.jwt_secret) < 32 or self.jwt_secret.startswith("change-me")):
             raise ValueError("JWT_SECRET must be a random string of 32+ characters when ENV=prod")

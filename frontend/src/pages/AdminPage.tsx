@@ -303,7 +303,7 @@ export function ActivityList({ items }: { items: StaffActivity[] }) {
       {items.map((a) => (
         <li key={a.id}>
           <span className="admin-activity-when tnum">{new Date(a.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
-          <span><strong>{a.actor_name ?? "Someone"}</strong> {describe(a)}
+          <span><strong>{a.actor_name ?? (typeof a.details?.staff === "string" ? `${a.details.staff} (CRM)` : "Someone")}</strong> {describe(a)}
             {a.org_id && a.org_name && <> · <Link to={`/admin/customers/${a.org_id}`}>{a.org_name}</Link></>}</span>
         </li>
       ))}

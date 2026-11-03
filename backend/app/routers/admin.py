@@ -172,6 +172,14 @@ async def create_org(body: AdminOrgIn, request: Request, user=Depends(staff.staf
     """Creates the organization on its licence, and its owner's account. A new owner gets an email to set their
     password; someone who signed up on their own with nothing made yet is moved in; anyone else is refused. A demo
     licence is a month of Organization Advanced from today."""
+    org_id = await setup_org(conn, body, user["id"])
+    await _staff_audit(conn, "org_create", user, request, org_id, plan=body.plan if body.licence_kind == "paid" else licences.DEMO_PLAN,
+                       kind=body.licence_kind, owner=body.owner_email.lower())
+    return await _org(conn, await _one(conn, org_id))
+
+
+async def setup_org(conn, body: AdminOrgIn, actor_id=None, note_suffix: str = "") -> UUID:
+    """Set up a customer (see create_org). Also used by the GeoEstate CRM."""
     plan, starts, ends = body.plan, body.subscription_starts, body.subscription_ends
     if body.licence_kind == "demo":
         plan = licences.DEMO_PLAN
@@ -203,7 +211,8 @@ async def create_org(body: AdminOrgIn, request: Request, user=Depends(staff.staf
     if body.request_id:
         await conn.execute("UPDATE org_requests SET status = 'set_up', org_id = %s, updated_at = now() WHERE id = %s",
                            (org["id"], body.request_id))
-    await licences.record(conn, org["id"], "demo" if body.licence_kind == "demo" else "create", user["id"], body.invoice_ref, body.note)
+    note = " ".join(x for x in ((body.note or "").strip(), note_suffix) if x) or None
+    await licences.record(conn, org["id"], "demo" if body.licence_kind == "demo" else "create", actor_id, body.invoice_ref, note)
     link = (f"{settings.app_url}/set-password?token={await passwords.issue(conn, uid, 'set')}" if not existing
             else settings.app_url)
     what = (f"a one-month demo of the {orgs.PLAN_NAMES[plan]} plan, until {ends:%-d %B %Y}" if body.licence_kind == "demo"
@@ -215,8 +224,7 @@ async def create_org(body: AdminOrgIn, request: Request, user=Depends(staff.staf
                         if not existing else "Sign in with your usual password, then ")
                      + "open Organization in the account menu to add your team.",
                      action=("Set your password" if not existing else "Open Geohub", link))
-    await _staff_audit(conn, "org_create", user, request, org["id"], plan=plan, kind=body.licence_kind, owner=email)
-    return await _org(conn, await _one(conn, org["id"]))
+    return org["id"]
 
 
 @router.patch("/admin/orgs/{org_id}", response_model=AdminOrgOut, summary="Renew or change a customer's licence, or rename it")
