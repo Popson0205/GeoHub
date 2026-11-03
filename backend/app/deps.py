@@ -1,7 +1,7 @@
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from . import apikeys, ratelimit
+from . import apikeys, licences, ratelimit
 from .config import settings
 from .db import get_conn
 from .errors import Problem
@@ -13,7 +13,8 @@ RANK = {"viewer": 1, "collector": 2, "admin": 3, "owner": 4}
 
 USER_SQL = (
     "SELECT u.id, u.email, u.name, u.created_at, u.must_change_password, (u.totp_enabled_at IS NOT NULL) AS mfa_enabled, "
-    "  (COALESCE(o.require_mfa, false) AND u.totp_enabled_at IS NULL) AS mfa_setup_required "
+    "  (COALESCE(o.require_mfa, false) AND u.totp_enabled_at IS NULL) AS mfa_setup_required, "
+    f"  {licences.LICENCE_COLS} "
     "FROM users u LEFT JOIN org_members om ON om.user_id = u.id LEFT JOIN organizations o ON o.id = om.org_id ")
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -35,9 +36,14 @@ async def _user_from_token(conn, token: str, request: Request) -> dict:
     return user
 
 
-def gate(user: dict) -> dict:
+def gate(user: dict, request: Request | None = None) -> dict:
     if user["mfa_setup_required"]:
         raise Problem(403, "Your organization requires two-step sign-in. Set it up to continue.", code="mfa_setup_required")
+    if request is not None:
+        # an expired organization is read-only; a suspended one is closed (app/licences.py)
+        refused = licences.allows(licences.of_row(user), request.method, request.url.path.removeprefix(settings.api_prefix))
+        if refused:
+            raise refused
     return user
 
 
@@ -49,8 +55,8 @@ async def signed_in_user(request: Request, creds: HTTPAuthorizationCredentials |
     return await _user_from_token(conn, creds.credentials, request)
 
 
-async def current_user(user=Depends(signed_in_user)) -> dict:
-    return gate(user)
+async def current_user(request: Request, user=Depends(signed_in_user)) -> dict:
+    return gate(user, request)
 
 
 async def session_user(request: Request, user=Depends(signed_in_user)) -> dict:
@@ -62,26 +68,31 @@ async def session_user(request: Request, user=Depends(signed_in_user)) -> dict:
 
 async def optional_user(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer),
                         conn=Depends(get_conn)) -> dict | None:
-    return gate(await _user_from_token(conn, creds.credentials, request)) if creds else None
+    return gate(await _user_from_token(conn, creds.credentials, request), request) if creds else None
 
 
 # An organization's owner is an owner of every project in it, and its admins are admins of every one, so work
 # never gets stranded when the person who made a project leaves. Teams given a project add their role too.
 ORG_PROJECT_ROLE = {"owner": "owner", "admin": "admin"}
+# GeoEstate support with an open visit to the project's organization reads it as a viewer (app/routers/admin.py).
+SUPPORT_SQL = ("EXISTS (SELECT 1 FROM support_sessions ss WHERE ss.staff_id = {u} AND ss.org_id = p.org_id "
+               "AND ss.ended_at IS NULL AND ss.ends_at > now())")
 
 
 async def role_in(conn, project_id, user_id) -> str | None:
     cur = await conn.execute(
-        "SELECT m.role, om.role AS org_role, t.role AS team_role FROM projects p "
+        "SELECT m.role, om.role AS org_role, t.role AS team_role, "
+        f"  {SUPPORT_SQL.format(u='%s')} AS support FROM projects p "
         "LEFT JOIN members m ON m.project_id = p.id AND m.user_id = %s "
         "LEFT JOIN org_members om ON om.user_id = %s AND om.org_id = p.org_id "
         "LEFT JOIN team_project_roles t ON t.project_id = p.id AND t.user_id = %s "
-        "WHERE p.id = %s", (user_id, user_id, user_id, project_id))
+        "WHERE p.id = %s", (user_id, user_id, user_id, user_id, project_id))
     row = await cur.fetchone()
     if not row:
         return None
     # direct membership, the organization role, and the role through their teams: the highest counts
-    roles = [r for r in (row["role"], ORG_PROJECT_ROLE.get(row["org_role"] or ""), row["team_role"]) if r]
+    roles = [r for r in (row["role"], ORG_PROJECT_ROLE.get(row["org_role"] or ""), row["team_role"],
+                         "viewer" if row["support"] else None) if r]
     return max(roles, key=RANK.__getitem__) if roles else None
 
 

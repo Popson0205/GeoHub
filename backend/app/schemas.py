@@ -44,6 +44,14 @@ class OrgBrief(BaseModel):
     role: Literal["owner", "admin", "member", "collector", "viewer"]
     plan: str = "individual"
     brand: OrgBrand | None = Field(None, description="The organization's look, on Organization plans")
+    licence: "OrgLicence | None" = Field(None, description="Where its licence stands; none on the free Individual plan")
+
+
+class OrgLicence(BaseModel):
+    status: Literal["demo", "active", "grace", "expired", "suspended"]
+    ends: date | None = None
+    grace_ends: date | None = Field(None, description="The last day of full use after the end date; read-only after it")
+    kind: Literal["paid", "demo"] = "paid"
 
 
 class UserOut(BaseModel):
@@ -92,6 +100,7 @@ class ProjectOut(BaseModel):
     name: str
     description: str
     role: Role = Field(description="The caller's role in this project")
+    support_view: bool = Field(False, description="Opened by GeoEstate support, read-only, during a support visit")
     feature_count: int
     waiting_count: int = Field(0, description="Records submitted and not yet reviewed")
     collector_count: int
@@ -1090,7 +1099,32 @@ class StaffActivityOut(BaseModel):
     details: dict
 
 
+class SupportVisitIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500, description="Why, as the customer will read it")
+    hours: int = Field(2, ge=1, le=8, description="How long it stays open")
+
+
+class SupportVisitOut(BaseModel):
+    id: UUID
+    staff_id: UUID
+    staff_name: str | None
+    reason: str
+    started_at: datetime
+    ends_at: datetime
+    ended_at: datetime | None
+    active: bool
+
+
+class AdminProject(BaseModel):
+    id: UUID
+    name: str
+    records: int
+    last_update: datetime
+
+
 class AdminOrgDetail(AdminOrgOut):
+    projects: list[AdminProject] = Field(default_factory=list)
+    support_visits: list[SupportVisitOut] = Field(default_factory=list, description="Recent support visits, newest first")
     people: list[AdminPerson]
     invited: int = Field(description="Invitations not yet accepted")
     licences: list[LicenceEventOut] = Field(description="Licence history, newest first")
@@ -1334,3 +1368,4 @@ class ApiKeyCreated(ApiKeyOut):
 
 
 OrgOut.model_rebuild()
+OrgBrief.model_rebuild()

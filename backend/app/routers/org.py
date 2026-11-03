@@ -16,7 +16,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from .. import passwords
-from ..schemas import AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from ..schemas import SupportVisitOut, AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
 public_router = APIRouter(tags=["organization"])
@@ -199,6 +199,13 @@ async def leave(request: Request, user=Depends(current_user), conn=Depends(get_c
     await audit(conn, "org.leave", actor_id=user["id"], target_type="user", target_id=user["id"],
                 ip=client_ip(request), org_id=str(m["org_id"]))
     return Response(status_code=204)
+
+
+@router.get("/support-visits", response_model=list[SupportVisitOut], summary="When GeoEstate support opened your projects (admins)")
+async def support_visits(user=Depends(current_user), conn=Depends(get_conn)):
+    from .admin import visits
+    m = await orgs.require_org_role(conn, user, "admin")
+    return await visits(conn, m["org_id"], 50)
 
 
 @router.post("/email-check", summary="Send yourself a test email and report each step (admins)",

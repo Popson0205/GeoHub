@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Response
 from psycopg.types.json import Jsonb
 
+from .. import licences
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -153,6 +154,7 @@ async def public_dashboard(token: str, response: Response, conn=Depends(get_conn
     d = await cur.fetchone()
     if not d:
         raise Problem(404, "This dashboard link is not valid, or it is no longer shared.", code="not_found")
+    await licences.check_project(conn, d["project_id"], write=False)        # gone while the organization is suspended
     config = DashboardConfig.model_validate(d["config"])
     wanted = list(used_fields(config))
     cur = await conn.execute(
