@@ -45,7 +45,7 @@ export default function ProjectTeams({ projectId, canManage }: { projectId: stri
           {canManage ? (
             <>
               <select aria-label={`Role of ${t.name}`} value={t.role} disabled={busy === t.team_id}
-                onChange={(e) => void run(t.team_id, async () => (await loadApi()).putProjectTeam(projectId, t.team_id, e.target.value as TeamProjectRole))}>
+                onChange={(e) => { const role = e.target.value as TeamProjectRole; void run(t.team_id, async () => (await loadApi()).putProjectTeam(projectId, t.team_id, role)); }}>
                 {(["collector", "viewer", "admin"] as TeamProjectRole[]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
               </select>
               <Button small variant="ghost" disabled={busy === t.team_id} aria-label={`Take ${t.name} off this project`}

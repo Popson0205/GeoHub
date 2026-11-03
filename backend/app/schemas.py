@@ -53,6 +53,8 @@ class UserOut(BaseModel):
     org: OrgBrief | None = None
     must_change_password: bool = Field(False, description="Signed in with a temporary password: choose a new one first")
     platform_admin: bool = Field(False, description="GeoEstate staff who manage client organizations")
+    staff_role: Literal["super_admin", "account_manager", "support", "finance"] | None = Field(
+        None, description="Their role in the staff console, for GeoEstate staff")
     mfa_enabled: bool = Field(False, description="Two-step sign-in is on")
     mfa_setup_required: bool = Field(False, description="The organization requires two-step sign-in and it is not set "
                                      "up yet: everything else is refused until it is")
@@ -989,7 +991,7 @@ class OrgRequestIn(BaseModel):
     contact_name: str = Field(min_length=1, max_length=120)
     email: EmailStr
     phone: str | None = Field(None, max_length=40)
-    plan: Literal["standard", "advanced", "custom", "unsure"] = "unsure"
+    plan: Literal["standard", "advanced", "custom", "unsure", "demo"] = "unsure"
     team_size: str | None = Field(None, max_length=60, description="Roughly how many people, in their words")
     message: str | None = Field(None, max_length=2000)
     website: str | None = Field(None, max_length=200, description="Leave empty (a trap for spam robots)")
@@ -1015,6 +1017,10 @@ class OrgRequestPatch(BaseModel):
     note: str | None = Field(None, max_length=2000)
 
 
+LicenceStatus = Literal["free", "demo", "active", "grace", "expired", "suspended"]
+StaffRole = Literal["super_admin", "account_manager", "support", "finance"]
+
+
 class AdminOrgOut(BaseModel):
     id: UUID
     name: str
@@ -1031,27 +1037,134 @@ class AdminOrgOut(BaseModel):
     owner_email: str | None
     created_at: datetime
     domains: list[str] = Field(default_factory=list, description="Company email domains; unverified ones say so")
+    licence_kind: Literal["paid", "demo"] = "paid"
+    status: LicenceStatus = Field("active", description="Where the licence stands today")
+    grace_ends: date | None = Field(None, description="The last day of the grace period after the end date")
+    suspended_at: datetime | None = None
+    suspended_reason: str | None = None
+    last_active: datetime | None = Field(None, description="When anyone in the organization last used Geohub")
+
+
+class AdminPerson(BaseModel):
+    user_id: UUID
+    name: str
+    email: str
+    role: str
+    mfa_enabled: bool
+    last_active: datetime | None
+    joined_at: datetime
+
+
+class LicenceEventOut(BaseModel):
+    id: int
+    action: str
+    plan: str
+    kind: str
+    starts: date | None
+    ends: date | None
+    limits: dict
+    invoice_ref: str | None
+    note: str | None
+    actor_name: str | None
+    at: datetime
+
+
+class StaffNoteOut(BaseModel):
+    id: UUID
+    body: str
+    author_id: UUID | None
+    author_name: str | None
+    created_at: datetime
+
+
+class StaffActivityOut(BaseModel):
+    id: int
+    at: datetime
+    action: str
+    actor_id: UUID | None
+    actor_name: str | None
+    org_id: UUID | None = None
+    org_name: str | None = None
+    target_type: str | None
+    target_id: str | None
+    details: dict
+
+
+class AdminOrgDetail(AdminOrgOut):
+    people: list[AdminPerson]
+    invited: int = Field(description="Invitations not yet accepted")
+    licences: list[LicenceEventOut] = Field(description="Licence history, newest first")
+    notes: list[StaffNoteOut]
+    api_keys: int = Field(description="API keys in use")
+    teams: int
+    activity: list[StaffActivityOut] = Field(description="Recent activity in and on the organization, newest first")
 
 
 class AdminOrgIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     plan: PlanId = "standard"
+    licence_kind: Literal["paid", "demo"] = Field("paid", description="demo: a month of Organization Advanced, dates set for you")
     subscription_starts: date | None = None
     subscription_ends: date | None = None
     owner_name: str = Field(min_length=1, max_length=120)
     owner_email: EmailStr
     limits: dict[Literal["seats", "collectors", "viewers", "teams"], int | None] = Field(default_factory=dict)
     request_id: UUID | None = Field(None, description="The website request this answers; it is marked set up")
+    invoice_ref: str | None = Field(None, max_length=80)
+    note: str | None = Field(None, max_length=1000)
 
 
 class AdminOrgPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     plan: PlanId | None = None
+    licence_kind: Literal["paid", "demo"] | None = None
     subscription_starts: date | None = None
     subscription_ends: date | None = None
     clear_dates: bool = False
     limits: dict[Literal["seats", "collectors", "viewers", "teams"], int | None] | None = Field(
         None, description="Replaces the one-off caps; {} goes back to the plan's numbers")
+    invoice_ref: str | None = Field(None, max_length=80, description="The invoice this change answers, kept in the licence history")
+    note: str | None = Field(None, max_length=1000, description="Why, kept in the licence history")
+
+
+class SuspendIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class StaffNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class OwnerIn(BaseModel):
+    user_id: UUID
+
+
+class StaffOut(BaseModel):
+    user_id: UUID | None
+    name: str | None
+    email: str
+    role: StaffRole
+    mfa_enabled: bool
+    from_settings: bool = Field(description="Listed in PLATFORM_ADMINS: always a super admin, changed only there")
+    last_active: datetime | None = None
+    created_at: datetime | None = None
+
+
+class StaffIn(BaseModel):
+    email: EmailStr
+    name: str | None = Field(None, max_length=120, description="For someone without a Geohub account yet")
+    role: StaffRole
+
+
+class StaffPatch(BaseModel):
+    role: StaffRole
+
+
+class StaffMeOut(BaseModel):
+    role: StaffRole
+    role_name: str
+    perms: list[str]
+    mfa_ok: bool = Field(description="Two-step sign-in is on, or not required for staff here")
 
 
 # ---------- company email domains ----------

@@ -103,18 +103,36 @@ unlimited:
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
 counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
 
-**Platform admin (GeoEstate staff).** Set `PLATFORM_ADMINS` to a comma-separated list of staff emails, e.g.
-`PLATFORM_ADMINS=idrispopoola02@gmail.com`. Those accounts get **Platform admin** in the account menu (`/admin`):
+**Staff console (GeoEstate staff).** The emails in `PLATFORM_ADMINS` (comma-separated, e.g.
+`PLATFORM_ADMINS=idrispopoola02@gmail.com`) are always super admins. They add and remove other staff in the console,
+each with a role:
 
-- **Organizations:** set up a client organization once its invoice is paid (name, plan, subscription dates, the
-  owner's name and email; the owner is emailed a link to choose a password and then adds their own team), change its
-  plan, renew its dates, or give it its own people caps (empty = the plan's numbers). Renewals due within 60 days
-  stand out.
-- **Requests:** what people send from the public **Request an organization** page (`/request-organization`, linked
-  from the sign-in page). Each request is emailed to every platform admin and acknowledged to the sender. Mark its
-  progress, keep a note (invoice number…), and **Set up this organization** fills in the form from it.
+| Role | Can |
+| --- | --- |
+| Super admin | Everything, including adding and removing staff |
+| Account manager | Customers, licences and requests |
+| Support | Views customers; resends set-password links, resets two-step sign-in, keeps notes |
+| Finance | Views customers, licences and the staff activity log |
 
-Everyone else gets "not found" from the admin API, so it is not revealed.
+Staff must turn on two-step sign-in before the console opens (`STAFF_REQUIRE_MFA=true`, the default). The console is
+**Staff console** in the account menu (`/admin`):
+
+- **Customers:** every organization with its licence status, people in use, renewal date and when it was last used;
+  filter by status (due in 60 days, demo, grace period, expired, suspended). **Set up a customer** once its invoice is
+  paid, or **Start a demo**: a free month of Organization Advanced.
+- **A customer's page:** its licence (renew for a year, change, suspend and lift a suspension), its people (send a
+  set-password link, reset two-step sign-in, make someone the owner), staff notes, company domains, the licence
+  history with invoice numbers, and recent activity.
+- **Requests:** what people send from the public **Request an organization** page (`/request-organization`), including
+  one-month demos. Each is emailed to super admins and account managers; **Set up this customer** / **Start this demo**
+  fills in the form from it.
+- **Staff** and **Activity:** who is on the staff, and everything staff did, newest first.
+
+**Licence statuses.** Active (paid and in date) or Demo; then, when the end date passes, a 14-day **grace period**;
+then **Expired**. Staff can **suspend** a customer at any time. (What expired and suspended customers can still do
+in Geohub comes in the next part: read-only after the grace period.)
+
+Everyone else gets "not found" from the staff API, so it is not revealed.
 
 **Renewal reminders.** The server checks every hour and emails an organization's owners and admins 60, 30 and 7 days
 before its subscription ends and on the day itself, copying the platform admins. Each reminder goes once, even with

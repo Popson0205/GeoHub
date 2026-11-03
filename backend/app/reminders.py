@@ -8,7 +8,7 @@ from datetime import date
 
 from . import orgs
 from .config import settings
-from .deps import platform_admin_emails
+from . import staff
 from .mailer import send_email
 
 log = logging.getLogger("reminders")
@@ -48,7 +48,7 @@ async def run(conn, today: date | None = None) -> int:
                 "Your work and your team's access stay as they are.",
                 action=("Open Geohub", f"{settings.app_url}/settings/organization"),
                 key=f"renewal/{o['id']}/{o['subscription_ends']}/{o['days']}/{p['email']}")
-        for to in platform_admin_emails():
+        for to in await staff.emails(conn):
             await send_email(to, f"Renewal: {o['name']} {when.split(',')[0]}",
                              f"\"{o['name']}\" ({plan}) {when}. Reminded: "
                              + (", ".join(p["email"] for p in people) or "nobody (no owner or admin)") + ".",

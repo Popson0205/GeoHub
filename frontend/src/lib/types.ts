@@ -22,6 +22,8 @@ export interface OrgBrief { id: string; name: string; slug: string; role: OrgRol
 export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean;
   /** GeoEstate staff who set up client organizations (PLATFORM_ADMINS on the server). */
   platform_admin?: boolean;
+  /** Their role in the GeoEstate staff console. */
+  staff_role?: StaffRole | null;
   /** Two-step sign-in is on. */
   mfa_enabled?: boolean;
   /** The organization requires two-step sign-in and it is not set up yet: nothing else works until it is. */
@@ -59,7 +61,7 @@ export interface OrgMember { id: string; user_id: string | null; email: string; 
   /** Two-step sign-in is on (in the people list). */
   mfa_enabled?: boolean | null }
 // ---- platform admin (GeoEstate staff) ----
-export type RequestPlan = "standard" | "advanced" | "custom" | "unsure";
+export type RequestPlan = "standard" | "advanced" | "custom" | "unsure" | "demo";
 export type RequestStatus = "new" | "contacted" | "set_up" | "declined";
 /** Someone asking for an organization from the website. */
 export interface OrgRequestInput { organization: string; contact_name: string; email: string; phone?: string; plan: RequestPlan;
@@ -76,11 +78,39 @@ export interface AdminOrg {
   owner_name: string | null; owner_email: string | null; created_at: string;
   /** Company email domains; unverified ones say so. */
   domains?: string[];
+  /** paid: after an invoice; demo: a month's trial of Organization Advanced. */
+  licence_kind?: LicenceKind;
+  /** Where the licence stands today. */
+  status?: LicenceStatus;
+  /** The last day of the 14-day grace period after the end date. */
+  grace_ends?: string | null;
+  suspended_at?: string | null; suspended_reason?: string | null;
+  /** When anyone in the organization last used Geohub. */
+  last_active?: string | null;
 }
-export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string;
-  subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string }
-export interface AdminOrgPatch { name?: string; plan?: PlanId; subscription_starts?: string | null; subscription_ends?: string | null;
-  clear_dates?: boolean; limits?: OrgLimits }
+export type LicenceKind = "paid" | "demo";
+export type LicenceStatus = "free" | "demo" | "active" | "grace" | "expired" | "suspended";
+export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string; licence_kind?: LicenceKind;
+  subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string;
+  invoice_ref?: string; note?: string }
+export interface AdminOrgPatch { name?: string; plan?: PlanId; licence_kind?: LicenceKind; subscription_starts?: string | null; subscription_ends?: string | null;
+  clear_dates?: boolean; limits?: OrgLimits; invoice_ref?: string; note?: string }
+export type StaffRole = "super_admin" | "account_manager" | "support" | "finance";
+export type StaffPerm = "customers.view" | "audit.view" | "customers.support" | "licences.edit" | "requests.edit" | "staff.manage";
+export interface StaffMe { role: StaffRole; role_name: string; perms: StaffPerm[]; mfa_ok: boolean }
+export interface StaffMember { user_id: string | null; name: string | null; email: string; role: StaffRole; mfa_enabled: boolean;
+  /** Listed in PLATFORM_ADMINS on the server: always a super admin, changed only there. */
+  from_settings: boolean; last_active?: string | null; created_at?: string | null }
+export interface LicenceEvent { id: number; action: string; plan: string; kind: string; starts: string | null; ends: string | null;
+  limits: OrgLimits; invoice_ref: string | null; note: string | null; actor_name: string | null; at: string }
+export interface StaffNote { id: string; body: string; author_id: string | null; author_name: string | null; created_at: string }
+export interface StaffActivity { id: number; at: string; action: string; actor_id: string | null; actor_name: string | null;
+  org_id?: string | null; org_name?: string | null; target_type: string | null; target_id: string | null; details: Record<string, unknown> }
+export interface AdminPerson { user_id: string; name: string; email: string; role: OrgRole; mfa_enabled: boolean; last_active: string | null; joined_at: string }
+/** One customer as staff see it on its page. */
+export interface AdminOrgDetail extends AdminOrg {
+  people: AdminPerson[]; invited: number; licences: LicenceEvent[]; notes: StaffNote[]; api_keys: number; teams: number; activity: StaffActivity[];
+}
 // ---- sign-in providers and company email domains ----
 export type SsoProvider = "google" | "microsoft";
 export type DomainRole = "member" | "collector" | "viewer";
