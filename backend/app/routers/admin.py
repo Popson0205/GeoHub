@@ -15,7 +15,7 @@ from ..logging_setup import client_ip
 from ..mailer import send_email
 from ..schemas import (AdminOrgDetail, AdminOrgIn, AdminOrgOut, AdminOrgPatch, OrgDomainIn, OrgDomainOut, OrgRequestIn,
                        OrgRequestOut, OrgRequestPatch, OwnerIn, StaffActivityOut, StaffIn, StaffMeOut, StaffNoteIn,
-                       StaffNoteOut, StaffOut, StaffPatch, SuspendIn)
+                       StaffNoteOut, StaffOut, StaffPatch, SupportVisitIn, SupportVisitOut, SuspendIn)
 
 router = APIRouter(tags=["staff console"])
 
@@ -108,7 +108,63 @@ async def get_org(org_id: UUID, user=Depends(staff.staff()), conn=Depends(get_co
         "WHERE a.details->>'org_id' = %(o)s OR (a.target_type = 'organization' AND a.target_id = %(o)s) "
         "ORDER BY a.id DESC LIMIT 50", {"o": str(org_id)})
     out["activity"] = await cur.fetchall()
+    cur = await conn.execute("SELECT p.id, p.name, p.last_activity_at AS last_update, "
+                             "  (SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL) AS records "
+                             "FROM projects p WHERE p.org_id = %s ORDER BY p.last_activity_at DESC LIMIT 200", (org_id,))
+    out["projects"] = await cur.fetchall()
+    out["support_visits"] = await visits(conn, org_id)
     return out
+
+
+VISIT_SQL = ("SELECT s.id, s.staff_id, u.name AS staff_name, s.reason, s.started_at, s.ends_at, s.ended_at, "
+             "  (s.ended_at IS NULL AND s.ends_at > now()) AS active FROM support_sessions s LEFT JOIN users u ON u.id = s.staff_id ")
+
+
+async def visits(conn, org_id, limit: int = 20) -> list[dict]:
+    cur = await conn.execute(VISIT_SQL + "WHERE s.org_id = %s ORDER BY s.started_at DESC LIMIT %s", (org_id, limit))
+    return await cur.fetchall()
+
+
+@router.post("/admin/orgs/{org_id}/support", response_model=SupportVisitOut, status_code=201,
+             summary="Open a customer's projects to help them (read-only, for a few hours, shown to the customer)")
+async def start_visit(org_id: UUID, body: SupportVisitIn, request: Request, user=Depends(staff.staff("customers.support")),
+                      conn=Depends(get_conn)):
+    """While the visit is open, the staff member sees the customer's projects as a viewer: records, maps, forms and
+    dashboards, changing nothing. The customer's owners and admins see the visit and its reason on their
+    Organization page."""
+    o = await _one(conn, org_id)
+    await conn.execute("UPDATE support_sessions SET ended_at = now() WHERE staff_id = %s AND org_id = %s AND ended_at IS NULL",
+                       (user["id"], org_id))
+    cur = await conn.execute("INSERT INTO support_sessions (org_id, staff_id, reason, ends_at) "
+                             "VALUES (%s, %s, %s, now() + make_interval(hours => %s)) RETURNING id",
+                             (org_id, user["id"], body.reason.strip(), body.hours))
+    vid = (await cur.fetchone())["id"]
+    await _staff_audit(conn, "support_start", user, request, org_id, target_type="support_visit", target_id=vid,
+                       reason=body.reason.strip(), hours=body.hours)
+    cur = await conn.execute("SELECT u.email, u.name FROM org_members m JOIN users u ON u.id = m.user_id "
+                             "WHERE m.org_id = %s AND m.role IN ('owner','admin')", (org_id,))
+    for p in await cur.fetchall():
+        await send_email(p["email"], "GeoEstate support is looking at your Geohub projects",
+                         f"Hello {p['name'].split()[0]},\n\n{user['name']} from GeoEstate support opened the projects of "
+                         f"\"{o['name']}\" to help, for up to {body.hours} hour{'s' if body.hours > 1 else ''}. They can see "
+                         f"your records, forms and dashboards but cannot change anything.\n\nReason: {body.reason.strip()}\n\n"
+                         "You can see every support visit on your Organization page. If you did not ask for help, reply to this email.",
+                         action=("See support visits", f"{settings.app_url}/settings/organization"),
+                         key=f"support-visit/{vid}/{p['email']}")
+    cur = await conn.execute(VISIT_SQL + "WHERE s.id = %s", (vid,))
+    return await cur.fetchone()
+
+
+@router.post("/admin/support/{visit_id}/end", response_model=SupportVisitOut, summary="End a support visit")
+async def end_visit(visit_id: UUID, request: Request, user=Depends(staff.staff("customers.support")), conn=Depends(get_conn)):
+    cur = await conn.execute("UPDATE support_sessions SET ended_at = COALESCE(ended_at, now()) WHERE id = %s "
+                             "AND (staff_id = %s OR %s) RETURNING org_id", (visit_id, user["id"], user["staff_role"] == "super_admin"))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "Support visit not found.", code="not_found")
+    await _staff_audit(conn, "support_end", user, request, row["org_id"], target_type="support_visit", target_id=visit_id)
+    cur = await conn.execute(VISIT_SQL + "WHERE s.id = %s", (visit_id,))
+    return await cur.fetchone()
 
 
 @router.post("/admin/orgs", response_model=AdminOrgOut, status_code=201, summary="Set up a customer and its owner")
@@ -384,6 +440,7 @@ async def remove_staff(user_id: UUID, request: Request, user=Depends(staff.staff
         raise Problem(409, "The staff console needs at least one super admin.", code="last_super_admin")
     cur = await conn.execute("DELETE FROM platform_staff WHERE user_id = %s RETURNING role", (user_id,))
     row = await cur.fetchone()
+    await conn.execute("UPDATE support_sessions SET ended_at = now() WHERE staff_id = %s AND ended_at IS NULL", (user_id,))
     if not row:
         raise Problem(404, "That person is not on the staff, or is in PLATFORM_ADMINS (removed only there).", code="not_found")
     await _staff_audit(conn, "staff_remove", user, request, target_type="user", target_id=user_id, role=row["role"])

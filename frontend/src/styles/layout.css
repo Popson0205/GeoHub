@@ -823,3 +823,25 @@ body.is-dnd * { cursor: grabbing !important; }
 @media (max-width: 560px) { .admin-activity li { grid-template-columns: 1fr; gap: 2px; } }
 .customer .card > .row-actions { display: flex; justify-content: flex-start; }
 .customer-note .field { margin: 0; width: 100%; }
+
+/* ---- licence banners, suspension, support visits ---- */
+.licence-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px var(--s-3); padding: 10px var(--s-4); font-size: var(--fs-sm); text-align: center; border-bottom: 1px solid var(--line); }
+.licence-banner.is-warn { background: var(--warning-50); color: var(--warn-ink); }
+.licence-banner.is-bad { background: var(--danger-50); color: var(--danger-700); }
+.licence-banner.is-info { background: var(--info-50); color: var(--info-ink); }
+.licence-banner a { color: inherit; font-weight: 600; }
+.suspended-page { max-width: 640px; margin-top: var(--s-8, 48px); }
+.suspended-page .card { display: flex; flex-direction: column; gap: var(--s-3); align-items: flex-start; }
+.suspended-page h1, .suspended-page p { margin: 0; }
+.customer-support { margin-top: var(--s-6); }
+.customer-visit { display: grid; grid-template-columns: 1fr 140px auto; gap: var(--s-3); align-items: end; }
+.customer-visit .field-hint { grid-column: 1 / -1; margin: 0; }
+.customer-visit .field { margin: 0; }
+.customer-visit-on { margin: 0 0 var(--s-3); padding: 8px 12px; border-radius: var(--r-md); background: var(--info-50); color: var(--info-ink); font-size: var(--fs-sm); }
+.customer-projects { margin: 0 0 var(--s-3); padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; }
+.customer-visits, .org-visits { list-style: none; margin: var(--s-3) 0 0; padding: 0; font-size: var(--fs-sm); }
+.customer-visits li, .org-visits li { padding: 8px 0; border-top: 1px solid var(--line); }
+.org-visits li { display: flex; flex-direction: column; gap: 2px; }
+.org-visits .badge, .customer-visits .badge { margin-left: 6px; }
+@media (max-width: 700px) { .customer-visit { grid-template-columns: 1fr; } }
+.customer-support > .btn { align-self: flex-start; width: auto; }

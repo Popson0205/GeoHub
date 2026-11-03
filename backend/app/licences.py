@@ -2,11 +2,16 @@
 
     demo / active -> (end date passes) grace for 14 days -> expired      suspended: set by staff at any time
 
-What each state does to the people using Geohub (renewal banner, read-only) comes with the next part of the staff
-console; here the state is worked out and every change is recorded in licence_events."""
+What each state does, for everyone in the organization (and its public form and dashboard links):
+    demo, active, grace   full use (grace: a renewal banner for admins)
+    expired               read-only: sign in, view, export; nothing added or changed; public forms stop taking answers
+    suspended             nothing but signing in to see why; public links stop working
+Every change is recorded in licence_events."""
 from datetime import date, timedelta
 
 from psycopg.types.json import Jsonb
+
+from .errors import Problem
 
 GRACE_DAYS = 14
 DEMO_DAYS = 30
@@ -57,3 +62,57 @@ async def record(conn, org_id, action: str, actor_id=None, invoice_ref: str | No
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (org_id, action, o["plan"], o["licence_kind"], o["subscription_starts"], o["subscription_ends"],
          Jsonb(o["limits"] or {}), (invoice_ref or "").strip() or None, (note or "").strip() or None, actor_id))
+
+
+# ---------- what a licence allows ----------
+READ_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Writes that only read: exports are how people take their work with them, so they work while read-only.
+READ_ONLY_EXCEPTIONS = ("/exports",)
+# What a suspended or expired organization's people can still reach: their organization's page and leaving it.
+ALWAYS_OPEN = ("/org", "/org/leave", "/org/support-visits")
+
+
+def _problem(state: str, org_name: str | None = None) -> Problem:
+    who = f"{org_name}'s" if org_name else "Your organization's"
+    if state == "suspended":
+        return Problem(403, f"{who} Geohub access is suspended. Contact GeoEstate NIG Limited to restore it.",
+                       code="licence_suspended")
+    return Problem(403, f"{who} Geohub subscription has ended, so it is read-only: you can view and export your work but "
+                        "not add or change anything. Renew with GeoEstate NIG Limited to carry on.", code="licence_expired")
+
+
+def allows(state: str, method: str, path: str) -> Problem | None:
+    """The problem to refuse a request with, or None when the licence allows it."""
+    if state not in ("expired", "suspended"):
+        return None
+    if path in ALWAYS_OPEN:
+        return None
+    if state == "suspended":
+        return _problem(state)
+    if method in READ_METHODS or path.endswith(READ_ONLY_EXCEPTIONS):
+        return None
+    return _problem(state)
+
+
+def of_row(row: dict, prefix: str = "org_") -> str:
+    """The status from a row that carries the organization's licence columns under `prefix`."""
+    return status({"plan": row.get(f"{prefix}plan") or "individual", "subscription_ends": row.get(f"{prefix}ends"),
+                   "suspended_at": row.get(f"{prefix}suspended_at"), "licence_kind": row.get(f"{prefix}kind")})
+
+
+async def check_project(conn, project_id, write: bool) -> None:
+    """For links used without signing in (public forms and dashboards): the project's organization must allow it."""
+    cur = await conn.execute("SELECT o.name, o.plan, o.subscription_ends, o.suspended_at, o.licence_kind FROM projects p "
+                             "JOIN organizations o ON o.id = p.org_id WHERE p.id = %s", (project_id,))
+    o = await cur.fetchone()
+    if not o:
+        return
+    st = status(o)
+    if st == "suspended" or (st == "expired" and write):
+        if st == "expired":
+            raise Problem(403, "This form is closed: its organization's Geohub subscription has ended.", code="licence_expired")
+        raise Problem(404, "This link is not available.", code="not_found")
+
+
+LICENCE_COLS = ("o.plan AS org_plan, o.subscription_ends AS org_ends, o.suspended_at AS org_suspended_at, "
+                "o.licence_kind AS org_kind")

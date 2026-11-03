@@ -76,6 +76,7 @@ const ACTION_WORDS: Record<string, string> = {
   mfa_reset: "turned off someone's two-step sign-in", owner_transfer: "made someone the owner", note_add: "added a note",
   note_delete: "deleted a note", staff_add: "added a staff member", staff_update: "changed a staff member's role",
   staff_remove: "removed a staff member", request_update: "updated a request",
+  support_start: "opened a support visit", support_end: "ended a support visit",
   // what the customer's own people did
   "org.account_create": "created an account", "org.accounts_import": "added people from a spreadsheet", "org.member_add": "added someone",
   "org.member_invite": "invited someone", "org.member_remove": "removed someone", "org.role_change": "changed someone's role",

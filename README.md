@@ -129,8 +129,20 @@ Staff must turn on two-step sign-in before the console opens (`STAFF_REQUIRE_MFA
 - **Staff** and **Activity:** who is on the staff, and everything staff did, newest first.
 
 **Licence statuses.** Active (paid and in date) or Demo; then, when the end date passes, a 14-day **grace period**;
-then **Expired**. Staff can **suspend** a customer at any time. (What expired and suspended customers can still do
-in Geohub comes in the next part: read-only after the grace period.)
+then **Expired**. Staff can **suspend** a customer at any time.
+
+| Status | What the customer's people can do |
+| --- | --- |
+| Active, Demo | Everything |
+| Grace period (14 days) | Everything; owners and admins see a renewal banner |
+| Expired | Read-only: sign in, view and export, but not add or change anything (`403 licence_expired`); public forms stop taking answers |
+| Suspended | Nothing but signing in to see why (`403 licence_suspended`); public form and dashboard links stop working |
+
+Renewal emails go 60, 30 and 7 days before the end date, on the day, and when the grace period ends.
+
+**Support visits.** Support staff can open a customer's projects to help them, read-only, for 1 to 8 hours, with a
+reason. The customer's owners and admins are emailed and see every visit under **Support visits** on their
+Organization page.
 
 Everyone else gets "not found" from the staff API, so it is not revealed.
 

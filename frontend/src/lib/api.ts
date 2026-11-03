@@ -7,7 +7,7 @@ import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, O
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
   Dashboard, DashboardConfig, DashboardSharing, ImportOptions, PublicDashboard,
-  StaffMe, StaffMember, StaffNote, StaffActivity, StaffRole, AdminOrgDetail, LicenceStatus,
+  SupportVisit, StaffMe, StaffMember, StaffNote, StaffActivity, StaffRole, AdminOrgDetail, LicenceStatus,
   Team, ProjectTeam, TeamProjectRole, ImportResult, MfaStatus, MfaSetup, ApiKey, ApiKeyCreated, AddableRole,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
@@ -96,6 +96,11 @@ export interface Api {
   adminSetStaffRole(userId: string, role: StaffRole): Promise<StaffMember[]>;
   adminRemoveStaff(userId: string): Promise<StaffMember[]>;
   adminActivity(filter?: { org_id?: string; actor_id?: string; before?: number }): Promise<StaffActivity[]>;
+  /** Open a customer's projects, read-only, for a few hours; the customer sees it. */
+  adminStartVisit(orgId: string, reason: string, hours: number): Promise<SupportVisit>;
+  adminEndVisit(visitId: string): Promise<SupportVisit>;
+  /** When GeoEstate support opened your organization's projects (organization admins). */
+  listSupportVisits(): Promise<SupportVisit[]>;
   logout(): Promise<void>;
   me(): Promise<User>;
   // ---- two-step sign-in
@@ -258,7 +263,7 @@ const ALL_FORMATS: ExportFormat[] = ["geojson", "gpkg", "shp", "csv"];
 type Wire = any;
 
 const toProject = (p: Wire): Project => ({
-  id: p.id, name: p.name, description: p.description, role: p.role,
+  id: p.id, name: p.name, description: p.description, role: p.role, support_view: !!p.support_view,
   feature_count: p.feature_count, waiting_count: p.waiting_count ?? 0, collector_count: p.collector_count, updated_at: p.last_update ?? p.created_at,
 });
 /** The server always sends `choices` (empty when a field has none); the UI treats "no choices" as absent. Groups and repeats nest. */
@@ -403,7 +408,8 @@ class HttpApi implements Api {
         code = p.code;
         if (p.fields) fields = flattenFields(p.fields);
       } catch { /* not JSON */ }
-      if (code === "mfa_setup_required" && typeof window !== "undefined") window.dispatchEvent(new Event(MFA_SETUP_EVENT));
+      // the account changed under the person (two-step sign-in now required, licence ended or suspended): read them again
+      if (code && ["mfa_setup_required", "licence_expired", "licence_suspended"].includes(code) && typeof window !== "undefined") window.dispatchEvent(new Event(MFA_SETUP_EVENT));
       throw new ApiError(res.status, detail, fields, code);
     }
     return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
@@ -794,6 +800,9 @@ class HttpApi implements Api {
     return this.req<AdminOrg[]>("GET", `/admin/orgs${q.size ? `?${q}` : ""}`);
   }
   adminGetOrg(id: string) { return this.req<AdminOrgDetail>("GET", `/admin/orgs/${id}`); }
+  adminStartVisit(orgId: string, reason: string, hours: number) { return this.req<SupportVisit>("POST", `/admin/orgs/${orgId}/support`, { reason, hours }); }
+  adminEndVisit(visitId: string) { return this.req<SupportVisit>("POST", `/admin/support/${visitId}/end`); }
+  listSupportVisits() { return this.req<SupportVisit[]>("GET", "/org/support-visits"); }
   adminSuspend(id: string, reason: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/suspend`, { reason }); }
   adminReactivate(id: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/reactivate`); }
   adminAddNote(orgId: string, body: string) { return this.req<StaffNote>("POST", `/admin/orgs/${orgId}/notes`, { body }); }

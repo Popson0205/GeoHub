@@ -24,7 +24,8 @@ async def user_for(conn, raw: str) -> dict:
         "SELECT k.id AS api_key_id, k.access AS api_key_access, k.revoked_at, (k.expires_at < now()) AS expired, "
         "  (k.last_used_at IS NULL OR k.last_used_at < now() - interval '1 minute') AS stale, "
         "  u.id, u.email, u.name, u.created_at, u.must_change_password, (u.totp_enabled_at IS NOT NULL) AS mfa_enabled, "
-        "  (o.require_mfa AND u.totp_enabled_at IS NULL) AS mfa_setup_required, (om.user_id IS NOT NULL) AS in_org "
+        "  (o.require_mfa AND u.totp_enabled_at IS NULL) AS mfa_setup_required, (om.user_id IS NOT NULL) AS in_org, "
+        "  o.plan AS org_plan, o.subscription_ends AS org_ends, o.suspended_at AS org_suspended_at, o.licence_kind AS org_kind "
         "FROM api_keys k JOIN users u ON u.id = k.user_id JOIN organizations o ON o.id = k.org_id "
         "LEFT JOIN org_members om ON om.user_id = k.user_id AND om.org_id = k.org_id "
         "WHERE k.key_hash = %s", (hash_token(raw),))

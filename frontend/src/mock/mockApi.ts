@@ -12,7 +12,7 @@ import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
+  SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
   Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
@@ -28,9 +28,10 @@ interface State {
   mapSnapshots?: Record<string, FeatureCollection["features"]>; mapKinds?: Record<string, "point" | "line" | "area">; mapSeeded?: boolean;
   audit?: (AuditEvent & { project_id: string })[];
   org?: { id: string; name: string; slug: string; plan: string; limits: Org["limits"]; subscription_starts?: string | null; subscription_ends?: string | null;
-    branding?: OrgBranding; require_mfa?: boolean };
+    branding?: OrgBranding; require_mfa?: boolean; suspended?: boolean; licence_kind?: "paid" | "demo" };
   orgMembers?: OrgMember[];
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
+  supportVisits?: (SupportVisit & { org_id: string })[];
   staffList?: StaffMember[]; licenceLog?: Record<string, LicenceEvent[]>; staffNotes?: Record<string, StaffNote[]>; staffActivity?: StaffActivity[];
   teams?: { id: string; name: string; description: string; created_at: string; members: { user_id: string; lead: boolean }[] }[];
   projectTeams?: { project_id: string; team_id: string; role: TeamProjectRole }[];
@@ -98,7 +99,12 @@ export class MockApi implements Api {
     const b = org.branding;
     const brand = org.plan !== "individual" && (b?.color || b?.logo_url) ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null } : null;
     const mfaOn = !!this.s.mfa?.enabled_at;
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand }, must_change_password: false, platform_admin: true, staff_role: "super_admin",
+    const ends = org.subscription_ends ?? null;
+    const today = new Date().toISOString().slice(0, 10);
+    const graceEnds = ends ? new Date(Date.parse(ends) + 14 * 86400000).toISOString().slice(0, 10) : null;
+    const status = org.suspended ? "suspended" : !ends || ends >= today ? (org.licence_kind === "demo" ? "demo" : "active") : graceEnds! >= today ? "grace" : "expired";
+    const licence = org.plan === "individual" ? null : { status, ends, grace_ends: graceEnds, kind: org.licence_kind ?? "paid" } as const;
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand, licence }, must_change_password: false, platform_admin: true, staff_role: "super_admin",
       mfa_enabled: mfaOn, mfa_setup_required: !!org.require_mfa && !mfaOn };
   }
   async getOrg(): Promise<Org> {
@@ -333,8 +339,39 @@ export class MockApi implements Api {
     ];
     const s = this.staffState;
     if (!s.log[id]?.length) this.logLicence(o, "create");
-    return { ...o, people, invited: 1, api_keys: 0, teams: 1, licences: [...s.log[id]], notes: [...(s.notes[id] ?? [])],
+    const projects = this.s.projects.map((p) => ({ id: p.id, name: p.name, records: this.s.features.filter((f) => f.project_id === p.id && !f.deleted).length, last_update: p.updated_at }));
+    return { ...o, people, invited: 1, api_keys: 0, teams: 1, licences: [...s.log[id]], notes: [...(s.notes[id] ?? [])], projects,
+      support_visits: this.visitsOf(id),
       activity: s.activity.filter((a) => a.org_id === id) };
+  }
+  private visitsOf(orgId: string): SupportVisit[] {
+    const now = Date.now();
+    return (this.s.supportVisits ?? []).filter((v) => v.org_id === orgId)
+      .map(({ org_id: _o, ...v }) => ({ ...v, active: !v.ended_at && Date.parse(v.ends_at) > now }))
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+  }
+  async adminStartVisit(orgId: string, reason: string, hours: number) {
+    await wait(); this.staff(); this.customer(orgId);
+    const list = (this.s.supportVisits ??= []);
+    list.forEach((v) => { if (v.org_id === orgId && !v.ended_at) v.ended_at = new Date().toISOString(); });
+    const v = { id: uuid(), org_id: orgId, staff_id: DEMO_USER.id, staff_name: DEMO_USER.name, reason: reason.trim(), started_at: new Date().toISOString(),
+      ends_at: new Date(Date.now() + hours * 3600000).toISOString(), ended_at: null, active: true };
+    list.push(v); this.logStaff("support_start", orgId, { reason, hours }); this.save();
+    return this.visitsOf(orgId).find((x) => x.id === v.id)!;
+  }
+  async adminEndVisit(visitId: string) {
+    await wait(); this.staff();
+    const v = (this.s.supportVisits ?? []).find((x) => x.id === visitId);
+    if (!v) throw new ApiError(404, "Support visit not found.");
+    v.ended_at ??= new Date().toISOString(); this.logStaff("support_end", v.org_id); this.save();
+    return this.visitsOf(v.org_id).find((x) => x.id === visitId)!;
+  }
+  async listSupportVisits() {
+    await wait(); this.auth(); this.orgAdmin();
+    const d = 86400000;
+    return [{ id: "sv-1", staff_id: "staff-1", staff_name: "Funke Ola (GeoEstate)", reason: "You asked why the Osogbo map showed no records",
+      started_at: new Date(Date.now() - 3 * d).toISOString(), ends_at: new Date(Date.now() - 3 * d + 7200000).toISOString(),
+      ended_at: new Date(Date.now() - 3 * d + 1800000).toISOString(), active: false }];
   }
   async adminSuspend(id: string, reason: string) {
     await wait(); this.staff();

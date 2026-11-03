@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Respons
 from .. import orgs, storage
 from ..audit import audit
 from ..db import get_conn
-from ..deps import RANK, current_user, require_role
+from ..deps import RANK, SUPPORT_SQL, current_user, require_role
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
@@ -26,7 +26,7 @@ PROJECT_SQL = (
     "(ARRAY['viewer','collector','admin','owner'])[GREATEST("
     "   array_position(ARRAY['viewer','collector','admin','owner'], m.role), "
     "   array_position(ARRAY['viewer','collector','admin','owner'], t.role), "
-    "   CASE om.role WHEN 'owner' THEN 4 WHEN 'admin' THEN 3 END)] AS role, "
+    "   CASE om.role WHEN 'owner' THEN 4 WHEN 'admin' THEN 3 END, CASE WHEN sv.visit THEN 1 END)] AS role, sv.visit AS support_view, "
     "p.last_activity_at AS last_update, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL) AS feature_count, "
     "(SELECT count(*) FROM features f WHERE f.project_id = p.id AND f.deleted_at IS NULL AND f.status = 'submitted') AS waiting_count, "
@@ -34,7 +34,8 @@ PROJECT_SQL = (
     "FROM projects p LEFT JOIN members m ON m.project_id = p.id AND m.user_id = %(u)s "
     "LEFT JOIN org_members om ON om.user_id = %(u)s AND om.org_id = p.org_id AND om.role IN ('owner','admin') "
     "LEFT JOIN team_project_roles t ON t.project_id = p.id AND t.user_id = %(u)s "
-    "WHERE (m.user_id IS NOT NULL OR om.user_id IS NOT NULL OR t.user_id IS NOT NULL) ")
+    f"CROSS JOIN LATERAL (SELECT {SUPPORT_SQL.format(u='%(u)s')} AS visit) sv "
+    "WHERE (m.user_id IS NOT NULL OR om.user_id IS NOT NULL OR t.user_id IS NOT NULL OR sv.visit) ")
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)

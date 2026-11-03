@@ -10,7 +10,7 @@ from ..deps import RANK, current_user, optional_user, require_role, role_in
 from ..errors import Problem
 from ..logging_setup import client_ip
 from ..ratelimit import limit
-from .. import storage
+from .. import licences, storage
 from ..jobs import dispatch_photo
 from ..schemas import (MediaCompleteIn, MediaOut, MediaUploadOut, PublicFormOut, PublicMediaIn, PublicSubmit, SharingOut,
                        SharingPatch)
@@ -67,6 +67,8 @@ async def _by_token(conn, token: str) -> dict:
     row = await cur.fetchone()
     if not row:
         raise Problem(404, "This form link is not valid, or the form is not published.", code="not_found")
+    # a form exists to take answers: closed once its organization's subscription has ended (app/licences.py)
+    await licences.check_project(conn, row["project_id"], write=True)
     return row
 
 

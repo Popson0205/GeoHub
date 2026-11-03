@@ -4,6 +4,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { ApiError, loadApi, MFA_SETUP_EVENT, tokens } from "./api";
 import type { Session, User } from "./types";
 import { Loading } from "../components/ui";
+import { SuspendedPage } from "../components/LicenceBanner";
 
 interface AuthState {
   user: User | null; ready: boolean;
@@ -82,5 +83,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (user.must_change_password && loc.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   // the organization requires two-step sign-in: nothing else until it is set up
   if (user.mfa_setup_required && !user.must_change_password && loc.pathname !== SECURITY_PATH) return <Navigate to={SECURITY_PATH} replace />;
+  // a suspended organization: only signing out, and the account's own security, until GeoEstate lifts it
+  if (user.org?.licence?.status === "suspended" && loc.pathname !== SECURITY_PATH && loc.pathname !== "/change-password") return <SuspendedPage />;
   return <>{children}</>;
 }

@@ -45,7 +45,8 @@ export default function ProjectNav({ projectId, project, actions, compact, waiti
             <h1>{p?.name ?? <span className="skeleton" style={{ display: "inline-block", width: 220, height: "1em" }} aria-label="Loading project" />}</h1>
             {p && !compact && (
               <p className="project-nav-meta">
-                <span className="badge badge-quiet">{ROLE_LABEL[p.role] ?? p.role}</span>
+                {p.support_view ? <span className="badge badge-info" title="Opened by GeoEstate support: read-only">Support view</span>
+                  : <span className="badge badge-quiet">{ROLE_LABEL[p.role] ?? p.role}</span>}
                 <span><Icon name="users" size={15} />{p.collector_count} {p.collector_count === 1 ? "collector" : "collectors"}</span>
                 <span><Icon name="point" size={15} />{p.feature_count} {p.feature_count === 1 ? "record" : "records"}</span>
                 {manage && <Link className={`project-nav-link${pathname === `${base}/activity` ? " is-active" : ""}`} to={`${base}/activity`} aria-current={pathname === `${base}/activity` ? "page" : undefined}><Icon name="inbox" size={15} />Activity</Link>}
