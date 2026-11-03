@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import CustomerForm, { draftFrom, renewalDraft, type Draft } from "../components/admin/CustomerForm";
+import ProductsCard, { PRODUCT_NAMES } from "../components/admin/ProductsCard";
 import { Icon } from "../components/icons";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
@@ -134,6 +135,8 @@ export default function AdminCustomerPage() {
             )}
           </section>
 
+          <ProductsCard o={o} edit={editLicence} onChange={() => void load()} />
+
           <section className="card" aria-labelledby="c-notes">
             <h2 id="c-notes">Staff notes</h2>
             {support && (
@@ -236,7 +239,7 @@ export default function AdminCustomerPage() {
                 {o.licences.map((h) => (
                   <tr key={h.id}>
                     <td className="tnum">{longDate(h.at)}<br /><span className="muted">{h.actor_name ?? (h.note?.includes("GeoEstate CRM") ? "GeoEstate CRM" : "Geohub")}</span></td>
-                    <td>{licenceAction(h.action)}</td>
+                    <td>{licenceAction(h.action)}{h.product && h.product !== "hub" && <><br /><span className="muted">{PRODUCT_NAMES[h.product]}</span></>}</td>
                     <td>{h.plan[0].toUpperCase() + h.plan.slice(1)}{h.kind === "demo" ? " demo" : ""}<br /><span className="muted tnum">{h.starts ? longDate(h.starts) : "…"} to {h.ends ? longDate(h.ends) : "…"}</span></td>
                     <td>{h.invoice_ref && <><strong>{h.invoice_ref}</strong><br /></>}<span className="muted">{h.note ?? ""}</span></td>
                   </tr>

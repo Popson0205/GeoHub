@@ -1066,6 +1066,7 @@ class AdminPerson(BaseModel):
 
 class LicenceEventOut(BaseModel):
     id: int
+    product: str = Field("hub", description="hub (Geohub), land, check or farm")
     action: str
     plan: str
     kind: str
@@ -1122,7 +1123,40 @@ class AdminProject(BaseModel):
     last_update: datetime
 
 
+class ProductOut(BaseModel):
+    """An organization's licence for one GeoEstate product."""
+    product: Literal["hub", "land", "check", "farm"]
+    name: str
+    plan: str
+    plan_name: str
+    licence_kind: Literal["paid", "demo"]
+    status: LicenceStatus
+    status_name: str
+    subscription_starts: date | None
+    subscription_ends: date | None
+    grace_ends: date | None
+    limits: dict[str, int | None] = Field(default_factory=dict, description="The caps that apply (plan + this organization's)")
+    features: list[str] = Field(default_factory=list, description="The features switched on")
+    url: str | None = Field(None, description="Where the product is, for the app switcher")
+
+
+class ProductIn(BaseModel):
+    plan: Literal["standard", "advanced", "custom"] = "standard"
+    licence_kind: Literal["paid", "demo"] = Field("paid", description="demo: a month, dates set for you")
+    subscription_starts: date | None = None
+    subscription_ends: date | None = None
+    limits: dict[str, int | None] | None = Field(None, description="Replaces this organization's caps; {} = the plan's")
+    features: dict[str, bool] | None = Field(None, description="Replaces the switches on top of the plan; {} = the plan's")
+    invoice_ref: str | None = Field(None, max_length=80)
+    note: str | None = Field(None, max_length=1000)
+
+
+class ProductRemoveIn(BaseModel):
+    note: str = Field(min_length=1, max_length=1000, description="Why it is taken away")
+
+
 class AdminOrgDetail(AdminOrgOut):
+    products: list[ProductOut] = Field(default_factory=list, description="Every product it has, Geohub first")
     projects: list[AdminProject] = Field(default_factory=list)
     support_visits: list[SupportVisitOut] = Field(default_factory=list, description="Recent support visits, newest first")
     people: list[AdminPerson]

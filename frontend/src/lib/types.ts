@@ -93,6 +93,19 @@ export interface AdminOrg {
   last_active?: string | null;
 }
 export type LicenceKind = "paid" | "demo";
+/** GeoEstate's products: Geohub itself, Land Registry, LandCheck, FarmScan. */
+export type ProductId = "hub" | "land" | "check" | "farm";
+export type ProductPlan = "standard" | "advanced" | "custom";
+/** An organization's licence for one product. */
+export interface ProductLicence {
+  product: ProductId; name: string; plan: string; plan_name: string; licence_kind: LicenceKind; status: LicenceStatus; status_name: string;
+  subscription_starts: string | null; subscription_ends: string | null; grace_ends: string | null;
+  limits: Record<string, number | null>; features: string[]; url: string | null;
+}
+export interface ProductInput {
+  plan: ProductPlan; licence_kind: LicenceKind; subscription_starts?: string | null; subscription_ends?: string | null;
+  invoice_ref?: string; note?: string; limits?: Record<string, number | null>; features?: Record<string, boolean>;
+}
 export type LicenceStatus = "free" | "demo" | "active" | "grace" | "expired" | "suspended";
 export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string; licence_kind?: LicenceKind;
   subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string;
@@ -105,7 +118,7 @@ export interface StaffMe { role: StaffRole; role_name: string; perms: StaffPerm[
 export interface StaffMember { user_id: string | null; name: string | null; email: string; role: StaffRole; mfa_enabled: boolean;
   /** Listed in PLATFORM_ADMINS on the server: always a super admin, changed only there. */
   from_settings: boolean; last_active?: string | null; created_at?: string | null }
-export interface LicenceEvent { id: number; action: string; plan: string; kind: string; starts: string | null; ends: string | null;
+export interface LicenceEvent { id: number; product?: ProductId; action: string; plan: string; kind: string; starts: string | null; ends: string | null;
   limits: OrgLimits; invoice_ref: string | null; note: string | null; actor_name: string | null; at: string }
 export interface StaffNote { id: string; body: string; author_id: string | null; author_name: string | null; created_at: string }
 export interface StaffActivity { id: number; at: string; action: string; actor_id: string | null; actor_name: string | null;
@@ -118,6 +131,7 @@ export interface SupportVisit { id: string; staff_id: string; staff_name: string
 export interface AdminOrgDetail extends AdminOrg {
   projects?: { id: string; name: string; records: number; last_update: string }[];
   support_visits?: SupportVisit[];
+  products?: ProductLicence[];
   people: AdminPerson[]; invited: number; licences: LicenceEvent[]; notes: StaffNote[]; api_keys: number; teams: number; activity: StaffActivity[];
 }
 // ---- sign-in providers and company email domains ----

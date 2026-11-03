@@ -134,6 +134,34 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await until(() => /Bola Ade is now the owner/.test(text()));
   ok(lagos().owner_name === "Bola Ade", "and make someone else the owner");
   ok(/suspended the customer: Invoice GE-2027-0002 unpaid/.test(text()) && /added a note/.test(text()), "the customer page shows what staff did");
+
+  // other GeoEstate products: a FarmScan demo, then a paid Land Registry licence, then one taken away
+  const products = () => within(screen.getByRole("heading", { name: "Other GeoEstate products" }).closest("section")!);
+  ok(/None yet/.test(products().getByText(/None yet/).textContent ?? ""), "a customer starts with no other products");
+  await click(products().getByRole("button", { name: "Add a product" }));
+  type(products().getByLabelText("Product"), "farm");
+  await click(products().getByRole("radio", { name: /month's demo/ }));
+  ok(!products().queryByLabelText("From"), "a demo needs no dates");
+  await click(products().getByRole("button", { name: "Give FarmScan" }));
+  await until(() => /has FarmScan on a month.s demo/.test(text()));
+  await until(() => products().queryAllByRole("listitem").length === 1);
+  ok(/FarmScan Standard \(demo\)/.test(products().getAllByRole("listitem")[0].textContent ?? ""), "a FarmScan demo is given");
+  await click(products().getByRole("button", { name: "Add a product" }));
+  type(products().getByLabelText("Product"), "land");
+  type(products().getByLabelText("Plan"), "advanced");
+  ok((products().getByLabelText("To") as HTMLInputElement).value === yearFrom((products().getByLabelText("From") as HTMLInputElement).value), "a paid product runs a year by default");
+  type(products().getByLabelText("Invoice number"), "GE-2026-0300");
+  await click(products().getByRole("button", { name: "Give Land Registry" }));
+  await until(() => products().getAllByRole("listitem").length === 2);
+  ok(/Land Registry Advanced/.test(products().getByText(/Land Registry Advanced/).textContent ?? "") && /GE-2026-0300/.test(text()) && /Land Registry/.test(within(screen.getByRole("heading", { name: "Licence history" }).closest("section")!).getAllByRole("row")[1].textContent ?? ""),
+    "a paid Land Registry licence, in the history with its invoice and product");
+  const farmItem = products().getAllByRole("listitem").find((li) => /FarmScan/.test(li.textContent ?? ""))!;
+  await click(within(farmItem).getByRole("button", { name: "Remove" }));
+  type(products().getByLabelText(/^Why\?/), "Demo not taken up");
+  await click(products().getByRole("button", { name: "Take FarmScan away" }));
+  await confirmWith("Take it away");
+  await until(() => products().getAllByRole("listitem").length === 1);
+  ok(products().getAllByRole("listitem").length === 1 && /Taken away/.test(text()), "a product is taken away, and the history says so");
   cleanup();
 
   // ---- requests: set up the demo asked for above
