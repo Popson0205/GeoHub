@@ -7,6 +7,7 @@ import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, O
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
   Dashboard, DashboardConfig, DashboardSharing, ImportOptions, PublicDashboard,
+  StaffMe, StaffMember, StaffNote, StaffActivity, StaffRole, AdminOrgDetail, LicenceStatus,
   Team, ProjectTeam, TeamProjectRole, ImportResult, MfaStatus, MfaSetup, ApiKey, ApiKeyCreated, AddableRole,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "./types";
@@ -79,6 +80,22 @@ export interface Api {
   adminUpdateOrg(id: string, patch: AdminOrgPatch): Promise<AdminOrg>;
   adminListRequests(): Promise<OrgRequest[]>;
   adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }): Promise<OrgRequest>;
+  // ---- the staff console
+  adminMe(): Promise<StaffMe>;
+  adminListCustomers(filter?: { q?: string; status?: LicenceStatus | "due" }): Promise<AdminOrg[]>;
+  adminGetOrg(id: string): Promise<AdminOrgDetail>;
+  adminSuspend(id: string, reason: string): Promise<AdminOrg>;
+  adminReactivate(id: string): Promise<AdminOrg>;
+  adminAddNote(orgId: string, body: string): Promise<StaffNote>;
+  adminDeleteNote(noteId: string): Promise<void>;
+  adminSendLink(orgId: string, userId: string): Promise<void>;
+  adminResetMfa(orgId: string, userId: string): Promise<void>;
+  adminMakeOwner(orgId: string, userId: string): Promise<AdminOrgDetail>;
+  adminListStaff(): Promise<StaffMember[]>;
+  adminAddStaff(input: { email: string; name?: string; role: StaffRole }): Promise<StaffMember[]>;
+  adminSetStaffRole(userId: string, role: StaffRole): Promise<StaffMember[]>;
+  adminRemoveStaff(userId: string): Promise<StaffMember[]>;
+  adminActivity(filter?: { org_id?: string; actor_id?: string; before?: number }): Promise<StaffActivity[]>;
   logout(): Promise<void>;
   me(): Promise<User>;
   // ---- two-step sign-in
@@ -769,6 +786,29 @@ class HttpApi implements Api {
   adminUpdateOrg(id: string, patch: AdminOrgPatch) { return this.req<AdminOrg>("PATCH", `/admin/orgs/${id}`, patch); }
   adminListRequests() { return this.req<OrgRequest[]>("GET", "/admin/requests"); }
   adminUpdateRequest(id: string, patch: { status?: RequestStatus; note?: string }) { return this.req<OrgRequest>("PATCH", `/admin/requests/${id}`, patch); }
+  adminMe() { return this.req<StaffMe>("GET", "/admin/me"); }
+  adminListCustomers(filter: { q?: string; status?: LicenceStatus | "due" } = {}) {
+    const q = new URLSearchParams();
+    if (filter.q) q.set("q", filter.q);
+    if (filter.status) q.set("status", filter.status);
+    return this.req<AdminOrg[]>("GET", `/admin/orgs${q.size ? `?${q}` : ""}`);
+  }
+  adminGetOrg(id: string) { return this.req<AdminOrgDetail>("GET", `/admin/orgs/${id}`); }
+  adminSuspend(id: string, reason: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/suspend`, { reason }); }
+  adminReactivate(id: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/reactivate`); }
+  adminAddNote(orgId: string, body: string) { return this.req<StaffNote>("POST", `/admin/orgs/${orgId}/notes`, { body }); }
+  async adminDeleteNote(noteId: string) { await this.req("DELETE", `/admin/notes/${noteId}`); }
+  async adminSendLink(orgId: string, userId: string) { await this.req("POST", `/admin/orgs/${orgId}/people/${userId}/send-link`); }
+  async adminResetMfa(orgId: string, userId: string) { await this.req("DELETE", `/admin/orgs/${orgId}/people/${userId}/mfa`); }
+  adminMakeOwner(orgId: string, userId: string) { return this.req<AdminOrgDetail>("POST", `/admin/orgs/${orgId}/owner`, { user_id: userId }); }
+  adminListStaff() { return this.req<StaffMember[]>("GET", "/admin/staff"); }
+  adminAddStaff(input: { email: string; name?: string; role: StaffRole }) { return this.req<StaffMember[]>("POST", "/admin/staff", input); }
+  adminSetStaffRole(userId: string, role: StaffRole) { return this.req<StaffMember[]>("PATCH", `/admin/staff/${userId}`, { role }); }
+  adminRemoveStaff(userId: string) { return this.req<StaffMember[]>("DELETE", `/admin/staff/${userId}`); }
+  adminActivity(filter: { org_id?: string; actor_id?: string; before?: number } = {}) {
+    const q = new URLSearchParams(Object.entries(filter).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
+    return this.req<StaffActivity[]>("GET", `/admin/activity${q.size ? `?${q}` : ""}`);
+  }
   async listActivity(projectId: string, opts: { kind?: AuditKind; actor?: string; cursor?: string | null } = {}) {
     const q = new URLSearchParams({ limit: "50" });
     if (opts.kind) q.set("kind", opts.kind);

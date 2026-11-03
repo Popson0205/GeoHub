@@ -12,6 +12,7 @@ import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
+  StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
   Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
@@ -30,6 +31,7 @@ interface State {
     branding?: OrgBranding; require_mfa?: boolean };
   orgMembers?: OrgMember[];
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
+  staffList?: StaffMember[]; licenceLog?: Record<string, LicenceEvent[]>; staffNotes?: Record<string, StaffNote[]>; staffActivity?: StaffActivity[];
   teams?: { id: string; name: string; description: string; created_at: string; members: { user_id: string; lead: boolean }[] }[];
   projectTeams?: { project_id: string; team_id: string; role: TeamProjectRole }[];
   mfa?: { enabled_at: string | null; pending: boolean; recovery: string[] };
@@ -96,7 +98,7 @@ export class MockApi implements Api {
     const b = org.branding;
     const brand = org.plan !== "individual" && (b?.color || b?.logo_url) ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null } : null;
     const mfaOn = !!this.s.mfa?.enabled_at;
-    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand }, must_change_password: false, platform_admin: true,
+    return { ...DEMO_USER, org: { id: org.id, name: org.name, slug: org.slug, role, plan: org.plan, brand }, must_change_password: false, platform_admin: true, staff_role: "super_admin",
       mfa_enabled: mfaOn, mfa_setup_required: !!org.require_mfa && !mfaOn };
   }
   async getOrg(): Promise<Org> {
@@ -278,12 +280,15 @@ export class MockApi implements Api {
         id, name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), plan, plan_name: PLAN_NAMES[plan], caps: { ...PLAN_CAPS[plan] }, limits: {},
         usage: { seats: usage[0], collectors: usage[1], viewers: usage[2], projects: 3, records: 1200 },
         subscription_starts: ends == null ? null : d(ends - 365), subscription_ends: ends == null ? null : d(ends), days_left: ends,
-        owner_name: owner[0], owner_email: owner[1], created_at: ago(400 - (ends ?? 0)) });
+        owner_name: owner[0], owner_email: owner[1], created_at: ago(400 - (ends ?? 0)), licence_kind: "paid", suspended_at: null, suspended_reason: null,
+        last_active: ago(2) });
       this.s.adminOrgs = [
         org("org-a", "Lagos Survey Ltd", "standard", 24, ["Ada Obi", "ada@lagossurvey.example.com"], [7, 31, 12]),
         org("org-b", "Kaduna State Land Agency", "advanced", 210, ["Musa Bello", "musa@kadland.example.com"], [22, 180, 64]),
         org("org-c", "Green Cities NGO", "custom", null, ["Tolu Adeyemi", "tolu@greencities.example.com"], [40, 400, 90]),
+        org("org-d", "Ogun Farm Mapping", "standard", -5, ["Femi Ojo", "femi@ogunfarms.example.com"], [3, 12, 2]),
       ];
+      this.s.adminOrgs = this.s.adminOrgs.map((o) => this.fill(o));
       this.s.orgRequests = [{ id: "req-1", organization: "Ibadan Water Board", contact_name: "Kemi Lawal", email: "kemi@ibwater.example.com",
         phone: "+234 803 000 0000", plan: "standard", team_size: "8 staff, 40 field collectors", message: "We map boreholes across Oyo State.",
         status: "new", note: null, org_id: null, created_at: ago(1), updated_at: ago(1) }];
@@ -291,6 +296,121 @@ export class MockApi implements Api {
     return { orgs: this.s.adminOrgs, requests: this.s.orgRequests! };
   }
   private staff() { this.auth(); if (!this.me_().platform_admin) throw new ApiError(404, "Not found."); }
+  // ---- the staff console (demo: you are a super admin)
+  private get staffState() {
+    this.s.staffList ??= [{ user_id: DEMO_USER.id, name: DEMO_USER.name, email: DEMO_USER.email, role: "super_admin", mfa_enabled: true, from_settings: true, last_active: new Date().toISOString() }];
+    this.s.licenceLog ??= {}; this.s.staffNotes ??= {}; this.s.staffActivity ??= [];
+    return { staff: this.s.staffList, log: this.s.licenceLog, notes: this.s.staffNotes, activity: this.s.staffActivity };
+  }
+  private logStaff(action: string, orgId: string | null, details: Record<string, unknown> = {}) {
+    const o = orgId ? this.adminState.orgs.find((x) => x.id === orgId) : undefined;
+    this.staffState.activity.unshift({ id: this.staffState.activity.length + 1, at: new Date().toISOString(), action: `platform.${action}`,
+      actor_id: DEMO_USER.id, actor_name: DEMO_USER.name, org_id: orgId, org_name: o?.name ?? null, target_type: orgId ? "organization" : null, target_id: orgId, details });
+  }
+  private logLicence(o: AdminOrg, action: string, invoice_ref?: string, note?: string) {
+    const log = (this.staffState.log[o.id] ??= []);
+    log.unshift({ id: Date.now() + log.length, action, plan: o.plan, kind: o.licence_kind ?? "paid", starts: o.subscription_starts, ends: o.subscription_ends,
+      limits: o.limits, invoice_ref: invoice_ref?.trim() || null, note: note?.trim() || null, actor_name: DEMO_USER.name, at: new Date().toISOString() });
+  }
+  async adminMe(): Promise<StaffMe> {
+    await wait(40); this.staff();
+    return { role: "super_admin", role_name: "Super admin", perms: ["customers.view", "audit.view", "customers.support", "licences.edit", "requests.edit", "staff.manage"], mfa_ok: true };
+  }
+  async adminListCustomers(filter: { q?: string; status?: LicenceStatus | "due" } = {}) {
+    const all = (await this.adminListOrgs(filter.q)).map((o) => this.fill(o));
+    if (filter.status === "due") return all.filter((o) => o.days_left != null && o.days_left >= 0 && o.days_left <= 60 && !o.suspended_at);
+    return filter.status ? all.filter((o) => o.status === filter.status) : all;
+  }
+  private customer(id: string) { const o = this.adminState.orgs.find((x) => x.id === id); if (!o) throw new ApiError(404, "Organization not found."); return o; }
+  async adminGetOrg(id: string): Promise<AdminOrgDetail> {
+    await wait(); this.staff();
+    const o = this.fill(this.customer(id));
+    const ago = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+    const people: AdminPerson[] = [
+      { user_id: `${id}-owner`, name: o.owner_name ?? "Owner", email: o.owner_email ?? "", role: "owner", mfa_enabled: true, last_active: ago(1), joined_at: o.created_at },
+      { user_id: `${id}-p2`, name: "Bola Ade", email: `bola@${(o.owner_email ?? "x@client.example.com").split("@")[1]}`, role: "admin", mfa_enabled: false, last_active: ago(6), joined_at: o.created_at },
+      { user_id: `${id}-p3`, name: "Chidi Eze", email: `chidi@${(o.owner_email ?? "x@client.example.com").split("@")[1]}`, role: "collector", mfa_enabled: false, last_active: null, joined_at: o.created_at },
+    ];
+    const s = this.staffState;
+    if (!s.log[id]?.length) this.logLicence(o, "create");
+    return { ...o, people, invited: 1, api_keys: 0, teams: 1, licences: [...s.log[id]], notes: [...(s.notes[id] ?? [])],
+      activity: s.activity.filter((a) => a.org_id === id) };
+  }
+  async adminSuspend(id: string, reason: string) {
+    await wait(); this.staff();
+    const o = this.customer(id); Object.assign(o, { suspended_at: new Date().toISOString(), suspended_reason: reason.trim() });
+    const f = this.fill(o); Object.assign(o, f); this.logLicence(o, "suspend", undefined, reason); this.logStaff("org_suspend", id, { reason }); this.save();
+    return f;
+  }
+  async adminReactivate(id: string) {
+    await wait(); this.staff();
+    const o = this.customer(id);
+    if (!o.suspended_at) throw new ApiError(409, "This customer is not suspended.");
+    Object.assign(o, { suspended_at: null, suspended_reason: null });
+    const f = this.fill(o); Object.assign(o, f); this.logLicence(o, "reactivate"); this.logStaff("org_reactivate", id); this.save();
+    return f;
+  }
+  async adminAddNote(orgId: string, body: string) {
+    await wait(); this.staff(); this.customer(orgId);
+    const n: StaffNote = { id: uuid(), body: body.trim(), author_id: DEMO_USER.id, author_name: DEMO_USER.name, created_at: new Date().toISOString() };
+    (this.staffState.notes[orgId] ??= []).unshift(n); this.logStaff("note_add", orgId); this.save();
+    return n;
+  }
+  async adminDeleteNote(noteId: string) {
+    await wait(); this.staff();
+    for (const [orgId, list] of Object.entries(this.staffState.notes)) {
+      const i = list.findIndex((n) => n.id === noteId);
+      if (i >= 0) { list.splice(i, 1); this.logStaff("note_delete", orgId); this.save(); return; }
+    }
+    throw new ApiError(404, "Note not found.");
+  }
+  async adminSendLink(orgId: string, userId: string) { await wait(); this.staff(); this.customer(orgId); this.logStaff("send_link", orgId, { user: userId }); this.save(); }
+  async adminResetMfa(orgId: string, userId: string) {
+    await wait(); this.staff(); this.customer(orgId);
+    if (!userId.endsWith("-owner")) throw new ApiError(409, "They do not have two-step sign-in on.");
+    this.logStaff("mfa_reset", orgId, { user: userId }); this.save();
+  }
+  async adminMakeOwner(orgId: string, userId: string) {
+    await wait(); this.staff();
+    const d = await this.adminGetOrg(orgId);
+    const p = d.people.find((x) => x.user_id === userId);
+    if (!p) throw new ApiError(404, "That person is not in this organization.");
+    Object.assign(this.customer(orgId), { owner_name: p.name, owner_email: p.email });
+    this.logStaff("owner_transfer", orgId, { user: userId }); this.save();
+    const after = await this.adminGetOrg(orgId);
+    after.people = after.people.map((x) => (x.email === p.email ? { ...x, role: "owner" } : x.role === "owner" && x.email !== p.email ? { ...x, role: "admin" } : x));
+    return after;
+  }
+  async adminListStaff() { await wait(); this.staff(); return [...this.staffState.staff]; }
+  async adminAddStaff(input: { email: string; name?: string; role: StaffRole }) {
+    await wait(); this.staff();
+    const email = input.email.trim().toLowerCase();
+    if (this.staffState.staff.some((x) => x.email === email)) throw new ApiError(409, "That person is already on the staff. Change their role instead.");
+    this.staffState.staff.push({ user_id: uuid(), name: input.name?.trim() || email.split("@")[0], email, role: input.role, mfa_enabled: false, from_settings: false,
+      last_active: null, created_at: new Date().toISOString() });
+    this.logStaff("staff_add", null, { email, role: input.role }); this.save();
+    return [...this.staffState.staff];
+  }
+  async adminSetStaffRole(userId: string, role: StaffRole) {
+    await wait(); this.staff();
+    if (userId === DEMO_USER.id) throw new ApiError(409, "Ask another super admin to change your own role.");
+    const m = this.staffState.staff.find((x) => x.user_id === userId);
+    if (!m || m.from_settings) throw new ApiError(404, "That person is not on the staff, or is in PLATFORM_ADMINS (changed only there).");
+    m.role = role; this.logStaff("staff_update", null, { role }); this.save();
+    return [...this.staffState.staff];
+  }
+  async adminRemoveStaff(userId: string) {
+    await wait(); this.staff();
+    if (userId === DEMO_USER.id) throw new ApiError(409, "Ask another super admin to remove you.");
+    const i = this.staffState.staff.findIndex((x) => x.user_id === userId && !x.from_settings);
+    if (i < 0) throw new ApiError(404, "That person is not on the staff, or is in PLATFORM_ADMINS (removed only there).");
+    const [m] = this.staffState.staff.splice(i, 1); this.logStaff("staff_remove", null, { email: m.email }); this.save();
+    return [...this.staffState.staff];
+  }
+  async adminActivity(filter: { org_id?: string; actor_id?: string; before?: number } = {}) {
+    await wait(); this.staff();
+    return this.staffState.activity.filter((a) => (!filter.org_id || a.org_id === filter.org_id) && (!filter.before || a.id < filter.before));
+  }
   async requestOrganization(input: OrgRequestInput) {
     await wait();
     if (input.website) return;
@@ -306,13 +426,22 @@ export class MockApi implements Api {
   private fill(o: AdminOrg): AdminOrg {
     const caps = { ...(PLAN_CAPS[o.plan] ?? PLAN_CAPS.individual), ...o.limits } as AdminOrg["caps"];
     const days = o.subscription_ends ? Math.round((Date.parse(o.subscription_ends) - Date.parse(new Date().toISOString().slice(0, 10))) / 86400000) : null;
-    return { ...o, plan_name: PLAN_NAMES[o.plan] ?? o.plan, caps, days_left: days };
+    const kind = o.licence_kind ?? "paid";
+    const status: LicenceStatus = o.suspended_at ? "suspended" : o.plan === "individual" ? "free" : days == null || days >= 0 ? (kind === "demo" ? "demo" : "active")
+      : days >= -14 ? "grace" : "expired";
+    const grace = o.subscription_ends ? new Date(Date.parse(o.subscription_ends) + 14 * 86400000).toISOString().slice(0, 10) : null;
+    return { ...o, plan_name: PLAN_NAMES[o.plan] ?? o.plan, caps, days_left: days, licence_kind: kind, status, grace_ends: grace };
   }
   private checkDates(starts?: string | null, ends?: string | null) {
     if (starts && ends && ends < starts) throw new ApiError(422, "The subscription cannot end before it starts.", { subscription_ends: "before start" });
   }
   async adminCreateOrg(input: AdminOrgInput) {
     await wait(); this.staff();
+    const demo = input.licence_kind === "demo";
+    if (demo) {
+      const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+      input = { ...input, plan: "advanced", subscription_starts: input.subscription_starts || day(0), subscription_ends: input.subscription_ends || day(29) };
+    }
     this.checkDates(input.subscription_starts, input.subscription_ends);
     const { orgs, requests } = this.adminState;
     const email = input.owner_email.trim().toLowerCase();
@@ -320,8 +449,10 @@ export class MockApi implements Api {
     const o = this.fill({ id: uuid(), name: input.name.trim(), slug: input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), plan: input.plan,
       plan_name: "", caps: PLAN_CAPS.individual, limits: input.limits ?? {}, usage: { seats: 1, collectors: 0, viewers: 0, projects: 0, records: 0 },
       subscription_starts: input.subscription_starts ?? null, subscription_ends: input.subscription_ends ?? null, days_left: null,
-      owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString() });
+      owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString(), licence_kind: demo ? "demo" : "paid", last_active: null });
     orgs.unshift(o);
+    this.logLicence(o, demo ? "demo" : "create", input.invoice_ref, input.note);
+    this.logStaff("org_create", o.id, { plan: o.plan, kind: o.licence_kind });
     const r = requests.find((x) => x.id === input.request_id);
     if (r) Object.assign(r, { status: "set_up", org_id: o.id, updated_at: new Date().toISOString() });
     this.save();
@@ -333,12 +464,17 @@ export class MockApi implements Api {
     const i = orgs.findIndex((o) => o.id === id);
     if (i < 0) throw new ApiError(404, "Organization not found.");
     const o = orgs[i];
-    const next = { ...o, ...(patch.name != null && { name: patch.name.trim() }), ...(patch.plan && { plan: patch.plan }),
+    const next = { ...o, ...(patch.name != null && { name: patch.name.trim() }), ...(patch.plan && { plan: patch.plan }), ...(patch.licence_kind && { licence_kind: patch.licence_kind }),
       ...(patch.limits && { limits: patch.limits }),
       ...(patch.clear_dates ? { subscription_starts: null, subscription_ends: null } : {
         subscription_starts: patch.subscription_starts ?? o.subscription_starts, subscription_ends: patch.subscription_ends ?? o.subscription_ends }) };
     this.checkDates(next.subscription_starts, next.subscription_ends);
-    orgs[i] = this.fill(next); this.save();
+    orgs[i] = this.fill(next);
+    if (patch.plan || patch.licence_kind || patch.limits || patch.subscription_starts || patch.subscription_ends || patch.clear_dates) {
+      const renewed = !!(patch.subscription_ends && o.subscription_ends && patch.subscription_ends > o.subscription_ends);
+      this.logLicence(orgs[i], renewed ? "renew" : "change", patch.invoice_ref, patch.note);
+    }
+    this.logStaff("org_update", id); this.save();
     return orgs[i];
   }
   async adminListRequests() { await wait(); this.staff(); return [...this.adminState.requests]; }

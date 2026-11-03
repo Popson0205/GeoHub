@@ -35,6 +35,7 @@ const DataPage = lazy(() => import("./pages/DataPage"));
 const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const OrgSettingsPage = lazy(() => import("./pages/OrgSettingsPage"));
 const SecurityPage = lazy(() => import("./pages/SecurityPage"));
+const AdminCustomerPage = lazy(() => import("./pages/AdminCustomerPage"));
 const DashboardApp = lazy(() => import("./pages/DashboardApp"));
 const DashboardReports = lazy(() => import("./pages/DashboardReports"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -139,6 +140,7 @@ export default function App() {
         <Route path="/settings/organization" element={<RequireAuth><OrgSettingsPage /></RequireAuth>} />
         <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
+        <Route path="/admin/customers/:orgId" element={<RequireAuth><AdminCustomerPage /></RequireAuth>} />
         {/* Dashboards: their own app. A gallery, a reports page, and the builder above */}
         <Route path="/dashboards" element={<RequireAuth><DashboardApp /></RequireAuth>} />
         <Route path="/dashboards/reports" element={<RequireAuth><DashboardReports /></RequireAuth>} />

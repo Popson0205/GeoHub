@@ -184,6 +184,10 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await click(ptCard().getByRole("button", { name: "Add team" }));
   await until(() => !!ptCard().queryByLabelText("Role of South"));
   ok((ptCard().getByLabelText("Role of South") as HTMLSelectElement).value === "viewer", "a project's admins give it a team, with a role");
+  await act(async () => { fireEvent.change(ptCard().getByLabelText("Role of South"), { target: { value: "admin" } }); });
+  const southId = api.s.teams.find((t: any) => t.name === "South").id;
+  await until(() => api.s.projectTeams.find((x: any) => x.project_id === "p1" && x.team_id === southId)?.role === "admin");
+  ok(api.s.projectTeams.find((x: any) => x.project_id === "p1" && x.team_id === southId)?.role === "admin", "and change the team's role");
   await click(ptCard().getByRole("button", { name: "Take South off this project" }));
   await until(() => !ptCard().queryByLabelText("Role of South"));
   ok(!api.s.projectTeams.some((x: any) => x.project_id === "p1" && x.team_id === api.s.teams.find((t: any) => t.name === "South").id), "and take it off again");

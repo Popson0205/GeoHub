@@ -6,6 +6,7 @@ import { loadApi } from "../lib/api";
 import type { OrgRequestInput, RequestPlan } from "../lib/types";
 
 const PLANS: { id: RequestPlan; name: string; detail: string }[] = [
+  { id: "demo", name: "One-month demo", detail: "Free for 30 days, with everything in Organization Advanced" },
   { id: "standard", name: "Organization Standard", detail: "$500 a year · 10 team seats, 50 field collectors, 50 viewers" },
   { id: "advanced", name: "Organization Advanced", detail: "$1,000 a year · 30 team seats, 300 field collectors, unlimited viewers" },
   { id: "custom", name: "Custom", detail: "Your own server or more people than Advanced" },
@@ -36,7 +37,7 @@ export default function RequestOrgPage() {
       <AuthFrame>
         <div className="auth-msg" role="status">
           <h1>Thank you</h1>
-          <p>We have your request for <strong>{f.organization}</strong>. GeoEstate NIG Limited will contact you at <strong>{f.email}</strong> within two working days with an invoice and next steps.</p>
+          <p>We have your request for <strong>{f.organization}</strong>. GeoEstate NIG Limited will contact you at <strong>{f.email}</strong> within two working days {f.plan === "demo" ? "to set up your one-month demo" : "with an invoice and next steps"}.</p>
           <p><Link to="/login">Back to sign in</Link></p>
         </div>
       </AuthFrame>
@@ -46,7 +47,7 @@ export default function RequestOrgPage() {
     <AuthFrame>
       <form onSubmit={submit} className="request-org">
         <h1>Request an organization</h1>
-        <p className="field-hint">For companies, agencies and NGOs. Plans are paid yearly by invoice from GeoEstate NIG Limited; we set everything up and you add your team. Students and individuals can <Link to="/login">create a free account</Link> instead.</p>
+        <p className="field-hint">For companies, agencies and NGOs. Plans are paid yearly by invoice from GeoEstate NIG Limited, or try one free for a month first; we set everything up and you add your team. Students and individuals can <Link to="/login">create a free account</Link> instead.</p>
         <div className="field"><label htmlFor="ro-org">Organization name</label>
           <input id="ro-org" required maxLength={120} autoComplete="organization" value={f.organization} onChange={(e) => set("organization", e.target.value)} /></div>
         <div className="field"><label htmlFor="ro-name">Your name</label>
