@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+import type { ProductId, ProductInput, ProductLicence, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
   AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
@@ -36,6 +36,8 @@ export interface Api {
   register(name: string, email: string, password: string, organization?: string): Promise<Session>;
   // ---- organization
   getOrg(): Promise<Org>;
+  /** The GeoEstate products your organization has, Geohub first. */
+  orgProducts(): Promise<ProductLicence[]>;
   renameOrg(name: string): Promise<Org>;
   listOrgMembers(): Promise<OrgMember[]>;
   inviteOrgMember(email: string, role: "admin" | "member"): Promise<OrgMember>;
@@ -86,6 +88,9 @@ export interface Api {
   adminGetOrg(id: string): Promise<AdminOrgDetail>;
   adminSuspend(id: string, reason: string): Promise<AdminOrg>;
   adminReactivate(id: string): Promise<AdminOrg>;
+  /** Give a customer another product (Land Registry, LandCheck, FarmScan), or change it. */
+  adminPutProduct(orgId: string, product: ProductId, input: ProductInput): Promise<ProductLicence[]>;
+  adminRemoveProduct(orgId: string, product: ProductId, note: string): Promise<ProductLicence[]>;
   adminAddNote(orgId: string, body: string): Promise<StaffNote>;
   adminDeleteNote(noteId: string): Promise<void>;
   adminSendLink(orgId: string, userId: string): Promise<void>;
@@ -728,6 +733,7 @@ class HttpApi implements Api {
   createExport(slug: string, format: ExportFormat) { return this.req<Wire>("POST", `/datasets/${slug}/exports`, { format }).then(toJob); }
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
   getOrg() { return this.req<Org>("GET", "/org"); }
+  orgProducts() { return this.req<ProductLicence[]>("GET", "/org/products"); }
   renameOrg(name: string) { return this.req<Org>("PATCH", "/org", { name }); }
   listOrgMembers() { return this.req<OrgMember[]>("GET", "/org/members"); }
   inviteOrgMember(email: string, role: "admin" | "member") { return this.req<OrgMember>("POST", "/org/members", { email, role }); }
@@ -805,6 +811,8 @@ class HttpApi implements Api {
   listSupportVisits() { return this.req<SupportVisit[]>("GET", "/org/support-visits"); }
   adminSuspend(id: string, reason: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/suspend`, { reason }); }
   adminReactivate(id: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/reactivate`); }
+  adminPutProduct(orgId: string, product: ProductId, input: ProductInput) { return this.req<ProductLicence[]>("PUT", `/admin/orgs/${orgId}/products/${product}`, input); }
+  adminRemoveProduct(orgId: string, product: ProductId, note: string) { return this.req<ProductLicence[]>("POST", `/admin/orgs/${orgId}/products/${product}/remove`, { note }); }
   adminAddNote(orgId: string, body: string) { return this.req<StaffNote>("POST", `/admin/orgs/${orgId}/notes`, { body }); }
   async adminDeleteNote(noteId: string) { await this.req("DELETE", `/admin/notes/${noteId}`); }
   async adminSendLink(orgId: string, userId: string) { await this.req("POST", `/admin/orgs/${orgId}/people/${userId}/send-link`); }

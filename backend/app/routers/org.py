@@ -7,7 +7,7 @@ from uuid import UUID
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, Response, UploadFile
 
-from .. import branding, domains, orgs, peopleimport, ratelimit
+from .. import branding, domains, orgs, peopleimport, products, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -16,7 +16,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from .. import passwords
-from ..schemas import SupportVisitOut, AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from ..schemas import ProductOut, SupportVisitOut, AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
 public_router = APIRouter(tags=["organization"])
@@ -41,6 +41,12 @@ async def _out(conn, m: dict) -> dict:
 @router.get("", response_model=OrgOut, summary="Your organization, its plan and what it uses")
 async def get_org(user=Depends(current_user), conn=Depends(get_conn)):
     return await _out(conn, await orgs.require_membership(conn, user))
+
+
+@router.get("/products", response_model=list[ProductOut], summary="The GeoEstate products your organization has, Geohub first")
+async def get_products(user=Depends(current_user), conn=Depends(get_conn)):
+    m = await orgs.require_membership(conn, user)
+    return await products.of_org(conn, m["org_id"])
 
 
 @router.patch("", response_model=OrgOut, summary="Rename the organization (admins)")

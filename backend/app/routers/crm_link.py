@@ -9,13 +9,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from .. import licences, orgs
+from .. import licences, orgs, products
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
 from ..errors import Problem
 from ..logging_setup import client_ip
-from ..schemas import AdminOrgIn, OrgRequestOut, PlanId
+from ..schemas import AdminOrgIn, OrgRequestOut, PlanId, ProductOut
 from .admin import ORG_SQL, setup_org
 
 
@@ -50,6 +50,7 @@ class CrmOrgOut(BaseModel):
     last_active: datetime | None
     console_url: str = Field(description="The customer's page in the Geohub staff console")
     already_applied: bool = False
+    products: list[ProductOut] = Field(default_factory=list, description="Every product it has, Geohub first")
 
 
 class CrmSetupIn(AdminOrgIn):
@@ -57,12 +58,17 @@ class CrmSetupIn(AdminOrgIn):
 
 
 class CrmLicenceIn(BaseModel):
+    product: Literal["hub", "land", "check", "farm"] = Field("hub", description="Which product the invoice pays for")
     plan: PlanId
     subscription_starts: date
     subscription_ends: date
     invoice_ref: str = Field(min_length=1, max_length=80)
     staff_name: str = Field(min_length=1, max_length=120)
     lift_suspension: bool = Field(False, description="Also lift a suspension (for example one for non-payment)")
+
+
+async def _full(conn, row: dict, **extra) -> dict:
+    return _out(row, products=await products.of_org(conn, row["id"]), **extra)
 
 
 def _out(row: dict, **extra) -> dict:
@@ -96,12 +102,12 @@ async def list_orgs(q: str | None = None, ids: str | None = None, conn=Depends(g
     if q:
         where.append("(o.name ILIKE %s OR ou.email ILIKE %s)"); params += [f"%{q}%"] * 2
     cur = await conn.execute(ORG_SQL + "WHERE " + " AND ".join(where) + " ORDER BY lower(o.name) LIMIT 500", params)
-    return [_out(r) for r in await cur.fetchall()]
+    return [await _full(conn, r) for r in await cur.fetchall()]
 
 
-@router.get("/orgs/{org_id}", response_model=CrmOrgOut, summary="One customer and its licence today")
+@router.get("/orgs/{org_id}", response_model=CrmOrgOut, summary="One customer and its licences today")
 async def get_org(org_id: UUID, conn=Depends(get_conn)):
-    return _out(await _one(conn, org_id))
+    return await _full(conn, await _one(conn, org_id))
 
 
 @router.get("/requests", response_model=list[OrgRequestOut], summary="Requests from the website, newest first")
@@ -116,7 +122,7 @@ async def create_org(body: CrmSetupIn, request: Request, conn=Depends(get_conn))
     org_id = await setup_org(conn, body, None, note_suffix=f"(by {body.staff_name.strip()} in the GeoEstate CRM)")
     await _log(conn, request, "org_create", org_id, body.staff_name, kind=body.licence_kind, owner=body.owner_email.lower(),
                plan=licences.DEMO_PLAN if body.licence_kind == "demo" else body.plan)
-    return _out(await _one(conn, org_id))
+    return await _full(conn, await _one(conn, org_id))
 
 
 @router.post("/orgs/{org_id}/licence", response_model=CrmOrgOut, summary="Switch on the licence a paid invoice buys")
@@ -128,19 +134,30 @@ async def apply_licence(org_id: UUID, body: CrmLicenceIn, request: Request, conn
     if body.plan == "individual":
         raise Problem(422, "Customers are on an Organization plan.", code="validation", fields={"plan": ["not for customers"]})
     ref = body.invoice_ref.strip()
-    cur = await conn.execute("SELECT 1 FROM licence_events WHERE org_id = %s AND invoice_ref = %s AND action IN ('create','renew','change')",
-                             (org_id, ref))
+    cur = await conn.execute("SELECT 1 FROM licence_events WHERE org_id = %s AND product = %s AND invoice_ref = %s "
+                             "AND action IN ('create','renew','change')", (org_id, body.product, ref))
     if await cur.fetchone():
-        return _out(now, already_applied=True)
-    await conn.execute("UPDATE organizations SET plan = %s, licence_kind = 'paid', subscription_starts = %s, subscription_ends = %s "
-                       "WHERE id = %s", (body.plan, body.subscription_starts, body.subscription_ends, org_id))
-    renewed = bool(now["subscription_ends"] and body.subscription_ends > now["subscription_ends"]) or now["licence_kind"] == "demo"
+        return await _full(conn, now, already_applied=True)
     by = f"Paid invoice, applied by {body.staff_name.strip()} in the GeoEstate CRM."
-    await licences.record(conn, org_id, "renew" if renewed or not now["subscription_ends"] else "change", None, ref, by)
+    if body.product == "hub":
+        await conn.execute("UPDATE organizations SET plan = %s, licence_kind = 'paid', subscription_starts = %s, subscription_ends = %s "
+                           "WHERE id = %s", (body.plan, body.subscription_starts, body.subscription_ends, org_id))
+        renewed = bool(now["subscription_ends"] and body.subscription_ends > now["subscription_ends"]) or now["licence_kind"] == "demo"
+        action = "renew" if renewed or not now["subscription_ends"] else "change"
+    else:
+        if now["plan"] == "individual":
+            raise Problem(409, "This is an Individual account, not an organization. Set it up as an organization first.",
+                          code="individual")
+        if body.plan == "individual":
+            raise Problem(422, "Products have Standard, Advanced or Custom plans.", code="validation", fields={"plan": ["not for products"]})
+        action = await products.put(conn, org_id, body.product, plan=body.plan, kind="paid",
+                                    starts=body.subscription_starts, ends=body.subscription_ends)
+    await products.record(conn, org_id, body.product, action, None, ref, by)
     if body.lift_suspension and now["suspended_at"]:
         await conn.execute("UPDATE organizations SET suspended_at = NULL, suspended_reason = NULL WHERE id = %s", (org_id,))
         await licences.record(conn, org_id, "reactivate", None, ref, by)
-    await _log(conn, request, "org_update", org_id, body.staff_name, plan=body.plan, licence_kind="paid", invoice_ref=ref,
-               subscription_starts=body.subscription_starts.isoformat(), subscription_ends=body.subscription_ends.isoformat(),
+    await _log(conn, request, "org_update", org_id, body.staff_name, product=body.product, plan=body.plan, licence_kind="paid",
+               invoice_ref=ref, subscription_starts=body.subscription_starts.isoformat(),
+               subscription_ends=body.subscription_ends.isoformat(),
                **({"lift_suspension": True} if body.lift_suspension and now["suspended_at"] else {}))
-    return _out(await _one(conn, org_id))
+    return await _full(conn, await _one(conn, org_id))

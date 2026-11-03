@@ -95,5 +95,5 @@ export function describe(a: StaffActivity): string {
     : key === "domain_add" && a.details.domain ? ` (${String(a.details.domain)})` : "";
   return `${what}${extra}`;
 }
-const LICENCE_ACTIONS: Record<string, string> = { create: "Set up", demo: "Demo started", renew: "Renewed", change: "Changed", suspend: "Suspended", reactivate: "Reactivated" };
+const LICENCE_ACTIONS: Record<string, string> = { create: "Set up", demo: "Demo started", renew: "Renewed", change: "Changed", suspend: "Suspended", reactivate: "Reactivated", remove: "Taken away" };
 export const licenceAction = (a: string) => LICENCE_ACTIONS[a] ?? a;

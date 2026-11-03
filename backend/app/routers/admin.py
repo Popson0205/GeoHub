@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from psycopg.types.json import Jsonb
 
-from .. import domains, licences, orgs, passwords, ratelimit, staff
+from .. import domains, licences, orgs, passwords, products, ratelimit, staff
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -14,7 +14,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from ..schemas import (AdminOrgDetail, AdminOrgIn, AdminOrgOut, AdminOrgPatch, OrgDomainIn, OrgDomainOut, OrgRequestIn,
-                       OrgRequestOut, OrgRequestPatch, OwnerIn, StaffActivityOut, StaffIn, StaffMeOut, StaffNoteIn,
+                       OrgRequestOut, OrgRequestPatch, OwnerIn, ProductIn, ProductOut, ProductRemoveIn, StaffActivityOut, StaffIn, StaffMeOut, StaffNoteIn,
                        StaffNoteOut, StaffOut, StaffPatch, SupportVisitIn, SupportVisitOut, SuspendIn)
 
 router = APIRouter(tags=["staff console"])
@@ -113,6 +113,7 @@ async def get_org(org_id: UUID, user=Depends(staff.staff()), conn=Depends(get_co
                              "FROM projects p WHERE p.org_id = %s ORDER BY p.last_activity_at DESC LIMIT 200", (org_id,))
     out["projects"] = await cur.fetchall()
     out["support_visits"] = await visits(conn, org_id)
+    out["products"] = await products.of_org(conn, org_id)
     return out
 
 
@@ -259,6 +260,33 @@ async def update_org(org_id: UUID, body: AdminOrgPatch, request: Request, user=D
             await licences.record(conn, org_id, "renew" if renewed else "change", user["id"], body.invoice_ref, body.note)
         await _staff_audit(conn, "org_update", user, request, org_id, **body.model_dump(exclude_none=True, mode="json"))
     return await _org(conn, await _one(conn, org_id))
+
+
+@router.put("/admin/orgs/{org_id}/products/{product}", response_model=list[ProductOut],
+            summary="Give a customer another GeoEstate product (Land Registry, LandCheck, FarmScan), or change it")
+async def put_product(org_id: UUID, product: str, body: ProductIn, request: Request, user=Depends(staff.staff("licences.edit")),
+                      conn=Depends(get_conn)):
+    o = await _one(conn, org_id)
+    if o["plan"] == "individual":
+        raise Problem(409, "Individual accounts cannot have other products. Set the customer up as an organization first.",
+                      code="individual")
+    action = await products.put(conn, org_id, product, plan=body.plan, kind=body.licence_kind, starts=body.subscription_starts,
+                                ends=body.subscription_ends, limits_=body.limits, features_=body.features)
+    await products.record(conn, org_id, product, action, user["id"], body.invoice_ref, body.note)
+    await _staff_audit(conn, "product_set", user, request, org_id, product=product, **body.model_dump(exclude_none=True, mode="json"))
+    return await products.of_org(conn, org_id)
+
+
+@router.post("/admin/orgs/{org_id}/products/{product}/remove", response_model=list[ProductOut],
+             summary="Take a product away from a customer (its data is kept)")
+async def remove_product(org_id: UUID, product: str, body: ProductRemoveIn, request: Request,
+                         user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    await _one(conn, org_id)
+    if not await products.remove(conn, org_id, product):
+        raise Problem(404, "This customer does not have that product.", code="not_found")
+    await products.record(conn, org_id, product, "remove", user["id"], note=body.note)
+    await _staff_audit(conn, "product_remove", user, request, org_id, product=product, note=body.note.strip())
+    return await products.of_org(conn, org_id)
 
 
 @router.post("/admin/orgs/{org_id}/suspend", response_model=AdminOrgOut, summary="Suspend a customer (for example for non-payment)")

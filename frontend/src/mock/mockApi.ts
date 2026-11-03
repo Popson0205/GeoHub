@@ -12,7 +12,7 @@ import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
+  ProductId, ProductInput, ProductLicence, SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
   Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
@@ -33,6 +33,7 @@ interface State {
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
   supportVisits?: (SupportVisit & { org_id: string })[];
   staffList?: StaffMember[]; licenceLog?: Record<string, LicenceEvent[]>; staffNotes?: Record<string, StaffNote[]>; staffActivity?: StaffActivity[];
+  orgProducts?: Record<string, Partial<Record<ProductId, { plan: string; kind: "paid" | "demo"; starts: string | null; ends: string | null }>>>;
   teams?: { id: string; name: string; description: string; created_at: string; members: { user_id: string; lead: boolean }[] }[];
   projectTeams?: { project_id: string; team_id: string; role: TeamProjectRole }[];
   mfa?: { enabled_at: string | null; pending: boolean; recovery: string[] };
@@ -118,6 +119,67 @@ export class MockApi implements Api {
       caps: { ...(PLAN_CAPS[org.plan] ?? PLAN_CAPS.individual), ...org.limits } as Org["caps"], require_mfa: !!org.require_mfa,
       usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"), teams: (this.s.teams ?? []).length,
         projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
+  }
+  async orgProducts(): Promise<ProductLicence[]> {
+    await wait(); this.auth();
+    const { org } = this.orgState;
+    const lic = this.me_().org!.licence;
+    const hub: ProductLicence = { product: "hub", name: "Geohub", plan: org.plan, plan_name: PLAN_NAMES[org.plan] ?? org.plan,
+      licence_kind: org.licence_kind ?? "paid", status: (lic?.status ?? "free") as LicenceStatus, status_name: lic?.status ?? "Free",
+      subscription_starts: org.subscription_starts ?? null, subscription_ends: lic?.ends ?? null, grace_ends: lic?.grace_ends ?? null,
+      limits: {}, features: [], url: window.location.origin };
+    return [hub, ...this.otherProducts(org.id, !!org.suspended)];
+  }
+  // ---- other GeoEstate products (demo): kept per organization
+  private get productState() { return (this.s.orgProducts ??= {}); }
+  private otherProducts(orgId: string, suspended: boolean): ProductLicence[] {
+    const NAMES: Record<string, string> = { land: "Land Registry", check: "LandCheck", farm: "FarmScan" };
+    const today = new Date().toISOString().slice(0, 10);
+    return (["land", "check", "farm"] as const).flatMap((k) => {
+      const r = this.productState[orgId]?.[k];
+      if (!r) return [];
+      const grace = r.ends ? new Date(Date.parse(r.ends) + 14 * 86400000).toISOString().slice(0, 10) : null;
+      const status: LicenceStatus = suspended ? "suspended" : !r.ends || r.ends >= today ? (r.kind === "demo" ? "demo" : "active") : grace! >= today ? "grace" : "expired";
+      return [{ product: k, name: NAMES[k], plan: r.plan, plan_name: `${NAMES[k]} ${r.plan[0].toUpperCase()}${r.plan.slice(1)}`, licence_kind: r.kind,
+        status, status_name: status[0].toUpperCase() + status.slice(1), subscription_starts: r.starts, subscription_ends: r.ends, grace_ends: grace,
+        limits: {}, features: [], url: null }];
+    });
+  }
+  private productsOf(o: AdminOrg): ProductLicence[] {
+    const f = this.fill(o);
+    return [{ product: "hub", name: "Geohub", plan: f.plan, plan_name: f.plan_name, licence_kind: f.licence_kind ?? "paid", status: f.status ?? "active",
+      status_name: f.status ?? "active", subscription_starts: f.subscription_starts, subscription_ends: f.subscription_ends, grace_ends: f.grace_ends ?? null,
+      limits: {}, features: [], url: window.location.origin }, ...this.otherProducts(o.id, !!o.suspended_at)];
+  }
+  async adminPutProduct(orgId: string, product: ProductId, input: ProductInput) {
+    await wait(); this.staff();
+    const o = this.customer(orgId);
+    if (product === "hub") throw new ApiError(422, "That product is licensed on the organization itself.");
+    if (o.plan === "individual") throw new ApiError(409, "Individual accounts cannot have other products.");
+    let { subscription_starts: starts = null, subscription_ends: ends = null } = input;
+    if (input.licence_kind === "demo") {
+      const t = new Date(); starts ??= t.toISOString().slice(0, 10); ends ??= new Date(t.getTime() + 29 * 86400000).toISOString().slice(0, 10);
+    }
+    this.checkDates(starts, ends);
+    const had = !!this.productState[orgId]?.[product];
+    (this.productState[orgId] ??= {})[product] = { plan: input.plan, kind: input.licence_kind, starts, ends };
+    const log = (this.staffState.log[orgId] ??= []);
+    log.unshift({ id: Date.now() + log.length, product, action: had ? "change" : input.licence_kind === "demo" ? "demo" : "create", plan: input.plan,
+      kind: input.licence_kind, starts, ends, limits: {}, invoice_ref: input.invoice_ref?.trim() || null, note: input.note?.trim() || null,
+      actor_name: DEMO_USER.name, at: new Date().toISOString() });
+    this.logStaff("product_set", orgId, { product }); this.save();
+    return this.productsOf(o);
+  }
+  async adminRemoveProduct(orgId: string, product: ProductId, note: string) {
+    await wait(); this.staff();
+    const o = this.customer(orgId);
+    if (!this.productState[orgId]?.[product]) throw new ApiError(404, "This customer does not have that product.");
+    delete this.productState[orgId]![product];
+    const log = (this.staffState.log[orgId] ??= []);
+    log.unshift({ id: Date.now() + log.length, product, action: "remove", plan: "none", kind: "paid", starts: null, ends: null, limits: {},
+      invoice_ref: null, note: note.trim(), actor_name: DEMO_USER.name, at: new Date().toISOString() });
+    this.logStaff("product_remove", orgId, { product }); this.save();
+    return this.productsOf(o);
   }
   private orgAdmin() { const r = this.me_().org!.role; if (r === "member") throw new ApiError(403, "This needs an organization admin."); return r; }
   async renameOrg(name: string) { await wait(); this.auth(); this.orgAdmin(); this.orgState.org.name = name.trim(); this.save(); return this.getOrg(); }
@@ -341,7 +403,7 @@ export class MockApi implements Api {
     if (!s.log[id]?.length) this.logLicence(o, "create");
     const projects = this.s.projects.map((p) => ({ id: p.id, name: p.name, records: this.s.features.filter((f) => f.project_id === p.id && !f.deleted).length, last_update: p.updated_at }));
     return { ...o, people, invited: 1, api_keys: 0, teams: 1, licences: [...s.log[id]], notes: [...(s.notes[id] ?? [])], projects,
-      support_visits: this.visitsOf(id),
+      support_visits: this.visitsOf(id), products: this.productsOf(o),
       activity: s.activity.filter((a) => a.org_id === id) };
   }
   private visitsOf(orgId: string): SupportVisit[] {
