@@ -25,6 +25,8 @@ export default function AdminCustomerPage() {
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
   const [domain, setDomain] = useState("");
+  const [visitReason, setVisitReason] = useState("");
+  const [visitHours, setVisitHours] = useState(2);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
@@ -73,6 +75,12 @@ export default function AdminCustomerPage() {
     e.preventDefault();
     await act("note", async () => (await loadApi()).adminAddNote(o!.id, note.trim()), "Note added.");
     setNote("");
+  }
+  async function startVisit(e: FormEvent) {
+    e.preventDefault();
+    await act("visit", async () => (await loadApi()).adminStartVisit(o!.id, visitReason.trim(), visitHours),
+      `You can open ${o!.name}'s projects for ${visitHours} hour${visitHours > 1 ? "s" : ""}. Its owners and admins were told.`);
+    setVisitReason("");
   }
   async function addDomain(e: FormEvent) {
     e.preventDefault();
@@ -151,6 +159,45 @@ export default function AdminCustomerPage() {
           </section>
         </div>
       )}
+
+      <section className="card customer-support" aria-labelledby="c-support">
+        <h2 id="c-support">Support visit</h2>
+        {(() => {
+          const open = (o.support_visits ?? []).find((v) => v.active && v.staff_id === user?.id);
+          if (open) return (
+            <>
+              <p className="customer-visit-on" role="status"><strong>Open until {new Date(open.ends_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}.</strong> You see
+                {" "}{o.name}'s projects as a viewer and change nothing. Reason: {open.reason}</p>
+              {(o.projects ?? []).length === 0 ? <p className="muted">They have no projects yet.</p> : (
+                <ul className="customer-projects">
+                  {o.projects!.map((p) => <li key={p.id}><Link to={`/collect/${p.id}/data`}>{p.name}</Link> <span className="muted">· {p.records.toLocaleString()} records</span></li>)}
+                </ul>
+              )}
+              <Button busy={busy === open.id} onClick={() => void act(open.id, async () => (await loadApi()).adminEndVisit(open.id), "Support visit ended.")}>End the visit</Button>
+            </>
+          );
+          return support ? (
+            <form className="customer-visit" onSubmit={startVisit}>
+              <p className="field-hint">To help a customer, open their projects read-only for a few hours. Their owners and administrators are emailed, and see every visit with its reason.</p>
+              <div className="field"><label htmlFor="c-visit">Reason <span className="muted">(the customer reads this)</span></label>
+                <input id="c-visit" required minLength={3} maxLength={500} placeholder="e.g. Ada asked why the Ikeja map is empty" value={visitReason} onChange={(e) => setVisitReason(e.target.value)} /></div>
+              <div className="field"><label htmlFor="c-hours">For</label>
+                <select id="c-hours" className="input" value={visitHours} onChange={(e) => setVisitHours(Number(e.target.value))}>
+                  {[1, 2, 4, 8].map((h) => <option key={h} value={h}>{h} hour{h > 1 ? "s" : ""}</option>)}
+                </select></div>
+              <Button type="submit" busy={busy === "visit"}>Open their projects</Button>
+            </form>
+          ) : <p className="muted">Your role cannot open customers' projects.</p>;
+        })()}
+        {(o.support_visits ?? []).length > 0 && (
+          <ul className="customer-visits" aria-label="Support visits">
+            {o.support_visits!.slice(0, 5).map((v) => (
+              <li key={v.id}><span className="tnum">{new Date(v.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
+                {" "}<strong>{v.staff_name ?? "Former staff"}</strong>: {v.reason} {v.active && <span className="badge badge-info">Open</span>}</li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section aria-labelledby="c-people">
         <h2 id="c-people" className="org-h2">People <span className="muted">{o.people.length}{o.invited ? ` · ${o.invited} invited` : ""}</span></h2>

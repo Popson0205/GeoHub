@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import LicenceBanner from "./LicenceBanner";
 import { useAuth } from "../lib/auth";
 import { Icon } from "./icons";
 import { getTheme, setTheme, type ThemePref } from "../lib/theme";
@@ -89,6 +90,7 @@ export default function Shell() {
         </button>
       </header>
       <main id="main" className="page" style={{ display: "flex", flexDirection: "column" }}>
+        <LicenceBanner />
         {/* Pages load on demand: keep the top bar while one arrives */}
         <ErrorBoundary resetKey={loc.pathname} inline>
           <Suspense fallback={<div className="container" style={{ width: "100%" }}><Loading label="Opening…" /></div>}><Outlet /></Suspense>

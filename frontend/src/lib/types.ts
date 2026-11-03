@@ -18,7 +18,11 @@ export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
 /** An organization's look (Organization plans): its colour and logo, shown to all its people. */
 export interface OrgBrand { color: string | null; logo_url: string | null }
-export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null }
+export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null;
+  /** Where its licence stands; none on the free Individual plan. */
+  licence?: OrgLicence | null }
+/** grace: full use after the end date, until grace_ends; expired: read-only; suspended: closed. */
+export interface OrgLicence { status: "demo" | "active" | "grace" | "expired" | "suspended"; ends: string | null; grace_ends: string | null; kind: "paid" | "demo" }
 export interface User { id: string; email: string; name: string; org?: OrgBrief | null; must_change_password?: boolean;
   /** GeoEstate staff who set up client organizations (PLATFORM_ADMINS on the server). */
   platform_admin?: boolean;
@@ -107,8 +111,13 @@ export interface StaffNote { id: string; body: string; author_id: string | null;
 export interface StaffActivity { id: number; at: string; action: string; actor_id: string | null; actor_name: string | null;
   org_id?: string | null; org_name?: string | null; target_type: string | null; target_id: string | null; details: Record<string, unknown> }
 export interface AdminPerson { user_id: string; name: string; email: string; role: OrgRole; mfa_enabled: boolean; last_active: string | null; joined_at: string }
+/** GeoEstate support opening a customer's projects, read-only, for a few hours. */
+export interface SupportVisit { id: string; staff_id: string; staff_name: string | null; reason: string; started_at: string; ends_at: string;
+  ended_at: string | null; active: boolean }
 /** One customer as staff see it on its page. */
 export interface AdminOrgDetail extends AdminOrg {
+  projects?: { id: string; name: string; records: number; last_update: string }[];
+  support_visits?: SupportVisit[];
   people: AdminPerson[]; invited: number; licences: LicenceEvent[]; notes: StaffNote[]; api_keys: number; teams: number; activity: StaffActivity[];
 }
 // ---- sign-in providers and company email domains ----
@@ -128,6 +137,8 @@ export interface Project {
   name: string;
   description?: string;
   role: Role;
+  /** Opened by GeoEstate support during a support visit: read-only. */
+  support_view?: boolean;
   feature_count: number;
   /** Records submitted and not yet approved or rejected. */
   waiting_count?: number;
