@@ -235,7 +235,7 @@ export default function AdminCustomerPage() {
               <tbody>
                 {o.licences.map((h) => (
                   <tr key={h.id}>
-                    <td className="tnum">{longDate(h.at)}<br /><span className="muted">{h.actor_name ?? "Geohub"}</span></td>
+                    <td className="tnum">{longDate(h.at)}<br /><span className="muted">{h.actor_name ?? (h.note?.includes("GeoEstate CRM") ? "GeoEstate CRM" : "Geohub")}</span></td>
                     <td>{licenceAction(h.action)}</td>
                     <td>{h.plan[0].toUpperCase() + h.plan.slice(1)}{h.kind === "demo" ? " demo" : ""}<br /><span className="muted tnum">{h.starts ? longDate(h.starts) : "…"} to {h.ends ? longDate(h.ends) : "…"}</span></td>
                     <td>{h.invoice_ref && <><strong>{h.invoice_ref}</strong><br /></>}<span className="muted">{h.note ?? ""}</span></td>

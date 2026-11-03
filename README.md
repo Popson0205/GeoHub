@@ -103,6 +103,11 @@ unlimited:
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
 counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
 
+**The GeoEstate CRM link.** The CRM (a separate app, where invoices are made) reads customers and website requests,
+sets up customers, and switches on the licence a paid invoice buys. Set `CRM_LINK_KEY` here to a random string of 32+
+characters, and the same value as `GEOHUB_LINK_KEY` in the CRM. Without it the link is off (`/crm-link/*` answers 404).
+Everything the CRM changes is in the licence history and the staff activity log, with the CRM staff member's name.
+
 **Staff console (GeoEstate staff).** The emails in `PLATFORM_ADMINS` (comma-separated, e.g.
 `PLATFORM_ADMINS=idrispopoola02@gmail.com`) are always super admins. They add and remove other staff in the console,
 each with a role:
