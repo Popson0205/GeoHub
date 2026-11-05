@@ -9,9 +9,11 @@ Tokens are kept in http-only cookies here for brevity; a real app keeps the refr
 import html
 import os
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from geoestate_id import GeoEstateID, GeoEstateIDError
 
@@ -20,13 +22,38 @@ CALLBACK = f"{APP_URL}/auth/callback"
 gid = GeoEstateID(geohub=os.environ["GEOHUB_URL"], api=os.environ["GEOHUB_API"], client_id=os.environ.get("GEOESTATE_ID_CLIENT", "land"),
                   client_secret=os.environ.get("GEOESTATE_ID_SECRET") or None)
 app = FastAPI(title="Example GeoEstate app")
+app.mount("/ui", StaticFiles(directory=Path(__file__).resolve().parent.parent / "ui"), name="ui")   # the GeoEstate UI kit
 SECURE = APP_URL.startswith("https://")
+APP_NAME = os.environ.get("APP_NAME", "Land Registry")
+WHAT = {"hub": "Field data, maps and dashboards", "land": "Parcels, titles and transfers", "check": "Location and due-diligence reports",
+        "farm": "Crop monitoring from satellite and drone"}
+e = html.escape
 
 
-def page(body: str) -> HTMLResponse:
-    return HTMLResponse(f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Example app</title>"
-                        "<body style='font:16px system-ui;max-width:640px;margin:40px auto;padding:0 16px;color:#1a2233'>"
-                        f"{body}</body>")
+def bar(me: dict | None = None, apps: list[dict] | None = None) -> str:
+    """The GeoEstate top bar (ui/react/GeoEstateBar.tsx, server-rendered): logo, app name, app switcher, who is signed in."""
+    switcher = ""
+    if me and apps and len(apps) > 1:
+        items = "".join(
+            f"<{'a href=' + chr(39) + e(a['url']) + chr(39) if a['url'] and not a['current'] else 'div'} class='ge-app ge-app-{e(a['product'])}"
+            f"{' is-here' if a['current'] else '' if a['url'] else ' is-off'}'><span class=ge-app-tile>{e(a['name'][0])}</span>"
+            f"<span class=ge-app-text><strong>{e(a['name'])}</strong><span>{'You are here' if a['current'] else e(WHAT.get(a['product'], ''))}</span></span>"
+            f"</{'a' if a['url'] and not a['current'] else 'div'}>" for a in apps)
+        switcher = ("<details class=ge-apps><summary class=ge-apps-btn aria-label='GeoEstate apps'><svg width=20 height=20 viewBox='0 0 24 24'>"
+                    + "".join(f"<circle cx={x} cy={y} r=1.8 fill=currentColor />" for y in (5.5, 12, 18.5) for x in (5.5, 12, 18.5))
+                    + "</svg></summary><div class=ge-apps-pop><div class=ge-apps-head><strong>GeoEstate apps</strong>"
+                    f"<span>One sign-in for all of them</span></div>{items}</div></details>")
+    who = (f"<div class=ge-who>{e(me['name'])}<span>{e((me.get('org') or {}).get('name') or 'GeoEstate staff')}</span></div>"
+           "<form method=post action=/auth/sign-out><button class='ge-btn ge-btn-ghost ge-btn-sm'>Sign out</button></form>") if me else ""
+    return (f"<header class=ge-bar><a class=ge-brand href=/><img src=/ui/geoestate-logo.png alt=GeoEstate>"
+            f"<span>GeoEstate <strong>{e(APP_NAME)}</strong></span></a><span class=ge-spacer></span>{switcher}{who}</header>")
+
+
+def page(body: str, me: dict | None = None, apps: list[dict] | None = None) -> HTMLResponse:
+    return HTMLResponse(f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+                        f"<title>{e(APP_NAME)} · GeoEstate</title><link rel=stylesheet href=/ui/geoestate.css>"
+                        "<style>details.ge-apps>summary{list-style:none}details.ge-apps>summary::-webkit-details-marker{display:none}</style>"
+                        f"<body class=ge-page>{bar(me, apps)}<main class=ge-main>{body}</main></body>")
 
 
 @app.get("/")
@@ -41,15 +68,23 @@ def home(request: Request):
             me = None
         if me:
             p = me.get("product") or {}
-            return page(f"<h1>Hello, {html.escape(me['name'])}</h1>"
-                        f"<p>Organization: <b>{html.escape((me.get('org') or {}).get('name', 'none'))}</b> "
-                        f"({html.escape((me.get('org') or {}).get('role', ''))})</p>"
-                        f"<p>Licence: <b id=plan>{html.escape(p.get('plan_name', 'staff access'))}</b>, "
-                        f"<span id=status>{html.escape(p.get('status_name', me.get('staff_role') or ''))}</span>"
-                        f"{' · can change things' if gid.can_write(me) else ' · read-only'}</p>"
-                        f"<p>Features: {html.escape(', '.join(p.get('features', [])) or 'none')}</p>"
-                        "<form method=post action=/auth/sign-out><button>Sign out</button></form>")
-    return page("<h1>Example GeoEstate app</h1><p><a id=signin href=/auth/sign-in>Sign in with GeoEstate</a></p>")
+            try:
+                apps = gid.apps(token)
+            except GeoEstateIDError:
+                apps = []
+            status = {"active": "ge-badge-ok", "demo": "ge-badge-info", "grace": "ge-badge-warn"}.get(p.get("status", ""), "ge-badge-bad")
+            return page(f"<h1>Hello, {e(me['name'])}</h1>"
+                        "<section class=ge-card><h2>Your organization</h2>"
+                        f"<p><strong>{e((me.get('org') or {}).get('name', 'GeoEstate staff'))}</strong> "
+                        f"<span class=ge-muted>· {e((me.get('org') or {}).get('role', me.get('staff_role') or ''))}</span></p>"
+                        f"<p>Licence: <strong id=plan>{e(p.get('plan_name', 'staff access'))}</strong> "
+                        f"<span id=status class='ge-badge {status}'>{e(p.get('status_name', me.get('staff_role') or ''))}</span>"
+                        f"<span class=ge-muted> · {'can change things' if gid.can_write(me) else 'read-only'}</span></p>"
+                        f"<p class=ge-small>Features: {e(', '.join(p.get('features', [])) or 'none')}</p></section>"
+                        "<p class=ge-muted>This is the example app from Geohub's clients/ folder: the starting point for each new GeoEstate app.</p>",
+                        me, apps)
+    return page(f"<section class=ge-card><h1>{e(APP_NAME)}</h1><p class=ge-muted>Sign in with the account you use for Geohub.</p>"
+                "<p><a id=signin class='ge-btn ge-btn-primary' href=/auth/sign-in>Sign in with GeoEstate</a></p></section>")
 
 
 @app.get("/auth/sign-in")

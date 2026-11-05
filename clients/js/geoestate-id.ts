@@ -50,6 +50,13 @@ export class GeoEstateId {
     return { ...tokens, returnTo: pending.returnTo };
   }
 
+  /** The GeoEstate apps the person's organization has, for the app switcher (GeoEstateBar's `apps`). */
+  async apps(accessToken: string): Promise<{ product: string; name: string; status: string; status_name: string; url: string | null; current: boolean }[]> {
+    const r = await fetch(`${this.o.api.replace(/\/$/, "")}/id/apps`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!r.ok) throw new Error(`Geohub answered ${r.status}`);
+    return r.json();
+  }
+
   refresh(refreshToken: string) { return this.post<GeoEstateTokens>("token", { grant_type: "refresh_token", refresh_token: refreshToken }); }
   signOut(refreshToken: string) { return this.post<{ revoked: boolean }>("revoke", { token: refreshToken }); }
 

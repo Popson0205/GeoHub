@@ -85,6 +85,13 @@ class GeoEstateID:
     def sign_out(self, refresh_token: str) -> None:
         self._post("revoke", {"token": refresh_token})
 
+    def apps(self, access_token: str) -> list[dict]:
+        """The GeoEstate apps the person's organization has, for an app switcher: product, name, status, url, current."""
+        r = self._http.get(f"{self.api}/id/apps", headers={"Authorization": f"Bearer {access_token}"})
+        if r.status_code >= 400:
+            raise GeoEstateIDError(r.json().get("detail", "Geohub refused"), r.status_code)
+        return r.json()
+
     # ---- checking an access token ----
     def _key(self, kid: str | None):
         if kid not in self._keys or time.time() - self._keys_at > self.key_ttl:

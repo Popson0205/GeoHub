@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from .. import geoestate_id as gid
-from .. import ratelimit
+from .. import products, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -151,6 +151,19 @@ async def userinfo(request: Request, conn=Depends(get_conn)):
         raise Problem(401, "Send the access token as a Bearer token.", code="unauthenticated", headers={"WWW-Authenticate": "Bearer"})
     claims = gid.verify(auth[7:].strip())
     return await gid.claims_for(conn, claims["sub"], gid.client(claims["aud"]))
+
+
+@router.get("/apps", summary="The GeoEstate apps the person's organization has, for an app switcher")
+async def apps(request: Request, conn=Depends(get_conn)):
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise Problem(401, "Send the access token as a Bearer token.", code="unauthenticated", headers={"WWW-Authenticate": "Bearer"})
+    claims = gid.verify(auth[7:].strip())
+    if not claims.get("org"):
+        return []
+    return [{"product": p["product"], "name": p["name"], "status": p["status"], "status_name": p["status_name"], "url": p["url"],
+             "current": p["product"] == (claims.get("product") or {}).get("id")}
+            for p in await products.of_org(conn, claims["org"]["id"])]
 
 
 @router.post("/revoke", status_code=200, summary="Sign out of an app: its refresh token stops working")
