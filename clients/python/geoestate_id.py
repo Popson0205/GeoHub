@@ -92,6 +92,18 @@ class GeoEstateID:
             raise GeoEstateIDError(r.json().get("detail", "Geohub refused"), r.status_code)
         return r.json()
 
+    def data(self, access_token: str, path: str, params: dict | None = None):
+        """Geohub's field data, read as the person (GET /id/data/...): "projects", "forms/{id}/features", "features/{id}".
+        Only what they could open in Geohub themselves."""
+        r = self._http.get(f"{self.api}/id/data/{path.lstrip('/')}", params=params or {}, headers={"Authorization": f"Bearer {access_token}"})
+        if r.status_code >= 400:
+            try:
+                body = r.json()
+            except ValueError:
+                body = {}
+            raise GeoEstateIDError(body.get("detail", f"Geohub answered {r.status_code}"), r.status_code, body.get("code") or "error")
+        return r.json()
+
     # ---- checking an access token ----
     def _key(self, kid: str | None):
         if kid not in self._keys or time.time() - self._keys_at > self.key_ttl:
