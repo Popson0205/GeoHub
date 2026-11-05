@@ -38,6 +38,9 @@ export interface Api {
   getOrg(): Promise<Org>;
   /** The GeoEstate products your organization has, Geohub first. */
   orgProducts(): Promise<ProductLicence[]>;
+  /** GeoEstate ID: an app Geohub signs people in to, and a one-time code to take back to it. */
+  idClient(clientId: string, redirectUri: string): Promise<{ id: string; name: string; product: string }>;
+  idAuthorize(req: { client_id: string; redirect_uri: string; state?: string; code_challenge?: string; code_challenge_method?: string }): Promise<{ redirect_to: string; app: string }>;
   renameOrg(name: string): Promise<Org>;
   listOrgMembers(): Promise<OrgMember[]>;
   inviteOrgMember(email: string, role: "admin" | "member"): Promise<OrgMember>;
@@ -734,6 +737,12 @@ class HttpApi implements Api {
   getJob(id: string) { return this.req<Wire>("GET", `/jobs/${id}`).then(toJob); }
   getOrg() { return this.req<Org>("GET", "/org"); }
   orgProducts() { return this.req<ProductLicence[]>("GET", "/org/products"); }
+  idClient(clientId: string, redirectUri: string) {
+    return this.req<{ id: string; name: string; product: string }>("GET", `/id/clients/${encodeURIComponent(clientId)}?redirect_uri=${encodeURIComponent(redirectUri)}`);
+  }
+  idAuthorize(req: { client_id: string; redirect_uri: string; state?: string; code_challenge?: string; code_challenge_method?: string }) {
+    return this.req<{ redirect_to: string; app: string }>("POST", "/id/authorize", req);
+  }
   renameOrg(name: string) { return this.req<Org>("PATCH", "/org", { name }); }
   listOrgMembers() { return this.req<OrgMember[]>("GET", "/org/members"); }
   inviteOrgMember(email: string, role: "admin" | "member") { return this.req<OrgMember>("POST", "/org/members", { email, role }); }

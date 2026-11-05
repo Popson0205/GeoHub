@@ -14,6 +14,7 @@ const ForgotPasswordPage = lazy(() => import("./pages/PasswordPages").then((m) =
 const ChangePasswordPage = lazy(() => import("./pages/PasswordPages").then((m) => ({ default: m.ChangePasswordPage })));
 const SsoReturnPage = lazy(() => import("./pages/SsoPages").then((m) => ({ default: m.SsoReturnPage })));
 const JoinOrgPage = lazy(() => import("./pages/SsoPages").then((m) => ({ default: m.JoinOrgPage })));
+const IdAuthorizePage = lazy(() => import("./pages/IdAuthorizePage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const RequestOrgPage = lazy(() => import("./pages/RequestOrgPage"));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage"));
@@ -113,6 +114,8 @@ export default function App() {
       <Route path="/sso" element={<SsoReturnPage />} />
       <Route path="/join-organization" element={<JoinOrgPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
+      {/* GeoEstate ID: another GeoEstate app sends people here to sign in */}
+      <Route path="/id/authorize" element={<RequireAuth><IdAuthorizePage /></RequireAuth>} />
       {/* A form shared by link: public links work without signing in */}
       <Route path="/f/:token" element={<PublicFormPage />} />
       {/* A dashboard shared by link: read-only, no sign-in */}

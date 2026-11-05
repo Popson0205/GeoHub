@@ -103,6 +103,10 @@ unlimited:
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
 counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
 
+**GeoEstate ID: one sign-in for every GeoEstate app.** Land Registry, LandCheck and FarmScan sign people in with their
+Geohub account: register each app in `ID_CLIENTS`, and only people whose organization has that product (or GeoEstate
+staff) get in. See [docs/GEOESTATE_ID.md](docs/GEOESTATE_ID.md); kits for apps are in `clients/`.
+
 **The GeoEstate CRM link.** The CRM (a separate app, where invoices are made) reads customers and website requests,
 sets up customers, and switches on the licence a paid invoice buys. Set `CRM_LINK_KEY` here to a random string of 32+
 characters, and the same value as `GEOHUB_LINK_KEY` in the CRM. Without it the link is off (`/crm-link/*` answers 404).

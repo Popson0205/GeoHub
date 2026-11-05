@@ -120,6 +120,21 @@ export class MockApi implements Api {
       usage: { seats: count("seats"), collectors: count("collectors"), viewers: count("viewers"), teams: (this.s.teams ?? []).length,
         projects: this.s.projects.length, records: this.s.features.filter((f) => !f.deleted).length } };
   }
+  // GeoEstate ID (demo): Land Registry, LandCheck and FarmScan, at any address
+  async idClient(clientId: string, _redirectUri: string) {
+    await wait();
+    const name = ({ land: "Land Registry", check: "LandCheck", farm: "FarmScan" } as Record<string, string>)[clientId];
+    if (!name) throw new ApiError(400, "This app is not registered with Geohub (ID_CLIENTS).", undefined, "unknown_client");
+    return { id: clientId, name, product: clientId };
+  }
+  async idAuthorize(req: { client_id: string; redirect_uri: string; state?: string }) {
+    const c = await this.idClient(req.client_id, req.redirect_uri);
+    const has = (await this.orgProducts()).some((p) => p.product === c.product);
+    if (!has && !this.me_().platform_admin) throw new ApiError(403, `${this.orgState.org.name} does not have ${c.name}. Ask GeoEstate NIG Limited for it, or for a month's demo.`, undefined, "no_product");
+    const u = new URL(req.redirect_uri);
+    u.searchParams.set("code", "demo-code"); if (req.state) u.searchParams.set("state", req.state);
+    return { redirect_to: u.toString(), app: c.name };
+  }
   async orgProducts(): Promise<ProductLicence[]> {
     await wait(); this.auth();
     const { org } = this.orgState;

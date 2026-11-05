@@ -78,7 +78,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
   const loc = useLocation();
   if (!ready) return <Loading label="Checking your session…" />;
-  if (!user) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
+  if (!user) return <Navigate to="/login" state={{ from: loc.pathname + loc.search }} replace />;
   // signed in with a temporary password: nothing else until they choose their own
   if (user.must_change_password && loc.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   // the organization requires two-step sign-in: nothing else until it is set up
