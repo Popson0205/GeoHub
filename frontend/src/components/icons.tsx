@@ -22,6 +22,7 @@ const ICONS = {
   snap: <><path d="M6 3v8a6 6 0 0012 0V3h-4v8a2 2 0 01-4 0V3z" /><path d="M6 7h4M14 7h4" /></>,
   multi: <><rect x="4" y="4" width="16" height="16" rx="2.5" /><path d="M8 12.2l2.8 2.8L16 9.2" /></>,
   /* navigation and chrome */
+  apps: <>{dot(5.5, 5.5, 1.8)}{dot(12, 5.5, 1.8)}{dot(18.5, 5.5, 1.8)}{dot(5.5, 12, 1.8)}{dot(12, 12, 1.8)}{dot(18.5, 12, 1.8)}{dot(5.5, 18.5, 1.8)}{dot(12, 18.5, 1.8)}{dot(18.5, 18.5, 1.8)}</>,
   navMap: <><path d="M9 4L3 6.5v13L9 17l6 3 6-2.5v-13L15 7z" /><path d="M9 4v13M15 7v13" /></>,
   navCollect: <><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M12 8.2c-1.7 0-3 1.3-3 3 0 2.2 3 5 3 5s3-2.8 3-5c0-1.7-1.3-3-3-3z" /></>,
   navDash: <><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="5" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="11" width="8" height="10" rx="1.5" /></>,

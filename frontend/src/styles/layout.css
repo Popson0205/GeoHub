@@ -862,3 +862,16 @@ body.is-dnd * { cursor: grabbing !important; }
 .licence-public-key { display: block; word-break: break-all; font-size: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .org-key-products { margin: 0 0 12px; padding-left: 1.2em; }
 .org-key-form { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 8px; }
+/* the GeoEstate app switcher in the top bar */
+.app-switcher-btn { color: #eaf1ed; }
+.app-switcher-pop { min-width: 300px; }
+.app-item { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+.app-item.is-here { background: var(--n-50, rgba(0,0,0,.03)); cursor: default; }
+.app-item.is-off { opacity: .6; cursor: not-allowed; }
+.app-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.app-text span { font-size: var(--fs-xs); color: var(--muted); }
+.app-tile { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; color: #fff; }
+.app-hub { background: #17634c; } .app-land { background: #1b2b5e; } .app-check { background: #2f6fb0; } .app-farm { background: #3c8c2f; }
+.app-switcher-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: var(--r-full); background: transparent; cursor: pointer; }
+.app-switcher-btn:hover, .app-switcher-btn[aria-expanded="true"] { background: rgba(255,255,255,.12); }
+.app-item { padding: 8px var(--s-3); border-radius: var(--r-md, 8px); }

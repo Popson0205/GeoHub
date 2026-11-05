@@ -44,7 +44,7 @@ def code_for(person, verifier, client_id="land", redirect_uri=CALLBACK, **kw):
     return q["code"][0]
 
 
-def test_sign_in_to_another_app_with_geohub(client, boss, outbox, apps):
+def test_sign_in_to_another_app_with_geohub(client, boss, outbox, apps, monkeypatch):
     cfg = client.get("/id/configuration").json()
     assert cfg["authorization_endpoint"].endswith("/id/authorize") and cfg["jwks_uri"].endswith("/id/jwks")
     assert client.get("/id/clients/land").json() == {"id": "land", "name": "Land Registry", "product": "land"}
@@ -65,6 +65,10 @@ def test_sign_in_to_another_app_with_geohub(client, boss, outbox, apps):
     assert me["product"]["id"] == "land" and me["product"]["status"] == "demo" and "dxf_import" in me["product"]["features"]
     assert GeoEstateID.can_write(me) and tokens["expires_in"] == 15 * 60
     assert client.get("/id/userinfo", headers={"Authorization": f"Bearer {tokens['access_token']}"}).json()["email"] == p.email
+    monkeypatch.setattr(settings, "product_urls", "land=https://land.example")
+    listed = apps.apps(tokens["access_token"])
+    assert [(x["product"], x["current"], x["url"]) for x in listed] == [("hub", False, settings.app_url), ("land", True, "https://land.example")]
+    assert client.get("/id/apps").status_code == 401
 
     # a token is only for its own app, and only Geohub's key signs one
     farm = GeoEstateID(geohub=settings.app_url, api="http://testserver", client_id="farm", transport=Through(client))

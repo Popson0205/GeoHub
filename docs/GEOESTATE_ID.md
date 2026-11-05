@@ -42,6 +42,13 @@ In Geohub's variables:
   whole working app: sign in, show the person and their licence, refresh, sign out.
 - **Web page:** `clients/js/geoestate-id.ts` sends people to Geohub and, for apps without a secret, swaps the code.
 
+## The look and the app switcher
+
+`clients/ui/` is the GeoEstate UI kit: `geoestate.css` (the navy-and-green look, `ge-` classes) and
+`react/GeoEstateBar.tsx` (logo, app name, the app switcher, who is signed in, and the licence notice in Geohub's
+words). The switcher lists the organization's apps from `GET /api/id/apps`; each app's address comes from Geohub's
+`PRODUCT_URLS`, and one without an address yet is shown but not opened. Geohub's own top bar has the same switcher.
+
 ## Endpoints
 
 | | |
@@ -51,6 +58,7 @@ In Geohub's variables:
 | `GET /id/authorize` (web page) | sign in and go back with a code |
 | `POST /api/id/token` | `grant_type=authorization_code` or `refresh_token`; client secret in the form or HTTP Basic |
 | `GET /api/id/userinfo` | the person as of now (Bearer access token) |
+| `GET /api/id/apps` | the organization's apps, for the app switcher (Bearer access token) |
 | `POST /api/id/revoke` | sign out of the app (`token` = the refresh token) |
 
 A code works once, within 2 minutes, only at the address it was asked for, and only with its PKCE verifier. A code

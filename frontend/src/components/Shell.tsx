@@ -6,6 +6,7 @@ import { Icon } from "./icons";
 import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 import { Loading } from "./ui";
 import QuickSearch from "./QuickSearch";
+import AppSwitcher from "./AppSwitcher";
 import ErrorBoundary from "./ErrorBoundary";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
@@ -53,6 +54,7 @@ export default function Shell() {
         </nav>
         <span className="spacer" />
         <QuickSearch />
+        {user && <AppSwitcher />}
         {user ? (
           <div className="menu" ref={userRef}>
             <button type="button" className="user-btn" aria-label={`${user.name}, account menu`} aria-haspopup="menu" aria-expanded={userOpen} onClick={() => setUserOpen((v) => !v)}>
