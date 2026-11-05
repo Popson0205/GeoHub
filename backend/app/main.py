@@ -17,6 +17,9 @@ logging_setup.setup()
 @asynccontextmanager
 async def lifespan(app):
     async with db_lifespan(app):
+        from . import licence_keys
+        async with pool.connection() as conn:
+            await licence_keys.on_start(conn)
         app.state.http = httpx.AsyncClient(timeout=15, limits=httpx.Limits(max_connections=100))
         task = asyncio.create_task(reminders.loop(pool)) if settings.reminders_enabled else None
         yield

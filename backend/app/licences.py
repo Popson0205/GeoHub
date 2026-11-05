@@ -69,7 +69,7 @@ READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Writes that only read: exports are how people take their work with them, so they work while read-only.
 READ_ONLY_EXCEPTIONS = ("/exports",)
 # What a suspended or expired organization's people can still reach: their organization's page and leaving it.
-ALWAYS_OPEN = ("/org", "/org/leave", "/org/support-visits")
+ALWAYS_OPEN = ("/org", "/org/leave", "/org/support-visits", "/org/licence-key")   # renewing works even when closed
 
 
 def _problem(state: str, org_name: str | None = None) -> Problem:

@@ -1151,12 +1151,23 @@ class ProductIn(BaseModel):
     note: str | None = Field(None, max_length=1000)
 
 
+class LicenceKeyIn(BaseModel):
+    installation: str = Field(min_length=8, max_length=300, description="The installation's web address, e.g. https://geohub.client.gov.ng")
+    ends: date | None = Field(None, description="End every licence in the key on this date; left out = as they are now")
+    note: str | None = Field(None, max_length=500)
+
+
+class LicenceKeyPaste(BaseModel):
+    key: str = Field(min_length=20, max_length=20000)
+
+
 class ProductRemoveIn(BaseModel):
     note: str = Field(min_length=1, max_length=1000, description="Why it is taken away")
 
 
 class AdminOrgDetail(AdminOrgOut):
     products: list[ProductOut] = Field(default_factory=list, description="Every product it has, Geohub first")
+    licence_keys: list[dict] = Field(default_factory=list, description="Licence keys issued for its own installations, newest first")
     projects: list[AdminProject] = Field(default_factory=list)
     support_visits: list[SupportVisitOut] = Field(default_factory=list, description="Recent support visits, newest first")
     people: list[AdminPerson]

@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     # GeoEstate ID: the apps Geohub signs people in to, as JSON:
     # [{"id": "land", "redirect_uris": ["https://land.example/auth/callback"], "secret": "<32+ characters, or leave out>"}]
     id_clients: str = "[]"
+    # Licence keys. On GeoEstate's own deployment: LICENCE_SIGNING_SECRET (32+ random characters) lets staff issue them.
+    # On a customer's installation: LICENCE_REQUIRED=true, GeoEstate's LICENCE_PUBLIC_KEY, and the key itself pasted
+    # under Organization settings (or set as LICENCE_KEY when installing).
+    licence_signing_secret: str = ""
+    licence_public_key: str = ""
+    licence_required: bool = False
+    licence_key: str = ""
     id_signing_key: str = ""                  # an Ed25519 private key (PEM); empty = one derived from JWT_SECRET
     id_token_minutes: int = 15
     id_refresh_days: int = 30

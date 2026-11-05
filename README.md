@@ -103,6 +103,10 @@ unlimited:
 Owners, admins and members use team seats; field collectors (collect only) and viewers (read only) have their own
 counts. Adding a person beyond the plan is refused (HTTP 402, code `plan_limit`).
 
+**Licence keys, for customers' own installations.** GeoEstate issues a signed licence key from a customer's page in the
+staff console (`LICENCE_SIGNING_SECRET`); the customer's installation (`LICENCE_REQUIRED=true`, `LICENCE_PUBLIC_KEY`)
+takes its licences from it. See [docs/LICENCE_KEYS.md](docs/LICENCE_KEYS.md).
+
 **GeoEstate ID: one sign-in for every GeoEstate app.** Land Registry, LandCheck and FarmScan sign people in with their
 Geohub account: register each app in `ID_CLIENTS`, and only people whose organization has that product (or GeoEstate
 staff) get in. See [docs/GEOESTATE_ID.md](docs/GEOESTATE_ID.md); kits for apps are in `clients/`.

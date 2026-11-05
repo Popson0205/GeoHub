@@ -12,7 +12,7 @@ import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, Geometry, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User,
   GeoFeature, MapImportResult, MapLayers, WorkMap,
-  ProductId, ProductInput, ProductLicence, SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
+  InstallationLicence, IssuedLicenceKey, ProductId, ProductInput, ProductLicence, SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
   Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
 } from "../lib/types";
@@ -33,6 +33,7 @@ interface State {
   adminOrgs?: AdminOrg[]; orgRequests?: OrgRequest[]; orgDomains?: OrgDomain[];
   supportVisits?: (SupportVisit & { org_id: string })[];
   staffList?: StaffMember[]; licenceLog?: Record<string, LicenceEvent[]>; staffNotes?: Record<string, StaffNote[]>; staffActivity?: StaffActivity[];
+  licenceKeys?: Record<string, IssuedLicenceKey[]>;
   orgProducts?: Record<string, Partial<Record<ProductId, { plan: string; kind: "paid" | "demo"; starts: string | null; ends: string | null }>>>;
   teams?: { id: string; name: string; description: string; created_at: string; members: { user_id: string; lead: boolean }[] }[];
   projectTeams?: { project_id: string; team_id: string; role: TeamProjectRole }[];
@@ -184,6 +185,30 @@ export class MockApi implements Api {
       actor_name: DEMO_USER.name, at: new Date().toISOString() });
     this.logStaff("product_set", orgId, { product }); this.save();
     return this.productsOf(o);
+  }
+  // ---- licence keys (demo: made-up keys, not signed)
+  async adminLicenceKeySettings() { await wait(); this.staff(); return { can_issue: true, public_key: "DEMO-PUBLIC-KEY-not-for-real-installations-0" }; }
+  async adminIssueLicenceKey(orgId: string, input: { installation: string; ends?: string; note?: string }): Promise<IssuedLicenceKey> {
+    await wait(); this.staff();
+    let site: URL;
+    try { site = new URL(input.installation); } catch { throw new ApiError(422, "The installation's address must be a web address, e.g. https://geohub.client.gov.ng"); }
+    const o = this.customer(orgId);
+    const products = this.productsOf(o).map((p) => ({ product: p.product, name: p.name, plan_name: p.plan_name, starts: p.subscription_starts, ends: input.ends || p.subscription_ends }));
+    const k: IssuedLicenceKey = { id: uuid(), customer: o.name, installation: `${site.protocol}//${site.host}`, issued_at: new Date().toISOString(),
+      note: input.note?.trim() || null, issued_by: DEMO_USER.name, products, key: `GEOESTATE-LICENCE-1.${btoa(o.name).replace(/=+$/, "")}.demo-signature` };
+    ((this.s.licenceKeys ??= {})[orgId] ??= []).unshift(k);
+    this.logStaff("licence_key", orgId, { installation: k.installation }); this.save();
+    return k;
+  }
+  async adminGetLicenceKey(id: string) {
+    await wait(); this.staff();
+    const k = Object.values(this.s.licenceKeys ?? {}).flat().find((x) => x.id === id);
+    if (!k) throw new ApiError(404, "Licence key not found.");
+    return k;
+  }
+  async orgLicenceKey(): Promise<InstallationLicence> { await wait(); return { required: false, installed: null, can_check: false, installation: window.location.origin }; }
+  async installLicenceKey(_key: string): Promise<InstallationLicence> {
+    await wait(); throw new ApiError(409, "This Geohub is run by GeoEstate: its licences are managed for you, without a key.");
   }
   async adminRemoveProduct(orgId: string, product: ProductId, note: string) {
     await wait(); this.staff();
@@ -418,7 +443,7 @@ export class MockApi implements Api {
     if (!s.log[id]?.length) this.logLicence(o, "create");
     const projects = this.s.projects.map((p) => ({ id: p.id, name: p.name, records: this.s.features.filter((f) => f.project_id === p.id && !f.deleted).length, last_update: p.updated_at }));
     return { ...o, people, invited: 1, api_keys: 0, teams: 1, licences: [...s.log[id]], notes: [...(s.notes[id] ?? [])], projects,
-      support_visits: this.visitsOf(id), products: this.productsOf(o),
+      support_visits: this.visitsOf(id), products: this.productsOf(o), licence_keys: (this.s.licenceKeys?.[id] ?? []).map(({ key: _k, ...rest }) => rest),
       activity: s.activity.filter((a) => a.org_id === id) };
   }
   private visitsOf(orgId: string): SupportVisit[] {

@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { ProductId, ProductInput, ProductLicence, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+import type { InstallationLicence, IssuedLicenceKey, ProductId, ProductInput, ProductLicence, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
   AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
@@ -94,6 +94,13 @@ export interface Api {
   /** Give a customer another product (Land Registry, LandCheck, FarmScan), or change it. */
   adminPutProduct(orgId: string, product: ProductId, input: ProductInput): Promise<ProductLicence[]>;
   adminRemoveProduct(orgId: string, product: ProductId, note: string): Promise<ProductLicence[]>;
+  /** Licence keys for customers' own installations. */
+  adminLicenceKeySettings(): Promise<{ can_issue: boolean; public_key: string | null }>;
+  adminIssueLicenceKey(orgId: string, input: { installation: string; ends?: string; note?: string }): Promise<IssuedLicenceKey>;
+  adminGetLicenceKey(id: string): Promise<IssuedLicenceKey>;
+  /** On a customer's own installation: its licence key. */
+  orgLicenceKey(): Promise<InstallationLicence>;
+  installLicenceKey(key: string): Promise<InstallationLicence>;
   adminAddNote(orgId: string, body: string): Promise<StaffNote>;
   adminDeleteNote(noteId: string): Promise<void>;
   adminSendLink(orgId: string, userId: string): Promise<void>;
@@ -822,6 +829,11 @@ class HttpApi implements Api {
   adminReactivate(id: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/reactivate`); }
   adminPutProduct(orgId: string, product: ProductId, input: ProductInput) { return this.req<ProductLicence[]>("PUT", `/admin/orgs/${orgId}/products/${product}`, input); }
   adminRemoveProduct(orgId: string, product: ProductId, note: string) { return this.req<ProductLicence[]>("POST", `/admin/orgs/${orgId}/products/${product}/remove`, { note }); }
+  adminLicenceKeySettings() { return this.req<{ can_issue: boolean; public_key: string | null }>("GET", "/admin/licence-keys"); }
+  adminIssueLicenceKey(orgId: string, input: { installation: string; ends?: string; note?: string }) { return this.req<IssuedLicenceKey>("POST", `/admin/orgs/${orgId}/licence-keys`, input); }
+  adminGetLicenceKey(id: string) { return this.req<IssuedLicenceKey>("GET", `/admin/licence-keys/${id}`); }
+  orgLicenceKey() { return this.req<InstallationLicence>("GET", "/org/licence-key"); }
+  installLicenceKey(key: string) { return this.req<InstallationLicence>("PUT", "/org/licence-key", { key }); }
   adminAddNote(orgId: string, body: string) { return this.req<StaffNote>("POST", `/admin/orgs/${orgId}/notes`, { body }); }
   async adminDeleteNote(noteId: string) { await this.req("DELETE", `/admin/notes/${noteId}`); }
   async adminSendLink(orgId: string, userId: string) { await this.req("POST", `/admin/orgs/${orgId}/people/${userId}/send-link`); }
