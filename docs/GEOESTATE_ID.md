@@ -1,0 +1,57 @@
+# GeoEstate ID: signing in to every GeoEstate app with Geohub
+
+Geohub is the sign-in for Land Registry, LandCheck and FarmScan. People have one account, one password and one
+two-step sign-in; someone signed in to Geohub is signed in to every app their organization has.
+
+## How it works
+
+1. The app sends the person to `https://<geohub>/id/authorize?client_id=land&redirect_uri=…&state=…&code_challenge=…&code_challenge_method=S256`.
+2. Not signed in to Geohub: they sign in there first (password, Google or Microsoft, and two-step sign-in).
+3. Geohub checks that their organization has the app's product (GeoEstate staff may always enter), and sends them back
+   to `redirect_uri?code=…&state=…`. Otherwise it says the organization does not have that product.
+4. The app swaps the code at `POST /api/id/token` for an **access token** (15 minutes) and a **refresh token**
+   (30 days, replaced each time it is used). Each refresh checks again that the person and the product are still there.
+5. The app checks access tokens itself with Geohub's public key (`GET /api/id/jwks`, Ed25519, `EdDSA`). The token says:
+
+```json
+{ "sub": "…", "email": "musa@kanoland.gov.ng", "name": "Musa Bello", "mfa": true,
+  "org": { "id": "…", "name": "Kano Land Agency", "slug": "kano-land-agency", "role": "owner" },
+  "product": { "id": "land", "plan": "advanced", "plan_name": "Land Registry Advanced", "licence_kind": "paid",
+               "status": "active", "subscription_ends": "2027-11-04", "grace_ends": "2027-11-18",
+               "features": ["dxf_import", "parcels", "…"], "limits": { "parcels": 250000, "seats": 40 } },
+  "staff_role": null, "aud": "land", "iss": "https://<geohub>", "exp": 1793898000 }
+```
+
+The app applies the licence the same way Geohub does: `demo`, `active` and `grace` may change things; `expired` is
+read-only; `suspended` shows only a notice.
+
+## Registering an app
+
+In Geohub's variables:
+
+| Variable | Value |
+| --- | --- |
+| `ID_CLIENTS` | `[{"id":"land","redirect_uris":["https://land.<domain>/auth/callback"],"secret":"<32+ random characters>"}]`, one entry per app. `id` is the product (`land`, `check`, `farm`). Leave `secret` out for an app with no server: it then must use PKCE |
+| `ID_SIGNING_KEY` | optional: an Ed25519 private key (PEM). Without it the key is derived from `JWT_SECRET` |
+| `CORS_ORIGINS` | add the app's address when its web page calls `/api/id/token` itself (an app without a secret) |
+| `PRODUCT_URLS` | `land=https://land.<domain>,…`, for the app switcher |
+
+## Plugging an app in
+
+- **Python server (FastAPI or other):** copy `clients/python/geoestate_id.py`. `clients/python/example_app.py` is a
+  whole working app: sign in, show the person and their licence, refresh, sign out.
+- **Web page:** `clients/js/geoestate-id.ts` sends people to Geohub and, for apps without a secret, swaps the code.
+
+## Endpoints
+
+| | |
+| --- | --- |
+| `GET /api/id/configuration` | issuer and endpoints |
+| `GET /api/id/jwks` | the public key |
+| `GET /id/authorize` (web page) | sign in and go back with a code |
+| `POST /api/id/token` | `grant_type=authorization_code` or `refresh_token`; client secret in the form or HTTP Basic |
+| `GET /api/id/userinfo` | the person as of now (Bearer access token) |
+| `POST /api/id/revoke` | sign out of the app (`token` = the refresh token) |
+
+A code works once, within 2 minutes, only at the address it was asked for, and only with its PKCE verifier. A code
+or refresh token used twice ends the sessions it started, in case it was copied.

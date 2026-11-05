@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     crm_link_key: str = ""                    # shared with the GeoEstate CRM (GEOHUB_LINK_KEY there); empty = no link
     # Where each other GeoEstate product lives, for the app switcher: "land=https://land.example,check=…,farm=…"
     product_urls: str = ""
+    # GeoEstate ID: the apps Geohub signs people in to, as JSON:
+    # [{"id": "land", "redirect_uris": ["https://land.example/auth/callback"], "secret": "<32+ characters, or leave out>"}]
+    id_clients: str = "[]"
+    id_signing_key: str = ""                  # an Ed25519 private key (PEM); empty = one derived from JWT_SECRET
+    id_token_minutes: int = 15
+    id_refresh_days: int = 30
     # Sign in with Google / Microsoft (OpenID Connect). Each is offered once its client id and secret are set. The
     # redirect URI to register with the provider is {APP_URL}{API_PREFIX}/auth/sso/<google|microsoft>/callback.
     google_client_id: str = ""
