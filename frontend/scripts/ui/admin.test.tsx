@@ -162,6 +162,20 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await confirmWith("Take it away");
   await until(() => products().getAllByRole("listitem").length === 1);
   ok(products().getAllByRole("listitem").length === 1 && /Taken away/.test(text()), "a product is taken away, and the history says so");
+
+  // licence keys for the customer's own installation
+  const keysCard = () => within(screen.getByRole("heading", { name: "Licence keys" }).closest("section")!);
+  await until(() => !!keysCard().queryByRole("button", { name: "Make a licence key" }));
+  await click(keysCard().getByRole("button", { name: "Make a licence key" }));
+  type(keysCard().getByLabelText("Installation's web address"), "https://geohub.lands.example.gov.ng/app");
+  type(keysCard().getByLabelText(/^Note/), "Lands bureau data centre");
+  await click(keysCard().getByRole("button", { name: "Make the key" }));
+  await until(() => !!keysCard().queryByLabelText("The licence key"));
+  ok(/^GEOESTATE-LICENCE-1\./.test((keysCard().getByLabelText("The licence key") as HTMLTextAreaElement).value) && /Key for https:\/\/geohub\.lands\.example\.gov\.ng/.test(keysCard().getByLabelText("Licence key").textContent ?? ""),
+    "staff make a licence key for an installation, carrying its licences");
+  await until(() => keysCard().queryAllByRole("button", { name: /Show the key/ }).length === 1);
+  ok(/Lands bureau data centre/.test(keysCard().getAllByRole("listitem")[0].textContent ?? "") && /LICENCE_PUBLIC_KEY/.test(keysCard().getByText(/Set as/).textContent ?? ""),
+    "issued keys are listed, with the public key installations need");
   cleanup();
 
   // ---- requests: set up the demo asked for above

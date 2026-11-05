@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from psycopg.types.json import Jsonb
 
-from .. import domains, licences, orgs, passwords, products, ratelimit, staff
+from .. import domains, licence_keys, licences, orgs, passwords, products, ratelimit, staff
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -14,7 +14,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from ..schemas import (AdminOrgDetail, AdminOrgIn, AdminOrgOut, AdminOrgPatch, OrgDomainIn, OrgDomainOut, OrgRequestIn,
-                       OrgRequestOut, OrgRequestPatch, OwnerIn, ProductIn, ProductOut, ProductRemoveIn, StaffActivityOut, StaffIn, StaffMeOut, StaffNoteIn,
+                       OrgRequestOut, OrgRequestPatch, OwnerIn, LicenceKeyIn, ProductIn, ProductOut, ProductRemoveIn, StaffActivityOut, StaffIn, StaffMeOut, StaffNoteIn,
                        StaffNoteOut, StaffOut, StaffPatch, SupportVisitIn, SupportVisitOut, SuspendIn)
 
 router = APIRouter(tags=["staff console"])
@@ -114,6 +114,9 @@ async def get_org(org_id: UUID, user=Depends(staff.staff()), conn=Depends(get_co
     out["projects"] = await cur.fetchall()
     out["support_visits"] = await visits(conn, org_id)
     out["products"] = await products.of_org(conn, org_id)
+    cur = await conn.execute("SELECT k.payload, k.issued_at FROM licence_keys k WHERE k.org_id = %s ORDER BY k.issued_at DESC LIMIT 50",
+                             (org_id,))
+    out["licence_keys"] = [licence_keys.summary(r["payload"]) | {"issued_by": r["payload"].get("issued_by")} for r in await cur.fetchall()]
     return out
 
 
@@ -287,6 +290,29 @@ async def remove_product(org_id: UUID, product: str, body: ProductRemoveIn, requ
     await products.record(conn, org_id, product, "remove", user["id"], note=body.note)
     await _staff_audit(conn, "product_remove", user, request, org_id, product=product, note=body.note.strip())
     return await products.of_org(conn, org_id)
+
+
+@router.get("/admin/licence-keys", summary="Whether this deployment issues licence keys, and the public key installations need")
+async def licence_key_settings(user=Depends(staff.staff()), conn=Depends(get_conn)):
+    return {"can_issue": licence_keys.public_key() is not None, "public_key": licence_keys.public_key()}
+
+
+@router.post("/admin/orgs/{org_id}/licence-keys", status_code=201,
+             summary="Issue a licence key for the customer's own installation, carrying its licences")
+async def issue_licence_key(org_id: UUID, body: LicenceKeyIn, request: Request, user=Depends(staff.staff("licences.edit")),
+                            conn=Depends(get_conn)):
+    out = await licence_keys.make(conn, org_id, body.installation, body.ends, body.note, user)
+    await _staff_audit(conn, "licence_key", user, request, org_id, installation=out["installation"], key_id=out["id"])
+    return out
+
+
+@router.get("/admin/licence-keys/{key_id}", summary="An issued licence key, to send again")
+async def get_licence_key(key_id: UUID, user=Depends(staff.staff()), conn=Depends(get_conn)):
+    cur = await conn.execute("SELECT key, payload FROM licence_keys WHERE id = %s", (key_id,))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "Licence key not found.", code="not_found")
+    return {"key": row["key"], **licence_keys.summary(row["payload"])}
 
 
 @router.post("/admin/orgs/{org_id}/suspend", response_model=AdminOrgOut, summary="Suspend a customer (for example for non-payment)")

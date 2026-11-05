@@ -6,6 +6,7 @@ import OrgBranding from "../components/OrgBranding";
 import OrgTeams from "../components/OrgTeams";
 import ImportPeople from "../components/ImportPeople";
 import SupportVisits from "../components/SupportVisits";
+import LicenceKeyCard from "../components/LicenceKeyCard";
 import { Button, ErrorState, Loading, PageHeader, useConfirm, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -274,6 +275,8 @@ export default function OrgSettingsPage() {
             {org.caps.teams !== 0 && <p className="org-teams-count">Teams <span className="tnum"><strong>{org.usage.teams ?? 0}</strong>{org.caps.teams != null ? ` of ${org.caps.teams}` : ""}</span></p>}
             <p className="field-hint">{isIndividual ? "For a team, ask GeoEstate for an organization." : owner ? "For more people or another plan, contact GeoEstate." : "The organization owner manages the plan."}</p>
           </section>
+
+          <LicenceKeyCard canInstall={admin} onInstalled={() => void load().then(() => refresh())} />
 
           {admin && !isIndividual && <SupportVisits />}
 

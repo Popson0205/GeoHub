@@ -7,7 +7,7 @@ from uuid import UUID
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, Response, UploadFile
 
-from .. import branding, domains, orgs, peopleimport, products, ratelimit
+from .. import branding, domains, licence_keys, orgs, peopleimport, products, ratelimit
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -16,7 +16,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..mailer import send_email
 from .. import passwords
-from ..schemas import ProductOut, SupportVisitOut, AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
+from ..schemas import LicenceKeyPaste, ProductOut, SupportVisitOut, AccountIn, AccountOut, AddableRole, ImportOut, OrgBrandingPatch, OrgDomainIn, OrgDomainOut, OrgDomainPatch, OrgMemberIn, OrgMemberOut, OrgMemberPatch, OrgOut, OrgPatch
 
 router = APIRouter(prefix="/org", tags=["organization"])
 public_router = APIRouter(tags=["organization"])
@@ -47,6 +47,25 @@ async def get_org(user=Depends(current_user), conn=Depends(get_conn)):
 async def get_products(user=Depends(current_user), conn=Depends(get_conn)):
     m = await orgs.require_membership(conn, user)
     return await products.of_org(conn, m["org_id"])
+
+
+@router.get("/licence-key", summary="This installation's licence key (on customers' own installations)")
+async def get_licence_key(user=Depends(current_user), conn=Depends(get_conn)):
+    return {"required": settings.licence_required, "installed": await licence_keys.installed(conn),
+            "can_check": bool(licence_keys.trusted()), "installation": settings.app_url}
+
+
+@router.put("/licence-key", summary="Install a new licence key from GeoEstate (owners and admins)")
+async def put_licence_key(body: LicenceKeyPaste, request: Request, user=Depends(current_user), conn=Depends(get_conn)):
+    m = await orgs.require_membership(conn, user)
+    if m["role"] not in ("owner", "admin"):
+        raise Problem(403, "Only the organization's owners and administrators can install a licence key.", code="forbidden")
+    if not settings.licence_required:
+        raise Problem(409, "This Geohub is run by GeoEstate: its licences are managed for you, without a key.", code="not_installation")
+    out = await licence_keys.install(conn, m["org_id"], body.key, user["id"])
+    await audit(conn, "org.licence_key", actor_id=user["id"], target_type="organization", target_id=m["org_id"], ip=client_ip(request),
+                key_id=out["id"])
+    return {"required": True, "installed": await licence_keys.installed(conn), "can_check": True, "installation": settings.app_url}
 
 
 @router.patch("", response_model=OrgOut, summary="Rename the organization (admins)")

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import CustomerForm, { draftFrom, renewalDraft, type Draft } from "../components/admin/CustomerForm";
 import ProductsCard, { PRODUCT_NAMES } from "../components/admin/ProductsCard";
+import LicenceKeysCard from "../components/admin/LicenceKeysCard";
 import { Icon } from "../components/icons";
 import { Button, ErrorState, Loading, useConfirm, useToast } from "../components/ui";
 import { ApiError, loadApi } from "../lib/api";
@@ -136,6 +137,7 @@ export default function AdminCustomerPage() {
           </section>
 
           <ProductsCard o={o} edit={editLicence} onChange={() => void load()} />
+          <LicenceKeysCard o={o} edit={editLicence} onChange={() => void load()} />
 
           <section className="card" aria-labelledby="c-notes">
             <h2 id="c-notes">Staff notes</h2>

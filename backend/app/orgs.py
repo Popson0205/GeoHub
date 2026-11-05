@@ -196,7 +196,13 @@ async def join_on_signup(conn, user: dict, org_name: str | None, email_verified:
         cur = await conn.execute("SELECT 1 FROM organizations LIMIT 1")
         if await cur.fetchone():
             raise Problem(403, "Sign-up is by invitation only. Ask an administrator to invite you.", code="invite_only")
-        await create_org(conn, settings.org_name, user["id"], plan="custom")   # a private copy has no caps
+        org = await create_org(conn, settings.org_name, user["id"], plan="custom")   # a private copy has no caps
+        if settings.licence_required:                      # …but its licence key decides that (app/licence_keys.py)
+            from . import licence_keys
+            try:
+                await licence_keys.install(conn, org["id"], settings.licence_key, user["id"])
+            except Problem:                                  # no key yet: 14 days of grace from today
+                await conn.execute("UPDATE organizations SET subscription_ends = current_date WHERE id = %s", (org["id"],))
         return await membership(conn, user["id"])
     # Anyone signing up themselves gets the free Individual plan; organizations are set up by GeoEstate.
     await create_org(conn, org_name or f"{user['name']}'s organization", user["id"], plan="individual")

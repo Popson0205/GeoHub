@@ -102,6 +102,13 @@ export interface ProductLicence {
   subscription_starts: string | null; subscription_ends: string | null; grace_ends: string | null;
   limits: Record<string, number | null>; features: string[]; url: string | null;
 }
+/** A licence key's contents, as shown (the key itself only when asked for). */
+export interface LicenceKeySummary {
+  id: string; customer: string; installation: string; issued_at: string; note: string | null; issued_by?: string | null;
+  products: { product: ProductId; name: string; plan_name: string; starts: string | null; ends: string | null }[];
+}
+export interface IssuedLicenceKey extends LicenceKeySummary { key: string }
+export interface InstallationLicence { required: boolean; installed: (LicenceKeySummary & { installed_at: string }) | null; can_check: boolean; installation: string }
 export interface ProductInput {
   plan: ProductPlan; licence_kind: LicenceKind; subscription_starts?: string | null; subscription_ends?: string | null;
   invoice_ref?: string; note?: string; limits?: Record<string, number | null>; features?: Record<string, boolean>;
@@ -132,6 +139,7 @@ export interface AdminOrgDetail extends AdminOrg {
   projects?: { id: string; name: string; records: number; last_update: string }[];
   support_visits?: SupportVisit[];
   products?: ProductLicence[];
+  licence_keys?: LicenceKeySummary[];
   people: AdminPerson[]; invited: number; licences: LicenceEvent[]; notes: StaffNote[]; api_keys: number; teams: number; activity: StaffActivity[];
 }
 // ---- sign-in providers and company email domains ----
