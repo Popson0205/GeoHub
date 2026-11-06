@@ -10,14 +10,17 @@ const WHAT: Record<ProductId, string> = {
 };
 const NOTE: Partial<Record<ProductLicence["status"], string>> = { demo: "Demo", grace: "Renewal due", expired: "Read-only", suspended: "Suspended" };
 
-/** The GeoEstate products the organization has, one click away. Shown once it has more than Geohub. */
+const ALL: [ProductId, string][] = [["hub", "Geohub"], ["land", "Land Registry"], ["check", "LandCheck"], ["farm", "FarmScan"]];
+const ASK = "geoestate.ng@gmail.com";
+
+/** The GeoEstate products: the organization's own one click away, and the others it could add. */
 export default function AppSwitcher() {
   const { user } = useAuth();
   const [apps, setApps] = useState<ProductLicence[]>([]);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!user?.org || user.org.plan === "individual") { setApps([]); return; }
+    if (!user?.org) { setApps([]); return; }
     void loadApi().then((a) => a.orgProducts()).then(setApps, () => setApps([]));
   }, [user?.id, user?.org?.id]);
   useEffect(() => {
@@ -27,7 +30,9 @@ export default function AppSwitcher() {
     window.addEventListener("mousedown", away); window.addEventListener("keydown", esc);
     return () => { window.removeEventListener("mousedown", away); window.removeEventListener("keydown", esc); };
   }, [open]);
-  if (apps.length < 2) return null;
+  if (!user) return null;
+  const owned = new Set(apps.map((a) => a.product));
+  const more = ALL.filter(([p]) => !owned.has(p) && p !== "hub");
 
   return (
     <div className="menu app-switcher" ref={ref}>
@@ -48,6 +53,17 @@ export default function AppSwitcher() {
             if (!a.url) return <div key={a.product} className="menu-item app-item is-off" role="menuitem" aria-disabled="true" title="Not opened yet: GeoEstate is setting it up">{body}</div>;
             return <a key={a.product} className="menu-item app-item" role="menuitem" href={a.url}>{body}</a>;
           })}
+          {more.length > 0 && <>
+            <div className="menu-sub">More from GeoEstate</div>
+            {more.map(([p, name]) => (
+              <a key={p} className="menu-item app-item is-more" role="menuitem"
+                href={`mailto:${ASK}?subject=${encodeURIComponent(`${name} for ${user.org?.name ?? "our organization"}`)}&body=${encodeURIComponent(`Hello GeoEstate,\n\nWe would like to try ${name}.\n\n${user.name}`)}`}>
+                <span className={`app-tile app-${p}`} aria-hidden="true">{name.slice(0, 1)}</span>
+                <span className="app-text"><strong>{name}</strong><span>{WHAT[p]}</span></span>
+                <span className="badge">Ask for a demo</span>
+              </a>
+            ))}
+          </>}
         </div>
       )}
     </div>

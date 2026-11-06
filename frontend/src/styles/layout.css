@@ -868,6 +868,8 @@ body.is-dnd * { cursor: grabbing !important; }
 .app-item { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
 .app-item.is-here { background: var(--n-50, rgba(0,0,0,.03)); cursor: default; }
 .app-item.is-off { opacity: .6; cursor: not-allowed; }
+.app-item.is-more .app-tile { filter: grayscale(.6); opacity: .75; }
+.app-switcher-pop .menu-sub { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted, #64748b); padding: var(--s-3) var(--s-3) 4px; border-top: 1px solid var(--border, #e5e7eb); margin-top: 4px; }
 .app-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .app-text span { font-size: var(--fs-xs); color: var(--muted); }
 .app-tile { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; color: #fff; }
