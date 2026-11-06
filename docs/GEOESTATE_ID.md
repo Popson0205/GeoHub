@@ -49,6 +49,19 @@ In Geohub's variables:
 words). The switcher lists the organization's apps from `GET /api/id/apps`; each app's address comes from Geohub's
 `PRODUCT_URLS`, and one without an address yet is shown but not opened. Geohub's own top bar has the same switcher.
 
+## Reading Geohub's field data
+
+An app can read the field data the signed-in person could open in Geohub, with the same access token
+(`gid.data(token, "projects")` in the Python kit):
+
+- `GET /id/data/projects`: their projects in the organization, each with its published forms (name, shape, fields,
+  how many features and how many approved).
+- `GET /id/data/forms/{id}/features?status=approved&shape=area&after=<seq>&limit=200`: a form's features, oldest first,
+  with geometry, answers, who collected and who reviewed them; `next` is the cursor for the following page.
+- `GET /id/data/features/{id}`: one feature as it is now.
+
+Land Registry uses this to register the parcels a field team enumerated with a Geohub form.
+
 ## Endpoints
 
 | | |
