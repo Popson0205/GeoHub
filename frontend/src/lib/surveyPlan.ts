@@ -23,8 +23,13 @@ export const MIN_RATIO = 3000;
 
 export type Leg = [string, string, string, string];            // degrees, minutes, seconds, distance (m)
 export interface Plan { v: 1; grid: number; method: "traverse" | "coordinates"; start?: [number, number]; legs?: [number, number, number, number][];
-  points?: [number, number][]; ratio: number | null; misclosure_m: number; area_m2: number; perimeter_m: number }
-export type Plotted = { ok: true; plan: Plan; geometry: Geometry; warnings: string[] } | { ok: false; problem: string };
+  points?: [number, number][]; ratio: number | null; misclosure_m: number; area_m2: number; perimeter_m: number;
+  plan_area?: number;                                            // the area printed on the plan, when given
+  flagged?: true }                                               // kept although it does not close to MIN_RATIO: for the registry to check
+/** The bearing and distance that would close the traverse if only this leg were wrong, and the area that would give. */
+export interface LegFix { leg: number; d: number; m: number; s: number; distance: number; area: number }
+export type Good = { ok: true; plan: Plan; geometry: Geometry; warnings: string[] };
+export type Plotted = Good | { ok: false; problem: string; suspect?: LegFix | null; poor?: Good };
 
 const num = (s: string) => (s.trim() === "" ? NaN : Number(s.replace(/,/g, "")));
 
@@ -73,8 +78,41 @@ function finish(grid: number, plan: Omit<Plan, "area_m2" | "perimeter_m">, pts: 
     geometry: { type: "Polygon", coordinates: [ring] } as Geometry, warnings };
 }
 
+/** Bearing in degrees as whole degrees, minutes and seconds (seconds to 0.01). */
+export function dms(deg: number): [number, number, number] {
+  const cs = Math.round((((deg % 360) + 360) % 360) * 360000);
+  const d = Math.floor(cs / 360000), m = Math.floor((cs % 360000) / 6000), s = (cs % 6000) / 100;
+  return [d % 360, m, s];
+}
+
+/**
+ * For each leg, the bearing and distance that would close the traverse if every other leg were right, and the area
+ * that gives. A misread figure is usually in one leg: the one whose fix gives the area printed on the plan is the one
+ * to check. Same as the Land Registry's geodesy.leg_fixes.
+ */
+export function legFixes(legs: { b: number; L: number }[], planArea?: number): { fixes: LegFix[]; suspect: LegFix | null } {
+  const fixes = legs.map((_, k) => {
+    let e = 0, n = 0;
+    legs.forEach(({ b, L }, i) => { if (i !== k) { e += L * Math.sin((b * Math.PI) / 180); n += L * Math.cos((b * Math.PI) / 180); } });
+    const b = (((Math.atan2(-e, -n) * 180) / Math.PI) % 360 + 360) % 360, L = Math.hypot(e, n);
+    let x = 0, y = 0;
+    const pts: [number, number][] = [[0, 0]];
+    legs.forEach((l, i) => { const bb = i === k ? b : l.b, LL = i === k ? L : l.L; x += LL * Math.sin((bb * Math.PI) / 180); y += LL * Math.cos((bb * Math.PI) / 180); pts.push([x, y]); });
+    const [d, m, s] = dms(b);
+    return { leg: k + 1, d, m, s, distance: Math.round(L * 100) / 100, area: Math.round(shoelace(pts.slice(0, -1)) * 100) / 100 };
+  });
+  let suspect: LegFix | null = null;
+  if (planArea && planArea > 0) {
+    const near = fixes.filter((f) => Math.abs(f.area - planArea) <= Math.max(0.5, planArea * 0.002));
+    if (near.length === 1) suspect = near[0];
+  }
+  return { fixes, suspect };
+}
+
 /** A traverse: start at (e, n), walk each leg, measure how far the last one ends from the start, spread that error. */
-export function plotTraverse(grid: number, start: [string, string], legs: Leg[]): Plotted {
+export function plotTraverse(grid: number, start: [string, string], legs: Leg[], planArea = ""): Plotted {
+  const pa = num(planArea);
+  const given = Number.isFinite(pa) && pa > 0 ? pa : undefined;
   const e0 = num(start[0]), n0 = num(start[1]);
   if (!Number.isFinite(e0) || !Number.isFinite(n0)) return { ok: false, problem: "Give the starting point's easting and northing." };
   const rows = legs.filter((l) => l.some((x) => x.trim()));
@@ -96,15 +134,23 @@ export function plotTraverse(grid: number, start: [string, string], legs: Leg[])
   const per = walked.reduce((t, l) => t + l[3], 0);
   const de = e - e0, dn = n - n0, mis = Math.hypot(de, dn);
   const ratio = mis < 1e-6 ? null : Math.floor(per / mis);
-  if (ratio != null && ratio < MIN_RATIO)
-    return { ok: false, problem: `The traverse does not close: it ends ${mis.toFixed(2)} m from the start (1 in ${ratio.toLocaleString()}). Check each bearing and distance against the plan.` };
+  const poorly = ratio != null && ratio < MIN_RATIO;
   let acc = 0;
   const pts = raw.slice(0, -1).map((p, i) => {                  // Bowditch: each corner moves in proportion to the distance walked to it
     if (i === 0) return p;
     acc += walked[i - 1][3];
     return [p[0] - (de * acc) / per, p[1] - (dn * acc) / per] as [number, number];
   });
-  return finish(grid, { v: 1, grid, method: "traverse", start: [e0, n0], legs: walked, ratio, misclosure_m: Math.round(mis * 1000) / 1000 }, pts, []);
+  const warnings: string[] = [];
+  const done = finish(grid, { v: 1, grid, method: "traverse", start: [e0, n0], legs: walked, ratio, misclosure_m: Math.round(mis * 1000) / 1000,
+    ...(given ? { plan_area: given } : {}) }, pts, warnings);
+  if (done.ok && given && Math.abs(done.plan.area_m2 - given) > Math.max(1, given * 0.005))
+    warnings.push(`The plotted area (${done.plan.area_m2.toLocaleString()} m²) is not the plan's area (${given.toLocaleString()} m²).`);
+  if (!poorly) return done;
+  const { suspect } = legFixes(walked.map(([d, m, s, L]) => ({ b: d + m / 60 + s / 3600, L })), given);
+  const problem = `The traverse does not close: it ends ${mis.toFixed(2)} m from the start (1 in ${ratio!.toLocaleString()}). Check each bearing and distance against the plan.`;
+  return { ok: false, problem, suspect,
+    poor: done.ok ? { ...done, plan: { ...done.plan, flagged: true } } : undefined };
 }
 
 /** Beacon coordinates on the grid, in order around the plot. */

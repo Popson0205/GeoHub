@@ -340,7 +340,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
               </div>
             )}
             {readPlan(draft.props.plan_json) && (() => { const p = readPlan(draft.props.plan_json)!; return (
-              <div className="plan-entry" role="note"><span><strong>{t("plan.from")}</strong> · {p.ratio == null ? t("plan.exact") : t("plan.closes", { r: p.ratio.toLocaleString(), m: p.misclosure_m })} · {p.area_m2.toLocaleString()} m²</span>
+              <div className="plan-entry" role="note"><span><strong>{t("plan.from")}</strong> · {p.flagged ? <>{t("plan.flagged")} · </> : null}{p.ratio == null ? t("plan.exact") : t("plan.closes", { r: p.ratio.toLocaleString(), m: p.misclosure_m })} · {p.area_m2.toLocaleString()} m²</span>
                 <Button small onClick={() => { setDraft((d) => d && { ...d, geometry: null }); setPlotting(true); }}>{t("plan.replot")}</Button></div>); })()}
             <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
             <div className="row" style={{ position: "sticky", bottom: 0, background: "var(--n-0)", padding: "8px 0" }}>
