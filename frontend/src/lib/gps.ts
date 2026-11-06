@@ -31,7 +31,8 @@ export function dropOutliers(fixes: Fix[]): Fix[] {
 }
 
 /** Values the collector records beside the form's own answers. The server accepts exactly these extra keys. */
-export const GPS_KEYS = ["gps_elev_m", "gps_hacc_m", "gps_vacc_m", "gps_src"] as const;
+// Recorded by the collector beside the answers: GPS quality, how the location was set, and a plot's survey plan (lib/surveyPlan).
+export const GPS_KEYS = ["gps_elev_m", "gps_hacc_m", "gps_vacc_m", "gps_src", "plan_json"] as const;
 
 export const withoutGps = (p: Record<string, unknown>) => {
   const out = { ...p };

@@ -25,3 +25,13 @@ def test_other_unknown_keys_are_still_rejected():
 
 def test_keys_fit_a_shapefile():
     assert all(len(k) <= 10 for k in SYSTEM_IDS)
+
+
+def test_an_area_plotted_from_its_survey_plan_keeps_the_plan():
+    import json
+    plan = {"v": 1, "grid": 26332, "method": "traverse", "start": [331600, 993000], "legs": [[90, 0, 0, 30], [180, 0, 0, 20], [270, 0, 0, 30], [0, 0, 0, 20]],
+            "ratio": None, "misclosure_m": 0, "area_m2": 600, "perimeter_m": 100}
+    assert check_properties(FIELDS, {"name": "Plot 1", "gps_src": "plan", "plan_json": json.dumps(plan)}) == {}
+    assert "plan_json" in check_properties(FIELDS, {"name": "P", "plan_json": "not json"})
+    assert "plan_json" in check_properties(FIELDS, {"name": "P", "plan_json": json.dumps({**plan, "grid": 4326})})
+    assert "plan_json" in check_properties(FIELDS, {"name": "P", "plan_json": json.dumps({**plan, "legs": None})})
