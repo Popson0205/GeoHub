@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { t, useLang } from "../lib/i18n";
-import { GRIDS, plotCoordinates, plotTraverse, type Leg, type Plan, type Plotted } from "../lib/surveyPlan";
+import { GRIDS, plotCoordinates, plotTraverse, type Leg, type LegFix, type Plan, type Plotted } from "../lib/surveyPlan";
 import type { Geometry } from "../lib/types";
 import { Button } from "./ui";
 
@@ -21,16 +21,23 @@ export default function PlanPlotter({ initial, onPreview, onUse, onCancel }: {
   const [start, setStart] = useState<[string, string]>(initial?.start ? [String(initial.start[0]), String(initial.start[1])] : ["", ""]);
   const [legs, setLegs] = useState<Leg[]>(initial?.legs ? initial.legs.map((l) => l.map(String) as Leg) : blankLegs(4));
   const [beacons, setBeacons] = useState<[string, string][]>(initial?.points ? initial.points.map(([e, n]) => [String(e), String(n)]) : [["", ""], ["", ""], ["", ""], ["", ""]]);
+  const [planArea, setPlanArea] = useState(initial?.plan_area ? String(initial.plan_area) : "");
   const [result, setResult] = useState<Plotted | null>(null);
-  const key = useMemo(() => JSON.stringify([grid, method, start, legs, beacons]), [grid, method, start, legs, beacons]);
+  const key = useMemo(() => JSON.stringify([grid, method, start, legs, beacons, planArea]), [grid, method, start, legs, beacons, planArea]);
   const [plottedKey, setPlottedKey] = useState("");
   const fresh = result?.ok && plottedKey === key;
 
   const plot = () => {
-    const r = method === "traverse" ? plotTraverse(grid, start, legs) : plotCoordinates(grid, beacons);
+    const r = method === "traverse" ? plotTraverse(grid, start, legs, planArea) : plotCoordinates(grid, beacons);
     setResult(r); setPlottedKey(key);
     onPreview(r.ok ? r.geometry : null);
     try { localStorage.setItem(GRID_KEY, String(grid)); } catch { /* private mode */ }
+  };
+  /** Put the suggested closing figures into the n-th filled leg. */
+  const applyFix = (f: LegFix) => {
+    const at = legs.map((l, i) => (l.some((x) => x.trim()) ? i : -1)).filter((i) => i >= 0)[f.leg - 1];
+    if (at == null) return;
+    setLegs((ls) => ls.map((l, i) => (i === at ? [String(f.d), String(f.m), String(f.s), f.distance.toFixed(2)] : l)));
   };
   const setLeg = (i: number, j: number, v: string) => setLegs((ls) => ls.map((l, k) => (k === i ? (l.map((x, q) => (q === j ? v : x)) as Leg) : l)));
   const setBeacon = (i: number, j: number, v: string) => setBeacons((bs) => bs.map((b, k) => (k === i ? (j === 0 ? [v, b[1]] : [b[0], v]) : b)));
@@ -53,6 +60,7 @@ export default function PlanPlotter({ initial, onPreview, onUse, onCancel }: {
           <div className="field"><label htmlFor="plan-e">{t("plan.easting")}</label><input id="plan-e" {...num} value={start[0]} onChange={(e) => setStart([e.target.value, start[1]])} /></div>
           <div className="field"><label htmlFor="plan-n">{t("plan.northing")}</label><input id="plan-n" {...num} value={start[1]} onChange={(e) => setStart([start[0], e.target.value])} /></div>
         </fieldset>
+        <div className="field"><label htmlFor="plan-area">{t("plan.planArea")}</label><input id="plan-area" {...num} value={planArea} onChange={(e) => setPlanArea(e.target.value)} /></div>
         <span className="field-hint">{t("plan.legsHint")}</span>
         <ol className="plan-legs">
           {legs.map((l, i) => (
@@ -80,11 +88,20 @@ export default function PlanPlotter({ initial, onPreview, onUse, onCancel }: {
         </ol>
         <Button small onClick={() => setBeacons((bs) => [...bs, ["", ""]])}>{t("plan.addBeacon")}</Button>
       </>}
-      {result && !result.ok && <div className="state state-error" role="alert">{result.problem}</div>}
+      {result && !result.ok && <div className="state state-error" role="alert">
+        {result.problem}
+        {result.suspect ? <p>{t("plan.suspect", { n: result.suspect.leg, b: `${result.suspect.d}°${String(result.suspect.m).padStart(2, "0")}'${result.suspect.s}"`, d: result.suspect.distance.toFixed(2), a: result.suspect.area.toLocaleString() })}</p>
+          : result.poor && !planArea.trim() ? <p>{t("plan.giveArea")}</p> : null}
+        {(result.suspect || result.poor) && plottedKey === key && <div className="row">
+          {result.suspect && <Button small onClick={() => applyFix(result.suspect!)}>{t("plan.useFix", { n: result.suspect.leg })}</Button>}
+          {result.poor && <Button small onClick={() => { const p = result.poor!; onPreview(p.geometry); onUse(p.geometry, p.plan); }}>{t("plan.useAnyway")}</Button>}
+        </div>}
+      </div>}
       {result?.ok && (
         <div className={`plan-result${fresh ? "" : " is-stale"}`} role="status">
           <strong>{result.plan.ratio == null ? t("plan.exact") : t("plan.closes", { r: result.plan.ratio.toLocaleString(), m: result.plan.misclosure_m })}</strong>
           <span>{t("plan.area", { a: result.plan.area_m2.toLocaleString(), p: result.plan.perimeter_m })}</span>
+          {result.warnings.map((w) => <span key={w}>{w}</span>)}
         </div>
       )}
       <div className="row" style={{ position: "sticky", bottom: 0, background: "var(--n-0)", padding: "8px 0" }}>
