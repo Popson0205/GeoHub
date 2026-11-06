@@ -15,6 +15,7 @@ import type { OrgBranding, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org,
   InstallationLicence, IssuedLicenceKey, ProductId, ProductInput, ProductLicence, SupportVisit, StaffMember, StaffNote, StaffActivity, StaffRole, StaffMe, LicenceEvent, LicenceStatus, AdminOrgDetail, AdminPerson,
   Team, ProjectTeam, TeamProjectRole, ImportResult, ImportRow, MfaStatus, ApiKey, AddableRole, PeopleKind,
   Activity, ContributorsReport, ProjectMember, PublicForm, Role, ShareMode, Sharing, JoinPreview, MapMember, MapRole, MapSettings, PublishInput, ReviewStatus,
+  FormTemplate, FormField,
 } from "../lib/types";
 import { DEMO_USER, seedDatasets, seedFeatureRows, seedForms, seedProjects, seedSharedMaps } from "./seed";
 
@@ -918,9 +919,22 @@ export class MockApi implements Api {
     if (!f) throw new ApiError(404, "Form not found.");
     return f;
   }
-  async createForm(projectId: string, name: string, geometry_type: GeometryType) {
+  async formTemplates(): Promise<FormTemplate[]> {
+    await wait(30); this.auth();
+    return [{ id: "land_enumeration", name: "Plot enumeration", product: "land", geometry_type: "area", questions: 18,
+      description: "Map each plot's boundary and record who occupies it, how they hold it and the papers they have. Connects to Land Registry as it is." }];
+  }
+  async createForm(projectId: string, name: string, geometry_type: GeometryType, template?: string) {
     await wait(); this.auth();
-    const f: Form = { id: uuid(), project_id: projectId, name, geometry_type, version: 0, status: "draft", fields: [] };
+    // the demo's copy of the land template: the questions Land Registry reads (the server holds the full form)
+    const land: FormField[] = template === "land_enumeration" ? [
+      { id: "plot_no", label: "Plot number", type: "text", required: true },
+      { id: "land_use", label: "Land use", type: "choice", required: true, choices: ["Residential", "Commercial", "Agricultural"] },
+      { id: "occupant_name", label: "Full name", type: "text", required: true },
+      { id: "occupant_phone", label: "Phone number", type: "text" },
+    ] as FormField[] : [];
+    const f: Form = { id: uuid(), project_id: projectId, name, geometry_type: template ? "Polygon" : geometry_type, version: 0, status: "draft",
+      fields: land, template: template ?? null };
     this.s.forms.push(f); this.save();
     return f;
   }

@@ -1,7 +1,7 @@
 import { NO_LOCATION } from "./dashboardShare";
 import { config } from "./config";
 import { normalizeConfig } from "./dashboard";
-import type { InstallationLicence, IssuedLicenceKey, ProductId, ProductInput, ProductLicence, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
+import type { FormTemplate, InstallationLicence, IssuedLicenceKey, ProductId, ProductInput, ProductLicence, MediaItem, FeatureStatus, AuditEvent, AuditKind, Org, OrgMember, OrgRole, EmailCheck, AccountInput, AccountResult, PasswordLink,
   AdminOrg, AdminOrgInput, AdminOrgPatch, OrgRequest, OrgRequestInput, RequestStatus, DomainRole, OrgDomain, SsoProvider, DatasetVisibility,
   Bundle, Change, Dataset, ExportFormat, Feature, FeatureCollection, Form, FormField, GeometryType, ImageryAsset,
   Job, License, NewFeature, Project, Props, PullResult, PushResult, Session, User, Geometry,
@@ -152,7 +152,8 @@ export interface Api {
 
   listForms(projectId: string): Promise<Form[]>;
   getForm(id: string): Promise<Form>;
-  createForm(projectId: string, name: string, geometryType: GeometryType): Promise<Form>;
+  createForm(projectId: string, name: string, geometryType: GeometryType, template?: string): Promise<Form>;
+  formTemplates(): Promise<FormTemplate[]>;
   saveForm(form: Form): Promise<Form>;
   publishForm(id: string): Promise<Form>;
 
@@ -296,6 +297,7 @@ const toForm = (f: Wire, projectId?: string): Form => ({
   version: f.version,
   status: f.status ?? "published", // bundle forms are published versions
   fields: (f.fields ?? []).map(fromWireField),
+  template: f.template ?? null,
 });
 const toFeature = (f: Wire): Feature => ({
   id: f.id, project_id: f.project_id, form_id: f.form_id, form_version: f.form_version,
@@ -464,9 +466,10 @@ class HttpApi implements Api {
     return page.items.map((f: Wire) => toForm(f, projectId)) as Form[];
   }
   async getForm(id: string) { return toForm(await this.req("GET", `/forms/${id}`)); }
-  async createForm(projectId: string, name: string, geometry_type: GeometryType) {
-    return toForm(await this.req("POST", `/projects/${projectId}/forms`, { name, geometry_type: GEOM_TO_API[geometry_type] }), projectId);
+  async createForm(projectId: string, name: string, geometry_type: GeometryType, template?: string) {
+    return toForm(await this.req("POST", `/projects/${projectId}/forms`, template ? { name, template } : { name, geometry_type: GEOM_TO_API[geometry_type] }), projectId);
   }
+  formTemplates() { return this.req<FormTemplate[]>("GET", "/form-templates"); }
   async saveForm(form: Form) {
     return toForm(await this.req("PATCH", `/forms/${form.id}`, { name: form.name, fields: form.fields.map(toWireField) }));
   }

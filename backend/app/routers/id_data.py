@@ -58,12 +58,12 @@ async def projects(person=Depends(app_person), conn=Depends(get_conn)):
         if not role:
             continue
         cur2 = await conn.execute(
-            "SELECT f.id, v.name, v.geometry_type, f.version, v.fields, "
+            "SELECT f.id, v.name, v.geometry_type, f.version, v.fields, f.template, "
             "  (SELECT count(*) FROM features x WHERE x.form_id = f.id AND x.deleted_at IS NULL) AS features, "
             "  (SELECT count(*) FROM features x WHERE x.form_id = f.id AND x.deleted_at IS NULL AND x.status = 'approved') AS approved "
             "FROM forms f JOIN form_versions v ON v.form_id = f.id AND v.version = f.version "
             "WHERE f.project_id = %s AND f.version > 0 ORDER BY lower(v.name)", (p["id"],))
-        forms = [{"id": f["id"], "name": f["name"], "geometry_type": f["geometry_type"], "version": f["version"],
+        forms = [{"id": f["id"], "name": f["name"], "geometry_type": f["geometry_type"], "version": f["version"], "template": f["template"],
                   "features": f["features"], "approved": f["approved"], "fields": _fields(f["fields"])} for f in await cur2.fetchall()]
         out.append({"id": p["id"], "name": p["name"], "description": p["description"], "role": role, "forms": forms})
     return out
