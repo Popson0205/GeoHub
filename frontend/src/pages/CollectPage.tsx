@@ -12,6 +12,8 @@ import { Button, ErrorState, Loading, useToast, useUndoable } from "../component
 import { loadApi } from "../lib/api";
 import { LANGS, setLang, t, useLang, type Lang } from "../lib/i18n";
 import { combineFixes, gpsProps, isMoving, POOR_M, quality, TARGET_M, viewAround, withoutGps, type Fix } from "../lib/gps";
+import PlanPlotter from "../components/PlanPlotter";
+import { planText, readPlan } from "../lib/surveyPlan";
 import { gpsAllowed, useGpsWarmup } from "../lib/useGpsWarmup";
 import { listenGps } from "../lib/gpsStream";
 import { db, type LocalFeature, type LocalMedia, type ConflictRow } from "../lib/db";
@@ -46,6 +48,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const [formId, setFormId] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [plotting, setPlotting] = useState(false);                 // an area from its survey plan (components/PlanPlotter)
+  const [planPreview, setPlanPreview] = useState<Geometry | null>(null);
   const [locating, setLocating] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   /** The capture in progress or just finished: how many readings were used, and whether the person moved. */
@@ -100,15 +104,26 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const mapFeatures: MapFeature[] = useMemo(() => {
     const list: MapFeature[] = (collectOnly ? [] : features).filter((f) => !f.deleted && f.id !== draft?.id).map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, pending: f.sync !== "synced" }));
     if (draft?.geometry) list.push({ id: DRAFT_ID, geometry: draft.geometry, pending: true });
+    else if (planPreview) list.push({ id: DRAFT_ID, geometry: planPreview, pending: true });
     return list;
-  }, [features, draft, collectOnly]);
+  }, [features, draft, collectOnly, planPreview]);
 
   function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: applyDefaults(form.fields), newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
   async function cancelDraft() {
     stopWatch();
     if (draft?.newMedia.length) await db.media.bulkDelete(draft.newMedia);
-    setDraft(null); setPlacing(false); setErrors({});
+    setDraft(null); setPlacing(false); setPlotting(false); setPlanPreview(null); setErrors({});
   }
+  const bboxOf = (g: Geometry): Bbox => {
+    const pts = (g as { coordinates: number[][][] }).coordinates[0];
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+  const previewPlan = (g: Geometry | null) => { setPlanPreview(g); if (g) setFlyTo({ bounds: bboxOf(g), key: Date.now() }); };
+  const usePlan = (g: Geometry, plan: Parameters<typeof planText>[0]) => {
+    setAccuracy(null); setPlotting(false); setPlanPreview(null);
+    setDraft((d) => d && { ...d, geometry: g, props: { ...withoutGps(d.props), gps_src: "plan", plan_json: planText(plan) } });
+  };
   // While a record is open, an app update waits instead of reloading the page and losing it.
   const drafting = draft !== null;
   useEffect(() => { setBusy(drafting); return () => setBusy(false); }, [drafting]);
@@ -293,6 +308,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
             )}
             <Button variant="accent" onClick={startDraft} disabled={!form}>{t("collect.new", { name: form ? form.name.toLowerCase() : "" }).trim()}</Button>
           </>
+        ) : !draft.geometry && plotting ? (
+          <PlanPlotter initial={readPlan(draft.props.plan_json)} onPreview={previewPlan} onUse={usePlan} onCancel={() => setPlotting(false)} />
         ) : !draft.geometry ? (
           <>
             <h2>{t("collect.new", { name: form?.name.toLowerCase() ?? "" })}</h2>
@@ -303,7 +320,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
               </span>
             )}
             {form?.geometry_type === "Point" && <Button variant="accent" busy={locating} onClick={capture}>{t("collect.capture")}</Button>}
-            <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? t("collect.place") : t("collect.draw")}</Button>
+            {form?.geometry_type === "Polygon" && <Button variant="accent" onClick={() => setPlotting(true)}>{t("plan.open")}</Button>}
+            <Button onClick={() => setPlacing(true)} disabled={placing}>{form?.geometry_type === "Point" ? t("collect.place") : form?.geometry_type === "Polygon" ? t("plan.noPlan") : t("collect.draw")}</Button>
             <Button variant="ghost" onClick={cancelDraft}>{t("cancel")}</Button>
           </>
         ) : form && (
@@ -321,6 +339,9 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
                 <Button small onClick={capture}>{t("gps.again")}</Button>
               </div>
             )}
+            {readPlan(draft.props.plan_json) && (() => { const p = readPlan(draft.props.plan_json)!; return (
+              <div className="plan-entry" role="note"><span><strong>{t("plan.from")}</strong> · {p.ratio == null ? t("plan.exact") : t("plan.closes", { r: p.ratio.toLocaleString(), m: p.misclosure_m })} · {p.area_m2.toLocaleString()} m²</span>
+                <Button small onClick={() => { setDraft((d) => d && { ...d, geometry: null }); setPlotting(true); }}>{t("plan.replot")}</Button></div>); })()}
             <FormRenderer form={form} value={draft.props} onChange={(p) => setDraft((d) => d && { ...d, props: p })} errors={errors} renderMedia={renderMedia} />
             <div className="row" style={{ position: "sticky", bottom: 0, background: "var(--n-0)", padding: "8px 0" }}>
               <Button onClick={cancelDraft}>{t("cancel")}</Button>

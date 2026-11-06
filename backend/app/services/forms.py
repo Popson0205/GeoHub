@@ -4,6 +4,7 @@ A form is a tree of fields. Groups only organise: their children are stored flat
 A repeat stores a list of rows under its own id. Everything here mirrors frontend/src/lib/{fieldSpec,logic,forms}.ts;
 backend/tests/test_form_fields.py checks the two type tables agree.
 """
+import json
 import math
 import secrets
 from typing import Any
@@ -603,13 +604,26 @@ SYSTEM_FIELDS = [
     {"id": "gps_hacc_m", "type": "number", "label": "Horizontal accuracy (m)"},
     {"id": "gps_vacc_m", "type": "number", "label": "Vertical accuracy (m)"},
     {"id": "gps_src", "type": "text", "label": "Location source"},
+    {"id": "plan_json", "type": "text", "label": "Survey plan"},
 ]
+PLAN_GRIDS = {26331, 26332, 26391, 26392, 26393, 32631, 32632}
 SYSTEM_IDS = {f["id"] for f in SYSTEM_FIELDS}
 
 
 def check_system_value(key: str, v: Any) -> str | None:
     if key == "gps_src":
-        return None if v in ("gps", "map") else "must be \"gps\" or \"map\""
+        return None if v in ("gps", "map", "plan") else "must be \"gps\", \"map\" or \"plan\""
+    if key == "plan_json":
+        # an area plotted from its survey plan in the collector (frontend/src/lib/surveyPlan.ts): kept for the registry
+        if not isinstance(v, str) or len(v) > 20000:
+            return "must be the plan as text"
+        try:
+            p = json.loads(v)
+        except ValueError:
+            return "is not a survey plan"
+        ok = isinstance(p, dict) and p.get("v") == 1 and p.get("grid") in PLAN_GRIDS and p.get("method") in ("traverse", "coordinates") \
+            and isinstance(p.get("legs") if p.get("method") == "traverse" else p.get("points"), list)
+        return None if ok else "is not a survey plan"
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
         return "must be a number"
     if key == "gps_elev_m":
