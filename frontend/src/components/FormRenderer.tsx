@@ -1,7 +1,7 @@
 import { t } from "../lib/i18n";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TYPE_SPECS, defaultAppearance } from "../lib/fieldSpec";
-import { newRow } from "../lib/forms";
+import { isNoneChoice, newRow } from "../lib/forms";
 import { resolve } from "../lib/logic";
 import type { Form, FormField, Props } from "../lib/types";
 import { Button } from "./ui";
@@ -28,7 +28,7 @@ const toLocalInput = (iso: unknown): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 const fromLocalInput = (s: string): string => (s ? new Date(s).toISOString() : "");
-const stepOf = (f: FormField): number | "any" => (f.integer ? 1 : f.decimals !== undefined ? Number((10 ** -f.decimals).toFixed(f.decimals)) : "any");
+const stepOf = (f: FormField): number | "any" => (f.integer ? 1 : f.decimals != null ? Number((10 ** -f.decimals).toFixed(f.decimals)) : "any");
 
 export default function FormRenderer({ form, value, onChange, errors = {}, renderMedia }: Props_) {
   const { values, hidden, required } = useMemo(() => resolve(form.fields, value), [form.fields, value]);
@@ -154,7 +154,9 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
         case "multi_choice": {
           const cur = Array.isArray(v) ? (v as string[]) : [];
           const opts = f.choices ?? [];
-          const toggle = (o: string) => set(f.id, cur.includes(o) ? cur.filter((x) => x !== o) : [...cur, o]);
+          // "None" (or "None of the above") stands alone: choosing it clears the others, and choosing another clears it
+          const toggle = (o: string) => set(f.id, cur.includes(o) ? cur.filter((x) => x !== o)
+            : isNoneChoice(o) ? [o] : [...cur.filter((x) => !isNoneChoice(x)), o]);
           if (app === "dropdown") {
             return simple(
               <select id={id} {...aria} multiple size={Math.min(6, Math.max(3, opts.length))} disabled={ro} value={cur}
@@ -264,7 +266,7 @@ export default function FormRenderer({ form, value, onChange, errors = {}, rende
         case "repeat": {
           const rows = Array.isArray(v) ? (v as Props[]) : [];
           const setRows = (n: Props[]) => set(f.id, n);
-          const full = f.max_items !== undefined && rows.length >= f.max_items;
+          const full = f.max_items != null && rows.length >= f.max_items;
           return (
             <section className={`repeat${app === "table" ? " repeat-compact" : ""}`} key={key} aria-label={f.label}>
               <h3>{label}</h3>{hint}

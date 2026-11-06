@@ -109,3 +109,12 @@ ok(pruneProperties({ fields: idForm }, start).auto_id_short_code === start.auto_
 ok(resolve(idForm, {}).values.u !== undefined, "a record that has no id yet gets one");
 ok(generateId({ fn: "short_id" }) !== generateId({ fn: "short_id" }) && generateId({ fn: "uuid" }) !== generateId({ fn: "uuid" }), "two ids are never the same");
 ok(String(generateId({ fn: "short_id", prefix: "WP-" })).startsWith("WP-"), "the prefix is used");
+
+// limits saved as null (as the API stores an unset limit) are no limit; "None" stands alone
+{
+  const docs = [{ id: "documents", label: "Documents held", type: "multi_choice", choices: ["Survey plan", "Deed of assignment", "None"],
+    min_items: null, max_items: null }] as unknown as FormField[];
+  ok(!validateProperties({ fields: docs }, { documents: ["Survey plan", "Deed of assignment"] }).documents, "a multiple choice with no limit (null) takes several answers");
+  ok(/cannot be chosen with other answers/.test(validateProperties({ fields: docs }, { documents: ["Survey plan", "None"] }).documents ?? ""), "\"None\" cannot be chosen with other answers");
+  ok(!validateProperties({ fields: docs }, { documents: ["None"] }).documents, "\"None\" alone is fine");
+}
