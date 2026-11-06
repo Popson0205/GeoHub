@@ -92,9 +92,10 @@ export default function PlanPlotter({ initial, onPreview, onUse, onCancel }: {
         {result.problem}
         {result.suspect ? <p>{t("plan.suspect", { n: result.suspect.leg, b: `${result.suspect.d}°${String(result.suspect.m).padStart(2, "0")}'${result.suspect.s}"`, d: result.suspect.distance.toFixed(2), a: result.suspect.area.toLocaleString() })}</p>
           : result.poor && !planArea.trim() ? <p>{t("plan.giveArea")}</p> : null}
+        {result.poor?.plan.closed && <p className="field-hint">{t("plan.closeHint", { n: result.poor.plan.closed.leg })}</p>}
         {(result.suspect || result.poor) && plottedKey === key && <div className="row">
           {result.suspect && <Button small onClick={() => applyFix(result.suspect!)}>{t("plan.useFix", { n: result.suspect.leg })}</Button>}
-          {result.poor && <Button small onClick={() => { const p = result.poor!; onPreview(p.geometry); onUse(p.geometry, p.plan); }}>{t("plan.useAnyway")}</Button>}
+          {result.poor && <Button small onClick={() => { const p = result.poor!; onPreview(p.geometry); onUse(p.geometry, p.plan); }}>{t("plan.closeStart", { n: result.poor.plan.closed!.leg })}</Button>}
         </div>}
       </div>}
       {result?.ok && (
