@@ -51,7 +51,7 @@ export default function AppSwitcher() {
             </>;
             if (here) return <div key={a.product} className="menu-item app-item is-here" role="menuitem" aria-current="page">{body}</div>;
             if (!a.url) return <div key={a.product} className="menu-item app-item is-off" role="menuitem" aria-disabled="true" title="Not opened yet: GeoEstate is setting it up">{body}</div>;
-            return <a key={a.product} className="menu-item app-item" role="menuitem" href={a.url}>{body}</a>;
+            return <a key={a.product} className="menu-item app-item" role="menuitem" href={a.url} target="_blank" rel="noopener">{body}</a>;   // each app in its own tab
           })}
           {more.length > 0 && <>
             <div className="menu-sub">More from GeoEstate</div>
