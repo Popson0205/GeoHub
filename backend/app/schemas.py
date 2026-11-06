@@ -172,8 +172,9 @@ FieldDef.model_rebuild()
 
 class FormIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    geometry_type: GeometryType
+    geometry_type: GeometryType | None = None
     fields: list[FieldDef] = []
+    template: str | None = Field(None, max_length=40, description="Start from a ready-made form (GET /form-templates)")
 
 
 class FormPatch(BaseModel):
@@ -192,6 +193,7 @@ class FormOut(BaseModel):
     has_unpublished_changes: bool
     fields: list[FieldDef]
     updated_at: datetime
+    template: str | None = Field(None, description="The ready-made form it started from, if any")
 
 
 class FormVersionOut(BaseModel):

@@ -66,3 +66,33 @@ def test_apps_read_field_data_as_the_person(client, boss, outbox, apps):
     # a Geohub session token or no token is not enough
     assert client.get("/id/data/projects", headers=owner.h).status_code == 401
     assert client.get("/id/data/projects").status_code == 401
+
+
+def test_form_from_the_land_template(client, boss, outbox, apps):
+    owner = Actor(client, "Template User")
+    boss.put(f"/admin/orgs/{owner.org_id}/products/land", json={"plan": "standard", "licence_kind": "demo"})
+    ts = owner.get("/form-templates").json()
+    land = next(t for t in ts if t["id"] == "land_enumeration")
+    assert land["product"] == "land" and land["geometry_type"] == "area" and land["questions"] >= 15
+    pid = owner.post("/projects", json={"name": "Bwari plots"}).json()["id"]
+    r = owner.post(f"/projects/{pid}/forms", json={"name": "Bwari plot enumeration", "template": "land_enumeration"})
+    assert r.status_code == 201, r.text
+    f = r.json()
+    assert f["template"] == "land_enumeration" and f["geometry_type"] == "area" and f["name"] == "Bwari plot enumeration"
+    assert owner.post(f"/forms/{f['id']}/publish").status_code == 200
+    assert owner.post(f"/projects/{pid}/forms", json={"name": "X", "template": "nope"}).status_code == 422
+    assert owner.post(f"/projects/{pid}/forms", json={"name": "X"}).status_code == 422
+    # a person's answers are checked like any form's: a NIN has 11 digits, a dispute needs its note
+    good = {"plot_no": "12", "land_use": "Residential", "occupant_kind": "Person", "occupant_name": "Aisha Bako", "occupant_nin": "11112222333",
+            "dispute": False}
+    sq = {"type": "Polygon", "coordinates": [[[7.4, 9.2], [7.4003, 9.2], [7.4003, 9.2003], [7.4, 9.2003], [7.4, 9.2]]]}
+    add = lambda props: owner.post(f"/projects/{pid}/features", json={"id": str(uuid.uuid4()), "form_id": f["id"], "geometry": sq, "properties": props})  # noqa: E731
+    assert add(good).status_code == 201
+    assert add({**good, "occupant_nin": "123"}).status_code == 422
+    assert add({**good, "dispute": True}).status_code == 422
+    assert add({**good, "dispute": True, "dispute_note": "A cousin claims it"}).status_code == 201
+    # apps see which template the form came from
+    v = apps.new_verifier()
+    h = {"Authorization": f"Bearer {apps.exchange(code_for(owner, v), CALLBACK, v)['access_token']}"}
+    form = next(x for p in client.get("/id/data/projects", headers=h).json() if p["id"] == pid for x in p["forms"])
+    assert form["template"] == "land_enumeration" and {"plot_no", "occupant_name", "dispute_note"} <= {q["id"] for q in form["fields"]}

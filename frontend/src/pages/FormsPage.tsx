@@ -1,11 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import ProjectNav from "../components/ProjectNav";
 import { Button, ErrorState, Loading, useToast } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
-import { GEOMETRY_LABEL, type GeometryType } from "../lib/types";
+import { GEOMETRY_LABEL, type FormTemplate, type GeometryType } from "../lib/types";
+
+const FOR: Record<string, string> = { land: "For Land Registry", check: "For LandCheck", farm: "For FarmScan" };
 
 export default function FormsPage() {
   const { projectId = "" } = useParams();
@@ -16,12 +18,16 @@ export default function FormsPage() {
   const [geom, setGeom] = useState<GeometryType>("Point");
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  const [start, setStart] = useState("");                         // "" = a blank form, else a template id
+  useEffect(() => { void loadApi().then((a) => a.formTemplates()).then(setTemplates, () => setTemplates([])); }, []);
+  const tpl = templates.find((t) => t.id === start);
 
   async function create(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      const f = await (await loadApi()).createForm(projectId, name.trim(), geom);
+      const f = await (await loadApi()).createForm(projectId, name.trim() || tpl?.name || "", geom, start || undefined);
       nav(`/collect/${projectId}/forms/${f.id}`);
     } catch (err) { toast(err instanceof Error ? err.message : "Could not create the form.", "error"); setBusy(false); }
   }
@@ -38,13 +44,29 @@ export default function FormsPage() {
         {showCreate && (
           <form className="card inline-panel" onSubmit={create} aria-label="New form">
             <h2>New form</h2>
-            <div className="field"><label htmlFor="fn">Name</label><input id="fn" required value={name} onChange={(e) => setName(e.target.value)} placeholder="For example, Water point" autoFocus={creating} /></div>
-            <div className="field"><label htmlFor="fg">What do collectors capture?</label>
+            {templates.length > 0 && (
+              <fieldset className="field start-from">
+                <legend>Start from</legend>
+                <label className={`start-card${start === "" ? " is-picked" : ""}`}>
+                  <input type="radio" name="start" checked={start === ""} onChange={() => setStart("")} />
+                  <strong>A blank form</strong><small>Add your own questions in the builder.</small>
+                </label>
+                {templates.map((t) => (
+                  <label key={t.id} className={`start-card${start === t.id ? " is-picked" : ""}`}>
+                    <input type="radio" name="start" checked={start === t.id} onChange={() => setStart(t.id)} />
+                    <strong>{t.name} {FOR[t.product] && <span className="badge badge-info">{FOR[t.product]}</span>}</strong>
+                    <small>{t.description} {t.questions} questions; change them freely in the builder.</small>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            <div className="field"><label htmlFor="fn">Name</label><input id="fn" required={!tpl} value={name} onChange={(e) => setName(e.target.value)} placeholder={tpl ? tpl.name : "For example, Water point"} autoFocus={creating} /></div>
+            {!tpl && <div className="field"><label htmlFor="fg">What do collectors capture?</label>
               <select id="fg" value={geom} onChange={(e) => setGeom(e.target.value as GeometryType)}>
                 {(Object.keys(GEOMETRY_LABEL) as GeometryType[]).map((g) => <option key={g} value={g}>A {GEOMETRY_LABEL[g]}</option>)}
               </select>
               <span className="field-hint">This is the shape drawn on the map for each record. It cannot be changed later.</span>
-            </div>
+            </div>}
             <div className="row"><Button type="submit" variant="primary" busy={busy}>Create and open builder</Button>{creating && <Button onClick={() => setCreating(false)}>Cancel</Button>}</div>
           </form>
         )}

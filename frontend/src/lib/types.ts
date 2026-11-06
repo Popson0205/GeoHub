@@ -241,7 +241,10 @@ export interface Form {
   version: number;
   status: "draft" | "published";
   fields: FormField[];
+  /** The ready-made form it started from (e.g. "land_enumeration"), if any. */
+  template?: string | null;
 }
+export interface FormTemplate { id: string; name: string; product: string; description: string; geometry_type: string; questions: number }
 
 export type FeatureStatus = "draft" | "submitted" | "approved" | "rejected";
 export type Props = Record<string, unknown>;

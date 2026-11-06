@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from psycopg.types.json import Jsonb
 
+from .. import form_templates
 from ..audit import audit
 from ..db import get_conn
 from ..deps import current_user, require_role
@@ -15,7 +16,7 @@ from ..services.forms import check_field_defs
 router = APIRouter(tags=["forms"])
 
 FORM_SQL = (
-    "SELECT f.id, f.project_id, f.name, f.geometry_type, f.version, f.fields, f.updated_at, "
+    "SELECT f.id, f.project_id, f.name, f.geometry_type, f.version, f.fields, f.updated_at, f.template, "
     "CASE WHEN f.version = 0 THEN 'draft' ELSE 'published' END AS status, "
     "(f.version = 0 OR v.fields IS DISTINCT FROM f.fields OR v.name <> f.name) AS has_unpublished_changes "
     "FROM forms f LEFT JOIN form_versions v ON v.form_id = f.id AND v.version = f.version ")
@@ -35,14 +36,24 @@ def _check(fields):
         raise Problem(422, "The form has invalid fields.", code="validation", fields=errs)
 
 
+@router.get("/form-templates", summary="Ready-made forms to start from (e.g. Land Registry's plot enumeration)")
+async def templates(user=Depends(current_user)):
+    return form_templates.listing()
+
+
 @router.post("/projects/{project_id}/forms", response_model=FormOut, status_code=201)
 async def create_form(project_id: UUID, body: FormIn, user=Depends(current_user), conn=Depends(get_conn)):
     await require_role(conn, project_id, user["id"], "admin")
+    if body.template:                                   # a ready-made form: its questions and shape, under the given name
+        t = form_templates.get(body.template)
+        body = FormIn(name=body.name, geometry_type=t["geometry_type"], fields=t["fields"], template=body.template)
+    elif not body.geometry_type:
+        raise Problem(422, "Say what collectors capture: a point, a line or an area.", code="validation", fields={"geometry_type": ["missing"]})
     _check(body.fields)
     cur = await conn.execute(
-        "INSERT INTO forms (project_id, name, geometry_type, fields, created_by) VALUES (%s, %s, %s, %s, %s) "
+        "INSERT INTO forms (project_id, name, geometry_type, fields, created_by, template) VALUES (%s, %s, %s, %s, %s, %s) "
         "RETURNING id", (project_id, body.name, body.geometry_type,
-                         Jsonb([f.model_dump(exclude_none=True) for f in body.fields]), user["id"]))
+                         Jsonb([f.model_dump(exclude_none=True) for f in body.fields]), user["id"], body.template))
     return await _load(conn, (await cur.fetchone())["id"])
 
 
