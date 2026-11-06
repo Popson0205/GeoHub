@@ -25,7 +25,8 @@ export type Leg = [string, string, string, string];            // degrees, minut
 export interface Plan { v: 1; grid: number; method: "traverse" | "coordinates"; start?: [number, number]; legs?: [number, number, number, number][];
   points?: [number, number][]; ratio: number | null; misclosure_m: number; area_m2: number; perimeter_m: number;
   plan_area?: number;                                            // the area printed on the plan, when given
-  flagged?: true }                                               // kept although it does not close to MIN_RATIO: for the registry to check
+  flagged?: true;                                                // kept although it does not close to MIN_RATIO: for the registry to check
+  closed?: { leg: number; d: number; m: number; s: number; distance: number } }   // the last leg used instead of the plan's, to close it
 /** The bearing and distance that would close the traverse if only this leg were wrong, and the area that would give. */
 export interface LegFix { leg: number; d: number; m: number; s: number; distance: number; area: number }
 export type Good = { ok: true; plan: Plan; geometry: Geometry; warnings: string[] };
@@ -103,8 +104,10 @@ export function legFixes(legs: { b: number; L: number }[], planArea?: number): {
   });
   let suspect: LegFix | null = null;
   if (planArea && planArea > 0) {
-    const near = fixes.filter((f) => Math.abs(f.area - planArea) <= Math.max(0.5, planArea * 0.002));
-    if (near.length === 1) suspect = near[0];
+    const off = (f: LegFix) => Math.abs(f.area - planArea);
+    const near = fixes.filter((f) => off(f) <= Math.max(0.5, planArea * 0.002)).sort((a, b) => off(a) - off(b));
+    // one leg fits, or one fits clearly better (opposite sides of a plot can both come near)
+    if (near.length === 1 || (near.length > 1 && off(near[0]) * 3 < off(near[1]))) suspect = near[0];
   }
   return { fixes, suspect };
 }
@@ -147,10 +150,22 @@ export function plotTraverse(grid: number, start: [string, string], legs: Leg[],
   if (done.ok && given && Math.abs(done.plan.area_m2 - given) > Math.max(1, given * 0.005))
     warnings.push(`The plotted area (${done.plan.area_m2.toLocaleString()} m²) is not the plan's area (${given.toLocaleString()} m²).`);
   if (!poorly) return done;
-  const { suspect } = legFixes(walked.map(([d, m, s, L]) => ({ b: d + m / 60 + s / 3600, L })), given);
+  const { fixes, suspect } = legFixes(walked.map(([d, m, s, L]) => ({ b: d + m / 60 + s / 3600, L })), given);
   const problem = `The traverse does not close: it ends ${mis.toFixed(2)} m from the start (1 in ${ratio!.toLocaleString()}). Check each bearing and distance against the plan.`;
-  return { ok: false, problem, suspect,
-    poor: done.ok ? { ...done, plan: { ...done.plan, flagged: true } } : undefined };
+  // Closing to the start (as CAD does) puts all the error in the last leg: offered only when no other leg is shown to be the wrong one.
+  const last = fixes[fixes.length - 1];
+  if (suspect && suspect.leg !== last.leg) return { ok: false, problem, suspect };
+  let x = e0, y = n0;
+  const closedPts: [number, number][] = [[x, y]];
+  for (const [i, [d, m, s, L]] of walked.entries()) {
+    if (i === walked.length - 1) break;
+    const r = ((d + m / 60 + s / 3600) * Math.PI) / 180;
+    x += L * Math.sin(r); y += L * Math.cos(r);
+    closedPts.push([x, y]);
+  }
+  const closed = finish(grid, { v: 1, grid, method: "traverse", start: [e0, n0], legs: walked, ratio, misclosure_m: Math.round(mis * 1000) / 1000,
+    ...(given ? { plan_area: given } : {}), flagged: true, closed: { leg: last.leg, d: last.d, m: last.m, s: last.s, distance: last.distance } }, closedPts, []);
+  return { ok: false, problem, suspect, poor: closed.ok ? closed : undefined };
 }
 
 /** Beacon coordinates on the grid, in order around the plot. */

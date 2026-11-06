@@ -30,7 +30,10 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   const of = plotTraverse(26331, ["736803.212", "748198.618"], OFOSU, "499.489");
   ok(!of.ok && /1 in 120/.test(of.problem) && of.suspect?.leg === 4 && of.suspect.d === 294 && of.suspect.m === 23 && of.suspect.distance === 34.92,
     "a traverse that does not close names the misread leg from the plan's area");
-  ok(!of.ok && !!of.poor && of.poor.plan.flagged === true && of.poor.plan.plan_area === 499.489, "it can still be kept, flagged for checking");
+  ok(!of.ok && !!of.poor && of.poor.plan.flagged === true && of.poor.plan.plan_area === 499.489 && of.poor.plan.closed?.leg === 4
+    && of.poor.plan.legs![3][3] === 35.06 && Math.abs(of.poor.plan.area_m2 - 499.49) < 0.05, "it can be closed to the start (as CAD does), keeping the plan's own figures, flagged");
+  const turned = plotTraverse(26331, ["736803.212", "748198.618"], [OFOSU[0], ["114", "48", "0", "31.49"], OFOSU[2], ["294", "23", "34", "34.92"]], "499.489");
+  ok(!turned.ok && turned.suspect?.leg === 2 && !turned.poor, "closing to the start is not offered when the plan's area shows another leg is wrong");
   const fixed = plotTraverse(26331, ["736803.212", "748198.618"], [...OFOSU.slice(0, 3), [String(of.ok ? 0 : of.suspect!.d), String(of.ok ? 0 : of.suspect!.m), String(of.ok ? 0 : of.suspect!.s), "34.92"]], "499.489");
   ok(fixed.ok && fixed.warnings.length === 0 && Math.abs(fixed.plan.area_m2 - 499.49) < 0.1, "with the suggested figures it closes and matches the plan's area");
   const noArea = plotTraverse(26331, ["736803.212", "748198.618"], OFOSU);
@@ -60,6 +63,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   [["33", "12", "15.06"], ["113", "48", "31.49"], ["200", "9", "15.25"], ["293", "6", "35.06"]].forEach(([d, m, L], i) => { type(`Leg ${i + 1} Degrees`, d); type(`Leg ${i + 1} Minutes`, m); type(`Leg ${i + 1} Distance (m)`, L); });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Plot it" })); });
   ok(!!screen.queryByText(/Leg 4 is the one to check/), "the collector says which leg to check");
+  ok(!!screen.queryByRole("button", { name: "Close to the starting point (flagged)" }), "and offers to close it to the start, flagged");
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Use these figures for leg 4" })); });
   ok((screen.getByLabelText("Leg 4 Degrees") as HTMLInputElement).value === "294" && (screen.getByLabelText("Leg 4 Distance (m)") as HTMLInputElement).value === "34.92", "the suggested figures go into leg 4");
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Plot it" })); });
