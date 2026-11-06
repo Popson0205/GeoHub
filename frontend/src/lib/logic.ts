@@ -141,7 +141,7 @@ function scan(fields: FormField[], next: Props, root: Props, ids: Set<string>, p
       if (visible && isEmpty(next[f.id])) next[f.id] = generateId(f.calc);       // made once; an existing id is never replaced
     } else if (f.type === "calculation" && f.calc) {
       let v = evalCalc(f.calc, get);
-      if (typeof v === "number" && f.decimals !== undefined) v = Number(v.toFixed(f.decimals));
+      if (typeof v === "number" && f.decimals != null) v = Number(v.toFixed(f.decimals));
       if (v === null) delete next[f.id]; else next[f.id] = v;
     } else if (f.type === "group") {
       scan(f.children ?? [], next, root, ids, visible, prefix, st);

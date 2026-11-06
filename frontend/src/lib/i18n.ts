@@ -52,7 +52,7 @@ const en = {
   "form.yes": "Yes", "form.no": "No",
   "sig.clear": "Clear", "sig.use": "Use signature",
   "val.required": "{label} is required.", "val.choice": "Choose one of the listed options.", "val.choices": "Choose only from the listed options.",
-  "val.atLeast": "Choose at least {n}.", "val.atMost": "Choose at most {n}.", "val.number": "{label} must be a number.", "val.whole": "{label} must be a whole number.",
+  "val.atLeast": "Choose at least {n}.", "val.atMost": "Choose at most {n}.", "val.noneAlone": "“{none}” cannot be chosen with other answers.", "val.number": "{label} must be a number.", "val.whole": "{label} must be a whole number.",
   "val.min": "{label} must be at least {n}.", "val.max": "{label} must be at most {n}.", "val.date": "{label} must be a valid date.", "val.yesNo": "{label} must be yes or no.",
   "val.accept": "{label} must be accepted to continue.", "val.filesMax": "{label} can have at most {n}.", "val.filesMin": "{label} needs at least {n}.",
 };
@@ -94,7 +94,7 @@ const yo: Dict = {
   "form.yes": "Bẹ́ẹ̀ni", "form.no": "Bẹ́ẹ̀kọ́",
   "sig.clear": "Pa á rẹ́", "sig.use": "Lo ìbuwọ́lù yìí",
   "val.required": "{label} jẹ́ dandan.", "val.choice": "Yan ọ̀kan nínú àwọn àṣàyàn.", "val.choices": "Yàn láti inú àwọn àṣàyàn nìkan.",
-  "val.atLeast": "Yan ó kéré tán {n}.", "val.atMost": "Yan ó pọ̀ jù {n}.", "val.number": "{label} gbọ́dọ̀ jẹ́ nọ́mbà.", "val.whole": "{label} gbọ́dọ̀ jẹ́ odidi nọ́mbà.",
+  "val.atLeast": "Yan ó kéré tán {n}.", "val.atMost": "Yan ó pọ̀ jù {n}.", "val.noneAlone": "A kò lè yan “{none}” pẹ̀lú àwọn ìdáhùn mìíràn.", "val.number": "{label} gbọ́dọ̀ jẹ́ nọ́mbà.", "val.whole": "{label} gbọ́dọ̀ jẹ́ odidi nọ́mbà.",
   "val.min": "{label} kò gbọdọ̀ kéré ju {n}.", "val.max": "{label} kò gbọdọ̀ ju {n} lọ.", "val.date": "{label} gbọ́dọ̀ jẹ́ ọjọ́ tó tọ́.", "val.yesNo": "{label} gbọ́dọ̀ jẹ́ bẹ́ẹ̀ni tàbí bẹ́ẹ̀kọ́.",
   "val.accept": "O gbọ́dọ̀ gba {label} kí o tó tẹ̀síwájú.", "val.filesMax": "{label} kò lè ju {n} lọ.", "val.filesMin": "{label} nílò ó kéré tán {n}.",
 };
@@ -133,7 +133,7 @@ const ha: Dict = {
   "form.yes": "Ee", "form.no": "A'a",
   "sig.clear": "Share", "sig.use": "Yi amfani da sa hannu",
   "val.required": "{label} dole ne.", "val.choice": "Zaɓi ɗaya daga cikin zaɓuɓɓukan.", "val.choices": "Zaɓi daga cikin zaɓuɓɓukan kaɗai.",
-  "val.atLeast": "Zaɓi aƙalla {n}.", "val.atMost": "Zaɓi bai wuce {n} ba.", "val.number": "{label} dole ya zama lamba.", "val.whole": "{label} dole ya zama cikakkiyar lamba.",
+  "val.atLeast": "Zaɓi aƙalla {n}.", "val.atMost": "Zaɓi bai wuce {n} ba.", "val.noneAlone": "Ba za a iya zaɓar “{none}” tare da wasu amsoshi ba.", "val.number": "{label} dole ya zama lamba.", "val.whole": "{label} dole ya zama cikakkiyar lamba.",
   "val.min": "{label} dole ya kai aƙalla {n}.", "val.max": "{label} kada ya wuce {n}.", "val.date": "{label} dole ya zama kwanan wata mai inganci.", "val.yesNo": "{label} dole ya zama ee ko a'a.",
   "val.accept": "Dole ka amince da {label} kafin ka ci gaba.", "val.filesMax": "{label} ba zai wuce {n} ba.", "val.filesMin": "{label} na bukatar aƙalla {n}.",
 };
@@ -172,7 +172,7 @@ const ig: Dict = {
   "form.yes": "Ee", "form.no": "Mba",
   "sig.clear": "Hichapụ", "sig.use": "Jiri mbinye aka a",
   "val.required": "{label} dị mkpa.", "val.choice": "Họrọ otu n'ime nhọrọ ndị ahụ.", "val.choices": "Họrọ naanị site na nhọrọ ndị ahụ.",
-  "val.atLeast": "Họrọ opekata mpe {n}.", "val.atMost": "Họrọ ihe na-erughị {n}.", "val.number": "{label} ga-abụ nọmba.", "val.whole": "{label} ga-abụ nọmba zuru ezu.",
+  "val.atLeast": "Họrọ opekata mpe {n}.", "val.atMost": "Họrọ ihe na-erughị {n}.", "val.noneAlone": "A pụghị ịhọrọ “{none}” na azịza ndị ọzọ.", "val.number": "{label} ga-abụ nọmba.", "val.whole": "{label} ga-abụ nọmba zuru ezu.",
   "val.min": "{label} ga-adị opekata mpe {n}.", "val.max": "{label} agaghị agafe {n}.", "val.date": "{label} ga-abụ ụbọchị ziri ezi.", "val.yesNo": "{label} ga-abụ ee ma ọ bụ mba.",
   "val.accept": "Ị ga-anabata {label} tupu ị gaa n'ihu.", "val.filesMax": "{label} agaghị agafe {n}.", "val.filesMin": "{label} chọrọ opekata mpe {n}.",
 };
@@ -211,7 +211,7 @@ const pcm: Dict = {
   "form.yes": "Yes", "form.no": "No",
   "sig.clear": "Clear am", "sig.use": "Use this signature",
   "val.required": "You must answer {label}.", "val.choice": "Choose one from the options.", "val.choices": "Choose only from the options.",
-  "val.atLeast": "Choose at least {n}.", "val.atMost": "No choose pass {n}.", "val.number": "{label} must be number.", "val.whole": "{label} must be full number.",
+  "val.atLeast": "Choose at least {n}.", "val.atMost": "No choose pass {n}.", "val.noneAlone": "You no fit choose “{none}” with other answer.", "val.number": "{label} must be number.", "val.whole": "{label} must be full number.",
   "val.min": "{label} no fit small pass {n}.", "val.max": "{label} no fit pass {n}.", "val.date": "{label} must be correct date.", "val.yesNo": "{label} must be yes or no.",
   "val.accept": "You must accept {label} before you continue.", "val.filesMax": "{label} no fit pass {n}.", "val.filesMin": "{label} need at least {n}.",
 };

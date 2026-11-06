@@ -20,7 +20,7 @@ function checkValue(f: FormField, v: unknown): string {
       const cap = f.max_length ?? (f.type === "barcode" ? 500 : TEXT_CAP);
       if (typeof v !== "string") return `${L} must be text.`;
       if (v.length > cap) return `${L} can have at most ${cap} characters.`;
-      if (f.min_length !== undefined && v.length < f.min_length) return `${L} needs at least ${f.min_length} characters.`;
+      if (f.min_length != null && v.length < f.min_length) return `${L} needs at least ${f.min_length} characters.`;
       if (f.pattern) { try { if (!new RegExp(f.pattern).test(v)) return f.pattern_message || `${L} is not in the expected format.`; } catch { /* the builder reports a bad pattern */ } }
       return "";
     }
@@ -44,8 +44,9 @@ function checkValue(f: FormField, v: unknown): string {
     case "multi_choice": case "ranking": {
       if (!Array.isArray(v) || new Set(v).size !== v.length || v.some((x) => !f.choices?.includes(String(x)))) return t("val.choices");
       if (f.type === "ranking" && v.length !== f.choices?.length) return `Rank every option in ${L}.`;
-      if (f.min_items !== undefined && v.length < f.min_items) return t("val.atLeast", { n: f.min_items });
-      if (f.max_items !== undefined && v.length > f.max_items) return t("val.atMost", { n: f.max_items });
+      if (f.type === "multi_choice" && v.length > 1 && v.some((x) => isNoneChoice(String(x)))) return t("val.noneAlone", { none: String(v.find((x) => isNoneChoice(String(x)))) });
+      if (f.min_items != null && v.length < f.min_items) return t("val.atLeast", { n: f.min_items });
+      if (f.max_items != null && v.length > f.max_items) return t("val.atMost", { n: f.max_items });
       return "";
     }
     case "boolean": {
@@ -56,7 +57,7 @@ function checkValue(f: FormField, v: unknown): string {
       if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `${L} holds an unreadable attachment.`;
       const cap = f.max_items ?? (f.type === "photo" ? 20 : f.type === "signature" ? 1 : 10);
       if (v.length > cap) return t("val.filesMax", { label: L, n: cap });
-      if (f.min_items !== undefined && v.length < f.min_items) return t("val.filesMin", { label: L, n: f.min_items });
+      if (f.min_items != null && v.length < f.min_items) return t("val.filesMin", { label: L, n: f.min_items });
       return "";
     }
     case "calculation": return typeof v === "number" || typeof v === "string" ? "" : `${L} could not be calculated.`;
@@ -81,8 +82,8 @@ export function validateProperties(form: Pick<Form, "fields">, props: Props): Re
       if (f.type === "repeat") {
         const rows = Array.isArray(v) ? (v as Props[]) : [];
         if (required.has(key) && rows.length === 0) { errors[key] = `${f.label} needs at least one entry.`; continue; }
-        if (f.min_items !== undefined && rows.length < f.min_items) errors[key] = `${f.label} needs at least ${f.min_items} entries.`;
-        if (f.max_items !== undefined && rows.length > f.max_items) errors[key] = `${f.label} can have at most ${f.max_items} entries.`;
+        if (f.min_items != null && rows.length < f.min_items) errors[key] = `${f.label} needs at least ${f.min_items} entries.`;
+        if (f.max_items != null && rows.length > f.max_items) errors[key] = `${f.label} can have at most ${f.max_items} entries.`;
         rows.forEach((row, i) => check(f.children ?? [], row, `${f.id}.${i}.`));
         continue;
       }
@@ -161,8 +162,8 @@ export function checkFieldDefs(fields: FormField[]): Record<string, string[]> {
     if (f.type === "calculation" && !f.calc) add(f.id, "Choose what to calculate.");
     if (f.type === "note" && !f.text?.trim()) add(f.id, "Write the note text.");
     if (insideRepeat.has(f.id)) add(f.id, "A repeat section cannot sit inside another repeat section.");
-    if (f.min !== undefined && f.max !== undefined && typeof f.min === typeof f.max && f.min > f.max) add(f.id, "The minimum is larger than the maximum.");
-    if (f.min_items !== undefined && f.max_items !== undefined && f.min_items > f.max_items) add(f.id, "The minimum is larger than the maximum.");
+    if (f.min != null && f.max != null && typeof f.min === typeof f.max && f.min > f.max) add(f.id, "The minimum is larger than the maximum.");
+    if (f.min_items != null && f.max_items != null && f.min_items > f.max_items) add(f.id, "The minimum is larger than the maximum.");
     if (f.pattern) { try { new RegExp(f.pattern); } catch { add(f.id, "The format pattern is not valid."); } }
     const refs = [...(f.visible ? conditionRefs(f.visible) : []), ...(f.required_if ? conditionRefs(f.required_if) : []), ...(f.calc ? calcRefs(f.calc) : [])];
     for (const r of refs) {
@@ -209,3 +210,6 @@ export function bboxOf(geoms: { coordinates: unknown }[]): [number, number, numb
   geoms.forEach((g) => walkc(g.coordinates));
   return any ? [w, s, e, n] : null;
 }
+
+/** A "None" option of a multiple choice ("None", "None of the above"): it cannot be chosen with other options. */
+export const isNoneChoice = (o: string) => /^\s*none( of (the|these) (above|options))?\.?\s*$/i.test(o);

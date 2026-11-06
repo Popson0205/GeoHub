@@ -21,6 +21,9 @@ TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$")
 _BASE = ["hint", "visible", "required", "required_if", "readonly", "default"]
 _MEDIA = ["hint", "visible", "required", "required_if"]
 
+# a "None" option of a multiple choice stands alone (frontend/src/lib/forms.ts isNoneChoice)
+NONE_CHOICE = re.compile(r"^\s*none( of (the|these) (above|options))?\.?\s*$", re.I)
+
 
 def _spec(label, stores, answers, appearances, props, *, children=False, media=False, export_as="column"):
     return {"label": label, "stores": stores, "answers": answers, "appearances": appearances, "props": set(props),
@@ -569,6 +572,8 @@ def check_value(f: dict, v) -> str | None:
             return f"must be a list of unique values from {ch}"
         if t == "ranking" and len(v) != len(ch):
             return "must rank every option"
+        if t == "multi_choice" and len(v) > 1 and any(NONE_CHOICE.match(str(x)) for x in v):
+            return "cannot have \"None\" with other choices"
         if f.get("min_items") and len(v) < f["min_items"]:
             return f"at least {f['min_items']} values"
         if f.get("max_items") and len(v) > f["max_items"]:

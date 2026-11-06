@@ -177,3 +177,11 @@ def test_questions_the_file_has_no_column_for_are_skipped():
     assert check_properties(fields, props, skip_required={"kind", "rooms"}) == {}             # no column for them in the file
     assert set(check_properties(fields, {"kind": "A"}, skip_required={"kind", "rooms"})) == {"name"}   # others still count
     assert check_properties(fields, {"name": "x", "kind": "C"}, skip_required={"rooms"}) != {}         # a bad value is still a bad value
+
+
+def test_none_stands_alone_and_unset_limits_are_no_limit():
+    docs = [{"id": "documents", "label": "Documents held", "type": "multi_choice", "choices": ["Survey plan", "Deed", "None"],
+             "min_items": None, "max_items": None}]
+    assert check_properties(docs, {"documents": ["Survey plan", "Deed"]}) == {}
+    assert check_properties(docs, {"documents": ["None"]}) == {}
+    assert "None" in check_properties(docs, {"documents": ["Deed", "None"]})["documents"][0]
