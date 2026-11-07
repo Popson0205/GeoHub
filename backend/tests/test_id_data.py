@@ -96,3 +96,25 @@ def test_form_from_the_land_template(client, boss, outbox, apps):
     h = {"Authorization": f"Bearer {apps.exchange(code_for(owner, v), CALLBACK, v)['access_token']}"}
     form = next(x for p in client.get("/id/data/projects", headers=h).json() if p["id"] == pid for x in p["forms"])
     assert form["template"] == "land_enumeration" and {"plot_no", "occupant_name", "dispute_note"} <= {q["id"] for q in form["fields"]}
+
+
+def test_forms_from_the_farm_templates(client, boss, outbox):
+    owner = Actor(client, "Farm Template User")
+    ts = {t["id"]: t for t in owner.get("/form-templates").json()}
+    assert ts["farm_enumeration"]["product"] == "farm" and ts["farm_enumeration"]["geometry_type"] == "area"
+    assert ts["farm_scouting"]["product"] == "farm" and ts["farm_scouting"]["geometry_type"] == "point"
+    pid = owner.post("/projects", json={"name": "Coop farms"}).json()["id"]
+    enum = owner.post(f"/projects/{pid}/forms", json={"name": "Farms", "template": "farm_enumeration"}).json()
+    scout = owner.post(f"/projects/{pid}/forms", json={"name": "Scouting", "template": "farm_scouting"}).json()
+    for f in (enum, scout):
+        assert owner.post(f"/forms/{f['id']}/publish").status_code == 200
+    sq = {"type": "Polygon", "coordinates": [[[7.4, 9.2], [7.401, 9.2], [7.401, 9.201], [7.4, 9.201], [7.4, 9.2]]]}
+    add = lambda form, geom, props: owner.post(f"/projects/{pid}/features", json={"id": str(uuid.uuid4()), "form_id": form["id"], "geometry": geom, "properties": props})  # noqa: E731
+    farm = {"farmer_name": "Hauwa Musa", "community": "Kuje", "crops": ["Maize", "Soybean"], "water": "Rainfed"}
+    assert add(enum, sq, farm).status_code == 201
+    assert add(enum, sq, {**farm, "crops": []}).status_code == 422                         # crops are required
+    pt = {"type": "Point", "coordinates": [7.4005, 9.2005]}
+    task = {"farm": "Hauwa's farm", "task_ref": "FS-1", "seen": "NDVI low"}
+    assert add(scout, pt, {**task, "visited": "Yes"}).status_code == 422                     # what is wrong, when reached
+    assert add(scout, pt, {**task, "visited": "Yes", "causes": ["Weeds"], "severity": "Moderate"}).status_code == 201
+    assert add(scout, pt, {**task, "visited": "Could not reach it"}).status_code == 201
