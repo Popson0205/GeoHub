@@ -26,7 +26,7 @@ FEATURES = {
                           "workflows", "valuations", "disputes")},
     "check": {"standard": ("reports",), "advanced": ("reports", "batch", "ai_briefing", "title_status")},
     "farm": {"standard": ("monitoring", "zones", "suitability", "alerts"),
-             "advanced": ("monitoring", "zones", "suitability", "alerts", "drone", "plant_count", "prescriptions", "verification")},
+             "advanced": ("monitoring", "zones", "suitability", "alerts", "prescriptions", "verification")},
 }
 FEATURE_NAMES = {
     "parcels": "Parcels", "titles": "Titles and owners", "transactions": "Transfers and transactions",
