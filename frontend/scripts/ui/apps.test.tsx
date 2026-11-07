@@ -26,7 +26,7 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await until(() => !!screen.queryByRole("button", { name: "GeoEstate apps" }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "GeoEstate apps" })); });
   const alone = within(screen.getByRole("menu", { name: "GeoEstate apps" })).getAllByRole("menuitem");
-  ok(alone.length === 4 && /You are here/.test(alone[0].textContent ?? ""), "with Geohub alone it still shows, with the other products");
+  ok(alone.length === 5 && /You are here/.test(alone[0].textContent ?? ""), "with Geohub alone it still shows, with the other products");
   ok(alone.slice(1).every((x) => x.getAttribute("href")?.startsWith("mailto:geoestate.ng@gmail.com") && /Ask for a demo/.test(x.textContent ?? "")),
     "the products the organization does not have ask GeoEstate for a demo");
   cleanup();
@@ -39,10 +39,11 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "GeoEstate apps" })); });
   const menu = within(screen.getByRole("menu", { name: "GeoEstate apps" }));
   const items = menu.getAllByRole("menuitem");
-  ok(items.length === 4 && /You are here/.test(items[0].textContent ?? "") && items[0].getAttribute("aria-current") === "page", "Geohub is listed as where you are");
+  ok(items.length === 5 && /You are here/.test(items[0].textContent ?? "") && items[0].getAttribute("aria-current") === "page", "Geohub is listed as where you are");
   ok(items[1].tagName === "A" && items[1].getAttribute("href") === "https://land.example" && /Parcels, titles/.test(items[1].textContent ?? ""), "Land Registry opens its own app");
   ok(items[2].getAttribute("aria-disabled") === "true" && /Demo/.test(items[2].textContent ?? ""), "a product without an address yet is shown but not opened, with its demo badge");
   ok(/LandCheck/.test(items[3].textContent ?? "") && /Ask for a demo/.test(items[3].textContent ?? ""), "LandCheck, not taken, is offered");
+  ok(/PolyGIS/.test(items[4].textContent ?? "") && /Ask for a demo/.test(items[4].textContent ?? ""), "PolyGIS, not taken, is offered");
   await act(async () => { fireEvent.keyDown(window, { key: "Escape" }); });
   ok(!screen.queryByRole("menu"), "Escape closes it");
   process.exit();
