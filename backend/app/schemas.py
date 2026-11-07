@@ -1127,7 +1127,7 @@ class AdminProject(BaseModel):
 
 class ProductOut(BaseModel):
     """An organization's licence for one GeoEstate product."""
-    product: Literal["hub", "land", "check", "farm"]
+    product: Literal["hub", "land", "check", "farm", "gis"]
     name: str
     plan: str
     plan_name: str

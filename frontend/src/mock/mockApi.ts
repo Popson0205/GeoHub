@@ -125,7 +125,7 @@ export class MockApi implements Api {
   // GeoEstate ID (demo): Land Registry, LandCheck and FarmScan, at any address
   async idClient(clientId: string, _redirectUri: string) {
     await wait();
-    const name = ({ land: "Land Registry", check: "LandCheck", farm: "FarmScan" } as Record<string, string>)[clientId];
+    const name = ({ land: "Land Registry", check: "LandCheck", farm: "FarmScan", gis: "PolyGIS" } as Record<string, string>)[clientId];
     if (!name) throw new ApiError(400, "This app is not registered with Geohub (ID_CLIENTS).", undefined, "unknown_client");
     return { id: clientId, name, product: clientId };
   }
@@ -150,9 +150,9 @@ export class MockApi implements Api {
   // ---- other GeoEstate products (demo): kept per organization
   private get productState() { return (this.s.orgProducts ??= {}); }
   private otherProducts(orgId: string, suspended: boolean): ProductLicence[] {
-    const NAMES: Record<string, string> = { land: "Land Registry", check: "LandCheck", farm: "FarmScan" };
+    const NAMES: Record<string, string> = { land: "Land Registry", check: "LandCheck", farm: "FarmScan", gis: "PolyGIS" };
     const today = new Date().toISOString().slice(0, 10);
-    return (["land", "check", "farm"] as const).flatMap((k) => {
+    return (["land", "check", "farm", "gis"] as const).flatMap((k) => {
       const r = this.productState[orgId]?.[k];
       if (!r) return [];
       const grace = r.ends ? new Date(Date.parse(r.ends) + 14 * 86400000).toISOString().slice(0, 10) : null;

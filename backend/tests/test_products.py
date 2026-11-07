@@ -101,3 +101,19 @@ def test_product_renewal_reminders(client, boss, outbox):
     outbox.clear()
     asyncio.run(go())                                            # each reminder goes once
     assert not [m for m in outbox if "FarmScan" in m["subject"]]
+
+
+def test_polygis_is_a_product(client, boss, outbox, crm):
+    """PolyGIS ('gis') is licensed like the others: from the staff console or a paid CRM invoice, with its features."""
+    o = customer(boss)
+    body = {"product": "gis", "plan": "standard", "subscription_starts": date.today().isoformat(),
+            "subscription_ends": (date.today() + timedelta(days=364)).isoformat(), "invoice_ref": "GE-2026-0300", "staff_name": "Femi Cash"}
+    r = crm.post(f"/crm-link/orgs/{o['id']}/licence", json=body)
+    assert r.status_code == 200, r.text
+    gis = next(p for p in r.json()["products"] if p["product"] == "gis")
+    assert gis["status"] == "active" and gis["plan_name"] == "PolyGIS Standard"
+    assert set(gis["features"]) == {"maps", "editing", "export"}
+    up = boss.put(f"/admin/orgs/{o['id']}/products/gis", json={"plan": "advanced"})
+    assert up.status_code == 200, up.text
+    adv = next(p for p in up.json() if p["product"] == "gis")
+    assert adv["plan_name"] == "PolyGIS Advanced" and {"geoprocessing", "raster", "layouts"} <= set(adv["features"])

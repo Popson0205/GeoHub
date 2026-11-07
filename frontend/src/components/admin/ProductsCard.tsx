@@ -4,10 +4,10 @@ import { LICENCE, longDate } from "../../lib/staffConsole";
 import type { AdminOrgDetail, LicenceKind, ProductId, ProductLicence, ProductPlan } from "../../lib/types";
 import { Button, useConfirm, useToast } from "../ui";
 
-export const PRODUCT_NAMES: Record<ProductId, string> = { hub: "Geohub", land: "Land Registry", check: "LandCheck", farm: "FarmScan" };
-const OTHERS: ProductId[] = ["land", "check", "farm"];
+export const PRODUCT_NAMES: Record<ProductId, string> = { hub: "Geohub", land: "Land Registry", check: "LandCheck", farm: "FarmScan", gis: "PolyGIS" };
+const OTHERS: ProductId[] = ["land", "check", "farm", "gis"];
 const HELP: Record<ProductId, string> = {
-  hub: "", land: "Parcels, titles, transfers and disputes", check: "Location and due-diligence reports", farm: "Crop monitoring from satellite and drone",
+  hub: "", land: "Parcels, titles, transfers and disputes", check: "Location and due-diligence reports", farm: "Crop monitoring from satellite and drone", gis: "Maps, editing and analysis (a GIS in the browser)",
 };
 const FEATURE: Record<string, string> = {
   parcels: "Parcels", titles: "Titles and owners", transactions: "Transfers", public_lookup: "Public lookup", dxf_import: "DXF import",
