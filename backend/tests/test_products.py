@@ -58,7 +58,7 @@ def test_members_see_their_products_and_individuals_cannot_have_any(client, boss
     boss.put(f"/admin/orgs/{team.org_id}/products/farm", json={"plan": "advanced", "licence_kind": "demo"})
     mine = team.get("/org/products").json()
     assert [(p["product"], p["status"]) for p in mine] == [("hub", "active"), ("farm", "demo")]
-    assert "drone" in mine[1]["features"] and mine[1]["name"] == "FarmScan"
+    assert "verification" in mine[1]["features"] and "drone" not in mine[1]["features"] and mine[1]["name"] == "FarmScan"
 
 
 def test_the_crm_switches_on_any_product(client, boss, outbox, crm):
