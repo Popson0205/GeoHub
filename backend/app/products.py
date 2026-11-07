@@ -25,8 +25,8 @@ FEATURES = {
              "advanced": ("parcels", "titles", "transactions", "public_lookup", "dxf_import", "ai_georeference",
                           "workflows", "valuations", "disputes")},
     "check": {"standard": ("reports",), "advanced": ("reports", "batch", "ai_briefing", "title_status")},
-    "farm": {"standard": ("monitoring", "zones", "suitability"),
-             "advanced": ("monitoring", "zones", "suitability", "drone", "plant_count", "prescriptions")},
+    "farm": {"standard": ("monitoring", "zones", "suitability", "alerts"),
+             "advanced": ("monitoring", "zones", "suitability", "alerts", "drone", "plant_count", "prescriptions", "verification")},
 }
 FEATURE_NAMES = {
     "parcels": "Parcels", "titles": "Titles and owners", "transactions": "Transfers and transactions",
@@ -35,6 +35,7 @@ FEATURE_NAMES = {
     "reports": "Location reports", "batch": "Batch checks", "ai_briefing": "AI briefing", "title_status": "Title status",
     "monitoring": "Satellite monitoring", "zones": "Management zones", "suitability": "Crop suitability",
     "drone": "Drone imagery", "plant_count": "Plant counts", "prescriptions": "Variable-rate prescriptions",
+    "alerts": "Weekly farm alerts", "verification": "Farm verification reports",
 }
 # Default caps per plan (None = unlimited); an organization's `limits` change them.
 LIMITS = {
