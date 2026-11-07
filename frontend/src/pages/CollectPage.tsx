@@ -11,6 +11,7 @@ import { InstallCard } from "../components/PwaPrompts";
 import { Button, ErrorState, Loading, useToast, useUndoable } from "../components/ui";
 import { loadApi } from "../lib/api";
 import { LANGS, setLang, t, useLang, type Lang } from "../lib/i18n";
+import { fillFor, readPrefill, withoutPrefill } from "../lib/prefill";
 import { combineFixes, gpsProps, isMoving, POOR_M, quality, TARGET_M, viewAround, withoutGps, type Fix } from "../lib/gps";
 import PlanPlotter from "../components/PlanPlotter";
 import { planText, readPlan } from "../lib/surveyPlan";
@@ -50,6 +51,8 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const [placing, setPlacing] = useState(false);
   const [plotting, setPlotting] = useState(false);                 // an area from its survey plan (components/PlanPlotter)
   const [planPreview, setPlanPreview] = useState<Geometry | null>(null);
+  // A record another app asked us to start (a FarmScan scouting task): its answers filled in, where to go marked.
+  const [target, setTarget] = useState<[number, number] | null>(null);
   const [locating, setLocating] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   /** The capture in progress or just finished: how many readings were used, and whether the person moved. */
@@ -103,16 +106,17 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
   const form = forms?.find((f) => f.id === (draft?.formId ?? formId)) ?? null;
   const mapFeatures: MapFeature[] = useMemo(() => {
     const list: MapFeature[] = (collectOnly ? [] : features).filter((f) => !f.deleted && f.id !== draft?.id).map((f) => ({ id: f.id, geometry: f.geometry, properties: f.properties, pending: f.sync !== "synced" }));
+    if (target) list.push({ id: "prefill-target", geometry: { type: "Point", coordinates: [target[1], target[0]] }, state: "review" });
     if (draft?.geometry) list.push({ id: DRAFT_ID, geometry: draft.geometry, pending: true });
     else if (planPreview) list.push({ id: DRAFT_ID, geometry: planPreview, pending: true });
     return list;
-  }, [features, draft, collectOnly, planPreview]);
+  }, [features, draft, collectOnly, planPreview, target]);
 
   function startDraft() { if (form) { setDraft({ id: uuid(), formId: form.id, geometry: null, props: applyDefaults(form.fields), newMedia: [], existing: false }); setErrors({}); setAccuracy(null); } }
   async function cancelDraft() {
     stopWatch();
     if (draft?.newMedia.length) await db.media.bulkDelete(draft.newMedia);
-    setDraft(null); setPlacing(false); setPlotting(false); setPlanPreview(null); setErrors({});
+    setDraft(null); setPlacing(false); setPlotting(false); setPlanPreview(null); setErrors({}); setTarget(null);
   }
   const bboxOf = (g: Geometry): Bbox => {
     const pts = (g as { coordinates: number[][][] }).coordinates[0];
@@ -130,6 +134,19 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
 
   // Capturing watches the GPS for a few seconds and averages the good readings, instead of trusting a single one.
   const [flyTo, setFlyTo] = useState<{ bounds: Bbox; key: number } | null>(null);
+  const prefill = useRef(pub ? null : readPrefill(window.location.search));
+  useEffect(() => {
+    const p = prefill.current;
+    const f = p && forms?.find((x) => x.id === p.formId);
+    if (!p || !forms) return;
+    prefill.current = null;
+    window.history.replaceState(null, "", window.location.pathname + withoutPrefill(window.location.search));
+    if (!f) { toast(t("prefill.noForm"), "error"); return; }
+    setFormId(f.id);
+    setDraft({ id: uuid(), formId: f.id, geometry: null, props: { ...applyDefaults(f.fields), ...fillFor(f.fields, p.props) }, newMedia: [], existing: false });
+    setErrors({}); setAccuracy(null);
+    if (p.at) { setTarget(p.at); setFlyTo({ bounds: viewAround(p.at[1], p.at[0], 40), key: Date.now() }); }
+  }, [forms, toast]);
   const showOnMap = useCallback((lon: number, lat: number, hacc: number) => setFlyTo({ bounds: viewAround(lon, lat, hacc), key: Date.now() }), []);
   const watchRef = useRef<(() => void) | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -327,6 +344,7 @@ export default function CollectPage({ pub }: { pub?: PublicForm } = {}) {
         ) : form && (
           <>
             <div className="row"><h2 className="grow">{t(draft.existing ? "collect.edit" : "collect.new", { name: form.name.toLowerCase() })}</h2>{accuracy != null && <span className={`gps is-${quality(accuracy)}`} role="status">GPS ±{accuracy} m{typeof draft.props.gps_elev_m === "number" ? ` · ${t("gps.elev", { m: draft.props.gps_elev_m })}` : ""}{locating ? ` · ${t("gps.averaging")}${reading && reading.used > 1 ? ` (${t("gps.readings", { n: reading.used })})` : ""}` : ""}</span>}</div>
+            {target && <div className="state state-info" role="note">{t("prefill.goTo", { lat: target[0].toFixed(5), lng: target[1].toFixed(5) })}</div>}
             {locating && draft.geometry?.type === "Point" && (
               <div className="gps-panel" aria-live="polite">
                 <span>{reading?.moved ? t("gps.moved") : t("gps.standStill")}</span>

@@ -118,3 +118,20 @@ ok(String(generateId({ fn: "short_id", prefix: "WP-" })).startsWith("WP-"), "the
   ok(/cannot be chosen with other answers/.test(validateProperties({ fields: docs }, { documents: ["Survey plan", "None"] }).documents ?? ""), "\"None\" cannot be chosen with other answers");
   ok(!validateProperties({ fields: docs }, { documents: ["None"] }).documents, "\"None\" alone is fine");
 }
+
+// a record another app asks the collector to start (a FarmScan scouting task)
+{
+  const { readPrefill, fillFor, toB64url, withoutPrefill } = await import("../src/lib/prefill");
+  const scouting = [{ id: "task", label: "Task", type: "group", children: [
+    { id: "farm", label: "Farm", type: "text", readonly: true }, { id: "seen", label: "Seen", type: "text" }] },
+    { id: "rows", label: "Rows", type: "repeat", children: [{ id: "x", label: "X", type: "text" }] },
+    { id: "causes", label: "Causes", type: "multi_choice", choices: ["Pests", "Weeds"] }] as unknown as FormField[];
+  const fill = toB64url(JSON.stringify({ farm: "Àgbẹ̀ North field", seen: "NDVI 0.21 below the field", x: "no", unknown: 1, causes: ["Pests"] }));
+  const p = readPrefill(`?form=f1&fill=${fill}&at=9.0751,7.4049&tab=1`)!;
+  ok(p.formId === "f1" && p.at?.[0] === 9.0751 && p.at?.[1] === 7.4049, "prefill: form and where to go are read");
+  const f = fillFor(scouting, p.props);
+  ok(f.farm === "Àgbẹ̀ North field" && f.seen === "NDVI 0.21 below the field" && !("x" in f) && !("unknown" in f) && (f.causes as string[])[0] === "Pests",
+    "prefill: only the form's own questions (not in repeats), non-ASCII intact");
+  ok(readPrefill("?form=f1&fill=%%%&at=999,1")!.at === null && Object.keys(readPrefill("?form=f1&fill=%%%")!.props).length === 0, "prefill: bad input is ignored");
+  ok(readPrefill("?tab=1") === null && withoutPrefill(`?form=f1&fill=${fill}&at=1,2&tab=1`) === "?tab=1", "prefill: removed from the address once used");
+}
