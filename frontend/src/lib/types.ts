@@ -94,7 +94,7 @@ export interface AdminOrg {
 }
 export type LicenceKind = "paid" | "demo";
 /** GeoEstate's products: Geohub itself, Land Registry, LandCheck, FarmScan. */
-export type ProductId = "hub" | "land" | "check" | "farm";
+export type ProductId = "hub" | "land" | "check" | "farm" | "gis";
 export type ProductPlan = "standard" | "advanced" | "custom";
 /** An organization's licence for one product. */
 export interface ProductLicence {

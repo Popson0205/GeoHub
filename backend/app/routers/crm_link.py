@@ -58,7 +58,7 @@ class CrmSetupIn(AdminOrgIn):
 
 
 class CrmLicenceIn(BaseModel):
-    product: Literal["hub", "land", "check", "farm"] = Field("hub", description="Which product the invoice pays for")
+    product: Literal["hub", "land", "check", "farm", "gis"] = Field("hub", description="Which product the invoice pays for")
     plan: PlanId
     subscription_starts: date
     subscription_ends: date

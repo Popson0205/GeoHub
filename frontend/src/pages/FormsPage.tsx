@@ -7,7 +7,7 @@ import { loadApi } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { GEOMETRY_LABEL, type FormTemplate, type GeometryType } from "../lib/types";
 
-const FOR: Record<string, string> = { land: "For Land Registry", check: "For LandCheck", farm: "For FarmScan" };
+const FOR: Record<string, string> = { land: "For Land Registry", check: "For LandCheck", farm: "For FarmScan", gis: "For PolyGIS" };
 
 export default function FormsPage() {
   const { projectId = "" } = useParams();

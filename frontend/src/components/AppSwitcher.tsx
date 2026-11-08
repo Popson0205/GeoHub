@@ -7,10 +7,11 @@ import { Icon } from "./icons";
 const WHAT: Record<ProductId, string> = {
   hub: "Field data, maps and dashboards", land: "Parcels, titles and transfers", check: "Location and due-diligence reports",
   farm: "Crop monitoring from satellite and drone",
+  gis: "Maps, editing and analysis",
 };
 const NOTE: Partial<Record<ProductLicence["status"], string>> = { demo: "Demo", grace: "Renewal due", expired: "Read-only", suspended: "Suspended" };
 
-const ALL: [ProductId, string][] = [["hub", "Geohub"], ["land", "Land Registry"], ["check", "LandCheck"], ["farm", "FarmScan"]];
+const ALL: [ProductId, string][] = [["hub", "Geohub"], ["land", "Land Registry"], ["check", "LandCheck"], ["farm", "FarmScan"], ["gis", "PolyGIS"]];
 const ASK = "geoestate.ng@gmail.com";
 
 /** The GeoEstate products: the organization's own one click away, and the others it could add. */

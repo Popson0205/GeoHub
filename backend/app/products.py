@@ -1,7 +1,7 @@
 """GeoEstate's products and what an organization has of each.
 
 Geohub ('hub') is the platform itself: its licence is the organization's own plan, dates and caps. Every other product
-(Land Registry, LandCheck, FarmScan) is licensed separately in org_products, with the same states as Geohub's licence
+(Land Registry, LandCheck, FarmScan, PolyGIS) is licensed separately in org_products, with the same states as Geohub's licence
 (demo, active, grace, expired; suspended when the organization is). Each product checks only its own licence.
 
 Plans set default caps and feature switches; an organization's `limits` and `features` change them one by one.
@@ -14,8 +14,8 @@ from . import licences, orgs
 from .config import settings
 from .errors import Problem
 
-PRODUCTS = {"hub": "Geohub", "land": "Land Registry", "check": "LandCheck", "farm": "FarmScan"}
-OTHER = ("land", "check", "farm")                     # licensed in org_products
+PRODUCTS = {"hub": "Geohub", "land": "Land Registry", "check": "LandCheck", "farm": "FarmScan", "gis": "PolyGIS"}
+OTHER = ("land", "check", "farm", "gis")                     # licensed in org_products
 PLANS = ("standard", "advanced", "custom")
 PLAN_WORDS = {"standard": "Standard", "advanced": "Advanced", "custom": "Custom"}
 
@@ -27,6 +27,8 @@ FEATURES = {
     "check": {"standard": ("reports",), "advanced": ("reports", "batch", "ai_briefing", "title_status")},
     "farm": {"standard": ("monitoring", "zones", "suitability", "alerts"),
              "advanced": ("monitoring", "zones", "suitability", "alerts", "prescriptions", "verification")},
+    "gis": {"standard": ("maps", "editing", "export"),
+            "advanced": ("maps", "editing", "export", "geoprocessing", "raster", "layouts")},
 }
 FEATURE_NAMES = {
     "parcels": "Parcels", "titles": "Titles and owners", "transactions": "Transfers and transactions",
@@ -36,12 +38,15 @@ FEATURE_NAMES = {
     "monitoring": "Satellite monitoring", "zones": "Management zones", "suitability": "Crop suitability",
     "drone": "Drone imagery", "plant_count": "Plant counts", "prescriptions": "Variable-rate prescriptions",
     "alerts": "Weekly farm alerts", "verification": "Farm verification reports",
+    "maps": "Maps and layers", "editing": "Editing", "export": "Export", "geoprocessing": "Geoprocessing tools",
+    "raster": "Raster analysis", "layouts": "Print layouts",
 }
 # Default caps per plan (None = unlimited); an organization's `limits` change them.
 LIMITS = {
     "land": {"standard": {"parcels": 20000, "seats": 10}, "advanced": {"parcels": 250000, "seats": 40}, "custom": {}},
     "check": {"standard": {"reports_per_month": 50}, "advanced": {"reports_per_month": 300}, "custom": {}},
     "farm": {"standard": {"hectares": 500}, "advanced": {"hectares": 5000}, "custom": {}},
+    "gis": {"standard": {"seats": 5}, "advanced": {"seats": 25}, "custom": {}},
 }
 
 
