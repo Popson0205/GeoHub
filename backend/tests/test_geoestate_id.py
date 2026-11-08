@@ -150,3 +150,17 @@ def test_apps_without_a_secret_use_pkce_and_staff_may_enter(client, boss, outbox
     st = client.post("/id/token", data={"grant_type": "authorization_code", "client_id": "farm", "code": staff_code,
                                         "redirect_uri": "https://farm.example/cb", "code_verifier": v}).json()
     assert st["user"]["staff_role"] == "super_admin" and st["user"]["product"] is None
+
+
+def test_a_mistake_in_id_clients_is_named(client, monkeypatch):
+    """A broken ID_CLIENTS setting says what is wrong, instead of failing sign-in with a server error."""
+    for raw, words in ((
+        '[{"id": "gis", "redirect_uris": [“https://gis.example/cb”]}]', "not valid JSON"),
+        ('[{"id": "gis", "redirect_uris": ["https://gis.example/cb"], "secret": "short"}]', "32+ characters"),
+        ('[{"id": "maps", "redirect_uris": ["https://gis.example/cb"]}]', "product must be one of"),
+        ('[{"redirect_uris": ["https://gis.example/cb"]}]', "has no 'id'")):
+        monkeypatch.setattr(settings, "id_clients", raw)
+        r = client.get("/id/clients/gis")
+        assert r.status_code == 503 and words in r.json()["detail"], (raw, r.text)
+    monkeypatch.setattr(settings, "id_clients", json.dumps([{"id": "gis", "redirect_uris": ["https://gis.example/cb"], "secret": "s" * 40}]))
+    assert client.get("/id/clients/gis").json() == {"id": "gis", "name": "PolyGIS", "product": "gis"}

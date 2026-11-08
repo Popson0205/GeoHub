@@ -100,7 +100,15 @@ def _clients(raw: str) -> dict[str, dict]:
 
 
 def clients() -> dict[str, dict]:
-    return _clients(settings.id_clients)
+    """The apps in ID_CLIENTS. A mistake in that setting is named, instead of failing as a server error."""
+    try:
+        return _clients(settings.id_clients)
+    except json.JSONDecodeError as e:
+        raise Problem(503, f"Geohub's ID_CLIENTS setting is not valid JSON (line {e.lineno}, column {e.colno}: {e.msg}). "
+                           "Check its quotes are straight (\") and entries are separated by commas.", code="id_clients_invalid") from None
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        why = f"an entry has no {e}" if isinstance(e, KeyError) else str(e)
+        raise Problem(503, f"Geohub's ID_CLIENTS setting has a mistake: {why}.", code="id_clients_invalid") from None
 
 
 def client(client_id: str, redirect_uri: str | None = None) -> dict:
