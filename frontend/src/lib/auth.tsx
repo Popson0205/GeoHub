@@ -24,13 +24,19 @@ const USER_KEY = "geohub.user";
 const cacheUser = (u: User | null) => { try { if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY); } catch { /* storage full or blocked */ } };
 const cachedUser = (): User | null => { try { return JSON.parse(localStorage.getItem(USER_KEY) ?? "null") as User | null; } catch { return null; } };
 
+/** The shared GeoEstate launch screen (public/geoestate-splash.js): say what is happening while the app starts, and when it is ready. */
+const splash = (window as unknown as { GeoEstateSplash?: { step: (t: string, p?: number) => void; done: () => void } }).GeoEstateSplash;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
 
+  useEffect(() => { if (ready) splash?.done(); }, [ready]);
+
   useEffect(() => {
     (async () => {
       if (tokens.get()) {
+        splash?.step("Checking your GeoEstate ID", 45);
         try { const u = await (await loadApi()).me(); setUser(u); cacheUser(u); }
         catch (e) {
           // No connection (status 0) is not a sign-out: keep working from the saved session and sync later.
