@@ -23,6 +23,7 @@ from ..errors import Problem
 from ..logging_setup import client_ip
 from ..security import hash_token
 
+EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"     # RFC 8693
 router = APIRouter(prefix="/id", tags=["GeoEstate ID"])
 
 
@@ -39,7 +40,7 @@ async def configuration():
     api = f"{settings.public_base_url}{settings.api_prefix}/id"
     return {"issuer": gid.issuer(), "authorization_endpoint": f"{settings.app_url}/id/authorize",
             "token_endpoint": f"{api}/token", "userinfo_endpoint": f"{api}/userinfo", "revocation_endpoint": f"{api}/revoke",
-            "jwks_uri": f"{api}/jwks", "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"],
+            "jwks_uri": f"{api}/jwks", "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token", EXCHANGE],
             "code_challenge_methods_supported": ["S256"], "id_token_signing_alg_values_supported": ["EdDSA"]}
 
 
@@ -141,7 +142,22 @@ async def token(request: Request, conn=Depends(get_conn)):
             raise _grant_error("The sign-in has expired. Sign in again.")
         await conn.execute("UPDATE id_refresh_tokens SET revoked_at = now() WHERE id = %s", (rt["id"],))
         return await gid.issue(conn, rt["user_id"], c)
-    raise _grant_error("grant_type must be authorization_code or refresh_token.", "unsupported_grant_type")
+    if grant == EXCHANGE:
+        # one GeoEstate app reading another for the same person (PolyGIS showing Land Registry's parcels, say): the app
+        # hands in the person's access token for itself and gets a short access token for the other app, as the person,
+        # only if their organization has that app. No refresh token: the app asks again when it needs to.
+        try:
+            subject = gid.verify(f.get("subject_token") or "")
+        except Problem:
+            raise _grant_error("subject_token is not a valid GeoEstate ID access token.") from None
+        if subject.get("aud") != c["id"]:
+            raise _grant_error("subject_token must be an access token issued to this app.")
+        target = gid.client(f.get("audience") or "")
+        claims = await gid.claims_for(conn, subject["sub"], target)
+        claims["act"] = {"sub": c["id"]}                  # who is acting for the person
+        return {"access_token": gid.sign(claims, settings.id_token_minutes), "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+                "token_type": "Bearer", "expires_in": settings.id_token_minutes * 60, "user": claims}
+    raise _grant_error("grant_type must be authorization_code, refresh_token or token exchange.", "unsupported_grant_type")
 
 
 @router.get("/userinfo", summary="Who the access token's person is, as of now")

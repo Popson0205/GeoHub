@@ -82,6 +82,12 @@ class GeoEstateID:
     def refresh(self, refresh_token: str) -> dict:
         return self._post("token", {"grant_type": "refresh_token", "refresh_token": refresh_token})
 
+    def token_for(self, access_token: str, audience: str) -> dict:
+        """A short access token for another GeoEstate app ("land", "farm"…), as the same person (token exchange): to read
+        that app's data for them. Refused (no_product) when their organization does not have that app."""
+        return self._post("token", {"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token": access_token,
+                                    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "audience": audience})
+
     def sign_out(self, refresh_token: str) -> None:
         self._post("revoke", {"token": refresh_token})
 
@@ -102,6 +108,19 @@ class GeoEstateID:
             except ValueError:
                 body = {}
             raise GeoEstateIDError(body.get("detail", f"Geohub answered {r.status_code}"), r.status_code, body.get("code") or "error")
+        return r.json()
+
+    def send(self, access_token: str, path: str, body: dict, timeout: float = 120):
+        """Sends something to Geohub as the person (POST /id/data/...), e.g. a layer published to the Data hub:
+        "datasets", "datasets/{slug}/versions". Refusals come back as GeoEstateIDError with Geohub's own words."""
+        r = self._http.post(f"{self.api}/id/data/{path.lstrip('/')}", json=body, timeout=timeout,
+                            headers={"Authorization": f"Bearer {access_token}"})
+        if r.status_code >= 400:
+            try:
+                b = r.json()
+            except ValueError:
+                b = {}
+            raise GeoEstateIDError(b.get("detail", f"Geohub answered {r.status_code}"), r.status_code, b.get("code") or "error")
         return r.json()
 
     # ---- checking an access token ----

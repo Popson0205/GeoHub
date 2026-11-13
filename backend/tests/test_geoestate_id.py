@@ -164,3 +164,32 @@ def test_a_mistake_in_id_clients_is_named(client, monkeypatch):
         assert r.status_code == 503 and words in r.json()["detail"], (raw, r.text)
     monkeypatch.setattr(settings, "id_clients", json.dumps([{"id": "gis", "redirect_uris": ["https://gis.example/cb"], "secret": "s" * 40}]))
     assert client.get("/id/clients/gis").json() == {"id": "gis", "name": "PolyGIS", "product": "gis"}
+
+
+def test_one_app_reads_another_for_the_person_by_token_exchange(client, boss, outbox, apps):
+    """Land Registry swaps the person's Land access token for a short FarmScan one (RFC 8693), only when the person's
+    organization has FarmScan; no refresh token comes with it."""
+    from app.routers.id import EXCHANGE
+    p = Actor(client, "Exchange Person")
+    boss.put(f"/admin/orgs/{p.org_id}/products/land", json={"plan": "standard", "licence_kind": "paid"})
+    v = apps.new_verifier()
+    land = apps.exchange(code_for(p, v), CALLBACK, v)
+    ask = lambda **kw: client.post("/id/token", data={"grant_type": EXCHANGE, "client_id": "land", "client_secret": SECRET,  # noqa: E731
+                                                       "subject_token": land["access_token"], "audience": "farm", **kw})
+    r = ask()
+    assert r.status_code == 403 and r.json()["code"] == "no_product"                 # no FarmScan yet
+    boss.put(f"/admin/orgs/{p.org_id}/products/farm", json={"plan": "standard", "licence_kind": "demo"})
+    r = ask()
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert "refresh_token" not in t and t["issued_token_type"].endswith("access_token")
+    assert apps.token_for(land["access_token"], "farm")["user"]["product"]["id"] == "farm"     # the kit asks the same way
+    farm = GeoEstateID(geohub=settings.app_url, api="http://testserver", client_id="farm", transport=Through(client))
+    claims = farm.verify(t["access_token"])
+    assert claims["aud"] == "farm" and claims["sub"] == land["user"]["sub"] and claims["product"]["id"] == "farm" and claims["act"] == {"sub": "land"}
+    # only the app the token was issued to can exchange it, with its own secret; and only a real token
+    assert client.post("/id/token", data={"grant_type": EXCHANGE, "client_id": "land", "client_secret": "x" * 40, "subject_token": land["access_token"],
+                                          "audience": "farm"}).status_code == 401
+    assert ask(subject_token=t["access_token"]).status_code == 400                    # a FarmScan token is not Land's to swap
+    assert ask(subject_token="not-a-token").status_code == 400
+    assert ask(audience="nope").status_code == 400
