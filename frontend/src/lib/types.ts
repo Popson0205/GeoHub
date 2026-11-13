@@ -320,6 +320,8 @@ export interface Dataset {
   map_id?: string;
   /** People credited for the latest version of a dataset published from a map. */
   contributors?: { name: string; features: number }[];
+  /** Set when the dataset was published from another GeoEstate app (a PolyGIS layer): new versions come from there. */
+  source?: { app: string; name: string; ref: string; label?: string } | null;
 }
 /** How a CSV import is read. Without these the API guesses the coordinate columns by name and imports everything as "submitted". */
 export interface ImportOptions {

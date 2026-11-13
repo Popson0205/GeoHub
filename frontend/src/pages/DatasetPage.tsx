@@ -90,6 +90,7 @@ export default function DatasetPage() {
             </ul>
           </section>
         )}
+        {d.source && <section className="card" aria-label="Source"><span className="field-hint">Published from {d.source.name}{d.source.label ? `: ${d.source.label}` : ""}. New versions are published from there.</span></section>}
         {d.map_id && <section className="card" aria-label="Source"><span className="field-hint">Published from a shared map.</span><Link to={`/maps/${d.map_id}/portal?tab=publish`}>Open the map portal</Link></section>}
         <section className="card" aria-label="Use in your app">
           <h2>Use in your app</h2>
