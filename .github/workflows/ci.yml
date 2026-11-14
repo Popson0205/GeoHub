@@ -62,7 +62,10 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gdal-bin
       - name: PostgreSQL 16 tools, matching the database (a newer pg_dump writes settings 16 cannot restore)
         run: |
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -qq postgresql-client-16
+          /usr/lib/postgresql/16/bin/pg_dump --version
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
       - run: pip install -r requirements-dev.txt
       - run: cp .env.test.example .env.test
