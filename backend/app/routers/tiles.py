@@ -1,12 +1,13 @@
 """Tile endpoints. Martin (vector) and TiTiler (imagery) are never exposed publicly: these routes check
 project access and then proxy to them. Access is via the Authorization header, ?access_token=, or a
 short-lived ?sig= token from GET /projects/{id}/layers (handy for MapLibre sources)."""
-import json
 from uuid import UUID
 
+import anyio
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
 
+from .. import raster_tiles
 from ..config import settings
 from ..db import get_conn
 from ..deps import current_user, require_map, require_role, role_in
@@ -82,22 +83,10 @@ async def imagery_tile(imagery_id: UUID, z: int, x: int, y: int, request: Reques
     return await _fetch(request, f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png", params, "image/png")
 
 
-def _lut(stops: list[str]) -> str:
-    """An app's ramp as TiTiler's colormap: 256 colours along its stops, for the values once rescaled to 0–255."""
-    rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in stops]
-    out = {}
-    for v in range(256):
-        t = v / 255 * (len(rgb) - 1)
-        i = min(int(t), len(rgb) - 2)
-        f = t - i
-        out[v] = [round(rgb[i][k] + (rgb[i + 1][k] - rgb[i][k]) * f) for k in range(3)] + [255]
-    return json.dumps(out, separators=(",", ":"))
-
-
 @router.get("/tiles/datasets/{slug}/{version}/{z}/{x}/{y:int}.png")
 async def dataset_tile(slug: str, version: int, z: int, x: int, y: int, request: Request, conn=Depends(get_conn)):
-    """A raster dataset's map tiles. A public dataset's tiles are open to anyone; any other's need a sign-in or the
-    short `sig` token that GET /datasets/{slug} puts in its tiles_url."""
+    """A raster dataset's map tiles, drawn by the API itself (no TiTiler needed). A public dataset's tiles are open to
+    anyone; any other's need a sign-in or the short `sig` token that GET /datasets/{slug} puts in its tiles_url."""
     cur = await conn.execute("SELECT d.id, d.visibility, v.raster, v.snapshot_key FROM datasets d JOIN dataset_versions v "
                              "ON v.dataset_id = d.id AND v.version = %s WHERE d.slug = %s AND v.geometry_type = 'raster'", (version, slug))
     r = await cur.fetchone()
@@ -108,24 +97,11 @@ async def dataset_tile(slug: str, version: int, z: int, x: int, y: int, request:
         await _get_readable(conn, slug, {"id": UUID(str(user_id))})
     if not 0 <= z <= 24:
         raise Problem(422, "Zoom must be between 0 and 24.", code="validation")
-    render = (r["raster"] or {}).get("render") or {}
-    params: list[tuple[str, str]] = [("url", f"s3://{settings.s3_bucket}/{r['snapshot_key']}")]
-    if render.get("kind") == "rgb":
-        params += [("bidx", str(b)) for b in render.get("bands", [1, 2, 3])]
-    else:
-        params.append(("bidx", str(render.get("band", 1))))
-        if render.get("rescale"):
-            params.append(("rescale", f"{render['rescale'][0]},{render['rescale'][1]}"))
-        if render.get("colors"):
-            params.append(("colormap", _lut(render["colors"])))
-        else:
-            params.append(("colormap_name", render.get("colormap") or "viridis"))
-    asked = {k: v for k, v in request.query_params.items() if k in TITILER_PASSTHROUGH}
-    params = [(k, v) for k, v in params if k not in asked] + list(asked.items())
-    resp = await _fetch(request, f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png", params, "image/png")
-    if r["visibility"] == "public":
-        resp.headers["Cache-Control"] = "public, max-age=3600"
-    return resp
+    png = await anyio.to_thread.run_sync(raster_tiles.render, r["snapshot_key"], z, x, y, (r["raster"] or {}).get("render") or {})
+    cache = "public, max-age=3600" if r["visibility"] == "public" else CACHE["Cache-Control"]
+    if png is None:
+        return Response(status_code=204, headers={"Cache-Control": cache})           # outside the raster: nothing to draw
+    return Response(png, media_type="image/png", headers={"Cache-Control": cache})
 
 
 @router.get("/projects/{project_id}/layers", response_model=LayersOut)

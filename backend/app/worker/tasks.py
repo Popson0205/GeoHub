@@ -126,14 +126,17 @@ def imagery_convert(conn, job) -> dict:
 
 # ======================================================================== raster datasets
 def _render(info: dict, asked: dict | None) -> dict:
-    """How the raster is drawn on the Data hub's map: three or four bands of bytes as a photo, else the first band
-    stretched over a colour ramp between its minimum and maximum (or what the app asked for)."""
+    """How the raster is drawn on the Data hub's map: the app's classes, each in its colour; else three or four bands
+    of bytes as a photo; else the first band stretched over a colour ramp between its minimum and maximum (or what the
+    app asked for)."""
     bands = info.get("bands") or []
+    asked = asked or {}
+    if asked.get("classes"):
+        return {"kind": "classes", "band": 1, "classes": asked["classes"]}
     if len(bands) >= 3 and all(b.get("type") == "Byte" for b in bands[:3]):
         return {"kind": "rgb", "bands": [1, 2, 3]}
     b = bands[0] if bands else {}
     lo, hi = b.get("minimum"), b.get("maximum")
-    asked = asked or {}
     rescale = asked.get("rescale") or ([lo, hi] if lo is not None and hi is not None and hi > lo else None)
     out = {"kind": "single", "band": 1, "colormap": asked.get("colormap") or "viridis", "rescale": rescale}
     if asked.get("colors"):

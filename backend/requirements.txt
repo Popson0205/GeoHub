@@ -12,6 +12,7 @@ redis==5.2.1
 httpx==0.28.1
 python-multipart==0.0.20
 Pillow==11.1.0
+rio-tiler==7.9.6
 sentry-sdk==2.19.2
 cryptography==44.0.0
 openpyxl==3.1.5

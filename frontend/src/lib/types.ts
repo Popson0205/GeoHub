@@ -306,7 +306,8 @@ export type ExportFormat = "geojson" | "gpkg" | "shp" | "csv" | "tif";
 export interface RasterInfo {
   bands: { name: string; min: number | null; max: number | null; mean: number | null; nodata: number | null }[];
   width: number; height: number; crs: string; resolution: number; data_type: string | null; size: number;
-  render: { kind: "rgb"; bands: number[] } | { kind: "single"; band: number; colormap: string; rescale: [number, number] | null; colors?: string[] };
+  render: { kind: "rgb"; bands: number[] } | { kind: "single"; band: number; colormap: string; rescale: [number, number] | null; colors?: string[] }
+    | { kind: "classes"; band: number; classes: { value: number; color: string; label: string }[] };
 }
 export interface Dataset {
   slug: string;

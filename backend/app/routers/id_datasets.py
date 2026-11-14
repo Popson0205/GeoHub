@@ -215,12 +215,20 @@ COLORMAPS = {"viridis", "magma", "plasma", "inferno", "cividis", "terrain", "gis
              "rdylgn", "spectral", "ylgn", "rdylbu", "rdbu", "brbg"}
 
 
+class RasterClass(BaseModel):
+    value: int
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    label: str = Field("", max_length=100)
+
+
 class RasterRender(BaseModel):
     colormap: str | None = Field(None, pattern=r"^[a-z_]{2,20}$", description=f"A single band is drawn with this colour ramp: one of "
                                  f"{', '.join(sorted(COLORMAPS))}, or one of them reversed (name_r)")
     rescale: tuple[float, float] | None = Field(None, description="The values drawn at either end of the ramp (else the band's min and max)")
     colors: list[str] | None = Field(None, min_length=2, max_length=16, description="The app's own ramp, low to high, as #rrggbb stops: "
                                      "drawn exactly so, instead of a named colormap")
+    classes: list[RasterClass] | None = Field(None, min_length=1, max_length=200, description="A raster of classes (land cover, "
+                                              "say): each value in its own colour, with its name for the legend; other values are left clear")
 
 
     @field_validator("colormap")

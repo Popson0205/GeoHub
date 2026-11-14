@@ -81,6 +81,11 @@ export default function DatasetPage() {
         {data.unpublished && <div className="state" role="status"><strong>Not published yet</strong><span>This dataset has no finished version. Publishing may still be running, or it failed (for example, no records were approved). Go back to Collected data and publish again.</span></div>}
         {r && d.tiles_url ? (
           <div className="preview"><MapView features={[]} imagery={[{ id: d.slug, url: d.tiles_url, maxzoom: 22 }]} flyTo={d.bbox ? { bounds: d.bbox, key: 1 } : null} label="Raster preview">
+            {r.render.kind === "classes" && (
+              <ul className="raster-legend raster-classes" aria-label="Classes">
+                {r.render.classes.map((c) => <li key={c.value}><span className="raster-swatch" style={{ background: c.color }} aria-hidden="true" />{c.label || c.value}</li>)}
+              </ul>
+            )}
             {ramp && r.render.kind === "single" && r.render.rescale && (
               <div className="raster-legend" role="img" aria-label={`Colours from ${num(r.render.rescale[0])} to ${num(r.render.rescale[1])}`}>
                 <span className="raster-ramp" style={{ background: `linear-gradient(90deg, ${ramp.join(", ")})` }} />
@@ -107,7 +112,7 @@ export default function DatasetPage() {
             {d.visibility && d.visibility !== "public" && <><dt>Who can see it</dt><dd>{d.visibility === "organization" ? "Your organization only" : "Members only"}</dd></>}
             {r ? <>
               <dt>Raster</dt><dd>{r.width.toLocaleString()} × {r.height.toLocaleString()} cells of {cell(r)}</dd>
-              <dt>{r.bands.length === 1 ? "Band" : "Bands"}</dt><dd>{r.bands.length === 1 ? `${num(r.bands[0].min)} to ${num(r.bands[0].max)}` : `${r.bands.length} (${r.render.kind === "rgb" ? "a colour image" : r.bands.map((b) => b.name).join(", ")})`}</dd>
+              <dt>{r.render.kind === "classes" ? "Classes" : r.bands.length === 1 ? "Band" : "Bands"}</dt><dd>{r.render.kind === "classes" ? `${r.render.classes.length} (${r.render.classes.slice(0, 3).map((c) => c.label || c.value).join(", ")}${r.render.classes.length > 3 ? "…" : ""})` : r.bands.length === 1 ? `${num(r.bands[0].min)} to ${num(r.bands[0].max)}` : `${r.bands.length} (${r.render.kind === "rgb" ? "a colour image" : r.bands.map((b) => b.name).join(", ")})`}</dd>
               <dt>File</dt><dd>GeoTIFF, {bytes(r.size)}</dd>
             </> : <><dt>Features</dt><dd>{d.feature_count}</dd></>}
             <dt>Version</dt><dd>{d.latest_version}</dd>

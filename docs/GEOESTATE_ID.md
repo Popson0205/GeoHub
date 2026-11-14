@@ -85,7 +85,10 @@ Cloud-Optimised GeoTIFF with its statistics; ask how it is going with `gid.data(
 (`processing`, then `ready` or `failed` with the reason). `{"dataset": "<slug>"}` instead of a title publishes the next
 version of a raster dataset the app published before. `render` says how a single band is drawn on the Data hub's
 map: the values at either end (`"rescale": [250, 520]`), and the app's own ramp as `#rrggbb` stops (`"colors"`, drawn
-exactly) or a named one (`"colormap": "terrain"`, or `"spectral_r"` reversed). Three bands of bytes are drawn as a photo. In the Data hub
+exactly) or a named one (`"colormap": "terrain"`, or `"spectral_r"` reversed). A raster of classes (land cover) sends
+`"classes": [{"value": 10, "color": "#006400", "label": "Tree cover"}, …]`: each value in its colour, the others left
+clear, and a legend of the names. Three bands of bytes are drawn as a photo. Geohub draws these tiles itself (rio-tiler),
+so the Data hub needs no TiTiler service. In the Data hub
 the dataset shows on a map (tiles behind the dataset's own visibility) and downloads as a GeoTIFF.
 
 ## Endpoints
