@@ -51,4 +51,20 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
   await act(async () => { fireEvent.click(buttons[0]); });
   await waitFor(() => { if (!clicked.length) throw new Error("not yet"); }, { timeout: 4000 }).catch(() => undefined);
   ok(exports.join() === "tif" && clicked[0] === "minna-elevation.tif|https://s3.example/v2.tif", `the GeoTIFF downloads (${clicked.join()})`);
+
+  // a raster of classes (land cover): a legend of its classes, each with its colour
+  const { cleanup } = await import("@testing-library/react");
+  cleanup();
+  const base = await api.getDataset();
+  api.getDataset = async () => ({ ...base, slug: "land-cover", title: "Land cover", raster: { ...base.raster, render: { kind: "classes", band: 1, classes: [
+    { value: 10, color: "#006400", label: "Tree cover" }, { value: 20, color: "#ffbb22", label: "Shrubland" }, { value: 40, color: "#f096ff", label: "Cropland" },
+    { value: 50, color: "#fa0000", label: "Built-up" }] } } });
+  render(<MemoryRouter initialEntries={["/hub/land-cover"]}><AuthProvider><ToastProvider>
+    <Routes><Route path="/hub/:slug" element={<DatasetPage />} /></Routes>
+  </ToastProvider></AuthProvider></MemoryRouter>);
+  await screen.findByRole("heading", { name: "Land cover" }, { timeout: 4000 });
+  const items = screen.getByRole("list", { name: "Classes" }).querySelectorAll("li");
+  ok(items.length === 4 && items[0].textContent === "Tree cover" && (items[0].querySelector(".raster-swatch") as HTMLElement).style.background.includes("rgb(0, 100, 0)"),
+    "a land cover legend lists its classes in their colours");
+  ok((screen.getByRole("region", { name: "Details" }).textContent ?? "").includes("Classes4 (Tree cover, Shrubland, Cropland…)"), "the details say how many classes");
 })();

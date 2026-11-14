@@ -75,7 +75,7 @@ Any host that runs Docker works. Typical setup (for example Railway or Render):
 | **Database** | your Supabase project (see above). Set `DATABASE_URL` on api, worker, backup and Martin |
 | **Redis** | any Redis 7 |
 | **Martin** | `ghcr.io/maplibre/martin` with `martin/martin.yaml` (set the connection string). Private network only |
-| **TiTiler** | `ghcr.io/developmentseed/titiler` with the S3 credentials as env vars. Private network only |
+| **TiTiler** | `ghcr.io/developmentseed/titiler` with the S3 credentials as env vars. Private network only. Only project and map imagery uses it: the Data hub draws raster datasets itself |
 | **Object storage** | S3, Cloudflare R2, Backblaze B2 or MinIO. **Turn on bucket versioning** |
 | **backup** | a daily scheduled job running `python -m app.ops.backup` |
 

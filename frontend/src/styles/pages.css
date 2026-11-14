@@ -157,3 +157,6 @@
 .raster-ramp { display: block; height: 10px; border-radius: 3px; }
 .raster-ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; color: var(--ink-2, #4b5563); font-variant-numeric: tabular-nums; }
 .raster-ends span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raster-classes { list-style: none; margin: 0; max-height: 60%; overflow: auto; display: grid; gap: 4px; }
+.raster-classes li { display: flex; align-items: center; gap: 8px; }
+.raster-swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
