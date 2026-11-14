@@ -5,7 +5,7 @@ import { Icon } from "../components/icons";
 import { Button, EmptyState, ErrorState, Loading } from "../components/ui";
 import { useAsync } from "../lib/hooks";
 
-const FORMAT_LABEL = { geojson: "GeoJSON", gpkg: "GeoPackage", shp: "Shapefile", csv: "CSV" } as const;
+const FORMAT_LABEL = { geojson: "GeoJSON", gpkg: "GeoPackage", shp: "Shapefile", csv: "CSV", tif: "GeoTIFF" } as const;
 
 export default function HubPage() {
   const [q, setQ] = useState("");
@@ -34,7 +34,7 @@ export default function HubPage() {
               <FootprintThumb kind="dataset" id={d.slug} version={String(d.latest_version)} />
               <div>
                 <h2><Link to={`/hub/${d.slug}`}>{d.title}</Link></h2>
-                <p>{d.description || "No description yet."} {d.feature_count} features, updated {new Date(d.updated_at).toLocaleDateString()}.</p>
+                <p>{d.description || "No description yet."} {d.kind === "raster" ? "Raster" : `${d.feature_count} features`}, updated {new Date(d.updated_at).toLocaleDateString()}.</p>
                 <div className="chips">
                   {d.formats.map((f) => <span className="chip" key={f}>{FORMAT_LABEL[f]}</span>)}
                   <span className="chip chip-plain">{d.license}</span>

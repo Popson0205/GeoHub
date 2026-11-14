@@ -301,7 +301,13 @@ export type License = "ODbL" | "CC BY 4.0" | "CC0" | "Private";
 /** UI label -> id the backend stores. */
 export const LICENSE_TO_API = { "ODbL": "ODbL-1.0", "CC BY 4.0": "CC-BY-4.0", "CC0": "CC0-1.0", "Private": "Private" } as const;
 export const LICENSE_FROM_API: Record<string, License> = { "ODbL-1.0": "ODbL", "CC-BY-4.0": "CC BY 4.0", "CC0-1.0": "CC0", "Private": "Private" };
-export type ExportFormat = "geojson" | "gpkg" | "shp" | "csv";
+export type ExportFormat = "geojson" | "gpkg" | "shp" | "csv" | "tif";
+/** What a raster dataset's latest version holds, and how the Data hub draws it. */
+export interface RasterInfo {
+  bands: { name: string; min: number | null; max: number | null; mean: number | null; nodata: number | null }[];
+  width: number; height: number; crs: string; resolution: number; data_type: string | null; size: number;
+  render: { kind: "rgb"; bands: number[] } | { kind: "single"; band: number; colormap: string; rescale: [number, number] | null; colors?: string[] };
+}
 export interface Dataset {
   slug: string;
   project_id: string;
@@ -309,7 +315,7 @@ export interface Dataset {
   description: string;
   license: License;
   tags: string[];
-  kind: "vector" | "imagery";
+  kind: "vector" | "imagery" | "raster";
   bbox?: [number, number, number, number];
   feature_count: number;
   latest_version: number;
@@ -321,7 +327,10 @@ export interface Dataset {
   /** People credited for the latest version of a dataset published from a map. */
   contributors?: { name: string; features: number }[];
   /** Set when the dataset was published from another GeoEstate app (a PolyGIS layer): new versions come from there. */
-  source?: { app: string; name: string; ref: string; label?: string } | null;
+  source?: { app: string; name: string; ref: string; label?: string; kind?: string } | null;
+  /** A raster dataset: what it holds, and its map tiles. */
+  raster?: RasterInfo | null;
+  tiles_url?: string | null;
 }
 /** How a CSV import is read. Without these the API guesses the coordinate columns by name and imports everything as "submitted". */
 export interface ImportOptions {

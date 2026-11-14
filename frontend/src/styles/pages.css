@@ -151,3 +151,9 @@
 .auth-sso .btn { width: 100%; justify-content: center; }
 .auth-or { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-2) 0 0; color: var(--muted); font-size: var(--fs-sm); }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* a raster dataset's legend: its colour ramp between the values at either end */
+.raster-legend { position: absolute; left: 12px; bottom: 28px; z-index: 2; width: min(260px, calc(100% - 24px)); padding: 8px 10px; background: rgba(255, 255, 255, .94); border: 1px solid var(--line); border-radius: var(--r-md, 8px); box-shadow: var(--sh-xs); font-size: 12px; }
+.raster-ramp { display: block; height: 10px; border-radius: 3px; }
+.raster-ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; color: var(--ink-2, #4b5563); font-variant-numeric: tabular-nums; }
+.raster-ends span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

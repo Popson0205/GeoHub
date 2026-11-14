@@ -13,18 +13,20 @@ from ..logging_setup import client_ip
 from ..pagination import Page, decode_cursor, encode_cursor, page_from_offset
 from ..schemas import (DatasetCreated, DatasetIn, DatasetOut, DatasetPatch, DatasetSummary, ExportIn, JobOut,
                        NewVersionIn)
+from ..security import make_tile_token
 from .jobs import job_out
 
 router = APIRouter(tags=["datasets"])
 FORMATS = ["geojson", "gpkg", "shp", "csv"]
-EXT = {"geojson": "geojson", "gpkg": "gpkg", "shp": "zip", "csv": "csv"}
+EXT = {"geojson": "geojson", "gpkg": "gpkg", "shp": "zip", "csv": "csv", "tif": "tif"}
+RASTER_FORMATS = ["tif"]
 
 # The organization a dataset belongs to: that of its project or map.
 ORG_OF = ("COALESCE((SELECT org_id FROM projects WHERE id = d.project_id), "
           "(SELECT org_id FROM workspace_maps WHERE id = d.map_id), d.org_id)")
 SUMMARY_SQL = (
     "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, d.map_id, d.source, d.created_by, "
-    "d.statuses, COALESCE(v.geometry_type, f.geometry_type, d.map_geometry) AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
+    "d.statuses, COALESCE(v.geometry_type, f.geometry_type, d.map_geometry, d.source->>'kind') AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
     "v.bbox, COALESCE(v.published_at, d.created_at) AS published_at, " + ORG_OF + " AS org_id, "
     "(SELECT COALESCE(sum(x.download_count), 0)::bigint FROM dataset_versions x WHERE x.dataset_id = d.id) AS download_count "
     "FROM datasets d LEFT JOIN forms f ON f.id = d.form_id "
@@ -90,7 +92,7 @@ async def _get_readable(conn, slug: str, user) -> tuple[dict, str | None]:
 
 
 @router.get("/datasets", response_model=Page[DatasetSummary])
-async def catalogue(request: Request, q: str | None = None, type: str | None = Query(None, pattern="^(point|line|area)$"),
+async def catalogue(request: Request, q: str | None = None, type: str | None = Query(None, pattern="^(point|line|area|raster)$"),
                     license: str | None = None, tag: str | None = None,
                     sort: str = Query("recent", pattern="^(recent|name|downloads)$"),
                     limit: int = Query(24, ge=1, le=100), cursor: str | None = None, user=Depends(optional_user),
@@ -128,14 +130,19 @@ async def get_dataset(slug: str, request: Request, user=Depends(optional_user), 
     cur = await conn.execute("SELECT version, feature_count, bbox, published_at, download_count FROM dataset_versions "
                              "WHERE dataset_id = %s ORDER BY version DESC", (d["id"],))
     versions = await cur.fetchall()
-    fields, contributors = [], []
+    fields, contributors, raster = [], [], None
     if versions:
-        cur = await conn.execute("SELECT fields, contributors FROM dataset_versions WHERE dataset_id = %s AND version = %s",
+        cur = await conn.execute("SELECT fields, contributors, raster FROM dataset_versions WHERE dataset_id = %s AND version = %s",
                                  (d["id"], d["latest_version"]))
         row = await cur.fetchone()
-        fields, contributors = row["fields"], row["contributors"]
+        fields, contributors, raster = row["fields"], row["contributors"], row["raster"]
+    tiles = None
+    if raster:                     # a map library cannot send a sign-in with tile requests: non-public tiles carry a short token
+        sig = "" if d["visibility"] == "public" or not user else f"?sig={make_tile_token(d['id'], user['id'])}"
+        tiles = f"{settings.public_base_url}/tiles/datasets/{d['slug']}/{d['latest_version']}/{{z}}/{{x}}/{{y}}.png{sig}"
     return {**d, "project_id": d["project_id"] if role else None, "map_id": d["map_id"] if role else None,
-            "contributors": contributors, "fields": fields, "versions": versions, "formats": FORMATS}
+            "contributors": contributors, "fields": fields, "versions": versions,
+            "formats": RASTER_FORMATS if d["geometry_type"] == "raster" else FORMATS, "raster": raster, "tiles_url": tiles}
 
 
 @router.get("/datasets/{slug}/features")
@@ -265,18 +272,21 @@ async def request_export(slug: str, body: ExportIn, request: Request, user=Depen
         await ratelimit.hit(f"export:{ip}", settings.rate_anon_export_per_hour, 3600)
     d, _ = await _get_readable(conn, slug, user)
     v = body.version or d["latest_version"]
-    cur = await conn.execute("SELECT snapshot_key FROM dataset_versions WHERE dataset_id = %s AND version = %s", (d["id"], v))
+    cur = await conn.execute("SELECT snapshot_key, geometry_type FROM dataset_versions WHERE dataset_id = %s AND version = %s", (d["id"], v))
     ver = await cur.fetchone()
     if not ver:
         raise Problem(404 if body.version else 409, "That dataset version does not exist yet.", code="not_published")
+    if (ver["geometry_type"] == "raster") != (body.format == "tif"):
+        raise Problem(422, "A raster downloads as a GeoTIFF (tif)." if ver["geometry_type"] == "raster"
+                      else "GeoTIFF is for raster datasets: choose geojson, gpkg, shp or csv.", code="validation", fields={"format": ["not for this dataset"]})
     fname = f"{slug}-v{v}.{EXT[body.format]}"
     public = d["visibility"] == "public"
     await conn.execute("UPDATE dataset_versions SET download_count = download_count + 1 "
                        "WHERE dataset_id = %s AND version = %s", (d["id"], v))
     await audit(conn, "export.request", actor_id=user["id"] if user else None, project_id=d["project_id"],
                 target_type="dataset", target_id=d["id"], ip=ip, format=body.format, version=v)
-    key, size = (ver["snapshot_key"], None) if body.format == "geojson" else (None, None)
-    if body.format != "geojson":
+    key, size = (ver["snapshot_key"], None) if body.format in ("geojson", "tif") else (None, None)
+    if body.format not in ("geojson", "tif"):
         cur = await conn.execute("SELECT storage_key, size FROM dataset_exports WHERE dataset_id = %s AND version = %s "
                                  "AND format = %s", (d["id"], v, body.format))
         cached = await cur.fetchone()
