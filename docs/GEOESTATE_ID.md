@@ -62,6 +62,22 @@ An app can read the field data the signed-in person could open in Geohub, with t
 
 Land Registry uses this to register the parcels a field team enumerated with a Geohub form.
 
+## One app reading another (token exchange)
+
+An app can read another GeoEstate app's data for the same person, e.g. PolyGIS showing Land Registry's parcels as a
+layer. It swaps the person's access token for itself for a short access token for the other app (RFC 8693), with its
+own client secret:
+
+    POST /api/id/token  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+                        subject_token=<the person's access token for this app>  audience=land
+
+Geohub answers with an access token for `land` (no refresh token) only if the person's organization has Land Registry;
+otherwise `403 no_product`. The token carries `act: {"sub": "gis"}`, the app acting for the person. The other app
+checks it like any of its own access tokens (as a Bearer token) and shows only what the person may see there. In the
+kit: `gid.token_for(access_token, "land")`.
+
+Publishing works the other way: `gid.send(access_token, "datasets", {...})` puts a layer in Geohub's Data hub.
+
 ## Endpoints
 
 | | |
@@ -69,7 +85,7 @@ Land Registry uses this to register the parcels a field team enumerated with a G
 | `GET /api/id/configuration` | issuer and endpoints |
 | `GET /api/id/jwks` | the public key |
 | `GET /id/authorize` (web page) | sign in and go back with a code |
-| `POST /api/id/token` | `grant_type=authorization_code` or `refresh_token`; client secret in the form or HTTP Basic |
+| `POST /api/id/token` | `grant_type=authorization_code`, `refresh_token` or token exchange (above); client secret in the form or HTTP Basic |
 | `GET /api/id/userinfo` | the person as of now (Bearer access token) |
 | `GET /api/id/apps` | the organization's apps, for the app switcher (Bearer access token) |
 | `POST /api/id/revoke` | sign out of the app (`token` = the refresh token) |
