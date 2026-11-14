@@ -60,6 +60,10 @@ jobs:
           cache-dependency-path: backend/requirements*.txt
       - name: GDAL (imagery and import jobs)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gdal-bin
+      - name: PostgreSQL 16 tools, matching the database (a newer pg_dump writes settings 16 cannot restore)
+        run: |
+          sudo apt-get install -y -qq postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
       - run: pip install -r requirements-dev.txt
       - run: cp .env.test.example .env.test
       - name: S3 stand-in
