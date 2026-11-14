@@ -21,9 +21,9 @@ EXT = {"geojson": "geojson", "gpkg": "gpkg", "shp": "zip", "csv": "csv"}
 
 # The organization a dataset belongs to: that of its project or map.
 ORG_OF = ("COALESCE((SELECT org_id FROM projects WHERE id = d.project_id), "
-          "(SELECT org_id FROM workspace_maps WHERE id = d.map_id))")
+          "(SELECT org_id FROM workspace_maps WHERE id = d.map_id), d.org_id)")
 SUMMARY_SQL = (
-    "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, d.map_id, "
+    "SELECT d.id, d.slug, d.title, d.description, d.license, d.tags, d.visibility, d.latest_version, d.project_id, d.map_id, d.source, d.created_by, "
     "d.statuses, COALESCE(v.geometry_type, f.geometry_type, d.map_geometry) AS geometry_type, COALESCE(v.feature_count, 0) AS feature_count, "
     "v.bbox, COALESCE(v.published_at, d.created_at) AS published_at, " + ORG_OF + " AS org_id, "
     "(SELECT COALESCE(sum(x.download_count), 0)::bigint FROM dataset_versions x WHERE x.dataset_id = d.id) AS download_count "
@@ -57,6 +57,8 @@ async def _dataset_role(conn, d: dict, user) -> str | None:
     """The person's role on whatever the dataset came from: a project (members) or a map (owner, reviewers, contributors)."""
     if not user:
         return None
+    if d.get("source") and not d["map_id"] and not d["project_id"]:     # published from another GeoEstate app
+        return "owner" if str(d.get("created_by")) == str(user["id"]) else None
     if d["map_id"]:
         cur = await conn.execute(
             "SELECT CASE WHEN m.owner_id = %s THEN 'owner' ELSE mm.role END AS role FROM workspace_maps m "
@@ -99,8 +101,9 @@ async def catalogue(request: Request, q: str | None = None, type: str | None = Q
                      "(d.visibility = 'public' OR d.project_id IN (SELECT project_id FROM members WHERE user_id = %s "
                      "  UNION SELECT project_id FROM team_project_roles WHERE user_id = %s) "
                      "OR d.map_id IN (SELECT id FROM workspace_maps WHERE owner_id = %s UNION SELECT map_id FROM map_members WHERE user_id = %s) "
+                     "OR (d.source IS NOT NULL AND d.created_by = %s) "
                      f"OR (d.visibility = 'organization' AND {ORG_OF} = %s))"], \
-                    [user["id"] if user else None] * 4 + [await _user_org(conn, user)]
+                    [user["id"] if user else None] * 5 + [await _user_org(conn, user)]
     if q:
         where.append("(d.title ILIKE %s OR d.description ILIKE %s OR %s = ANY(d.tags))")
         params += [f"%{q}%", f"%{q}%", q.lower()]
@@ -209,11 +212,14 @@ async def publish_dataset(project_id: UUID, body: DatasetIn, request: Request, u
 async def new_version(slug: str, request: Request, body: NewVersionIn | None = None, user=Depends(current_user),
                       conn=Depends(get_conn)):
     """Take a fresh snapshot as the next version. Earlier versions never change."""
-    cur = await conn.execute("SELECT id, project_id, map_id, created_by FROM datasets WHERE slug = %s", (slug,))
+    cur = await conn.execute("SELECT id, project_id, map_id, created_by, source FROM datasets WHERE slug = %s", (slug,))
     d = await cur.fetchone()
     if not d:
         raise Problem(404, "Dataset not found.", code="not_found")
     await _require_owner(conn, d, user)
+    if d["source"] and not d["project_id"] and not d["map_id"]:
+        app = d["source"].get("name") or "the app it came from"
+        raise Problem(409, f"This dataset was published from {app}: publish its next version from there.", code="published_from_app")
     statuses = body.statuses if body and not d["map_id"] else None      # map datasets always publish approved features only
     if statuses:
         await conn.execute("UPDATE datasets SET statuses = %s WHERE id = %s", (statuses, d["id"]))

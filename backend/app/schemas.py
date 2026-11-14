@@ -473,6 +473,7 @@ class DatasetSummary(BaseModel):
     bbox: list[float] | None
     published_at: datetime
     download_count: int
+    source: dict | None = Field(None, description="Published from another GeoEstate app: {app, name, ref, label}")
 
 
 class ContributorCredit(BaseModel):
