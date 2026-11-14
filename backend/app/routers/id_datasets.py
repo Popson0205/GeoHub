@@ -16,14 +16,17 @@ from pathlib import Path
 from typing import Literal
 
 import anyio
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, Query
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from .. import storage
+from .. import formats, storage
 from ..audit import audit
+from ..config import settings
 from ..db import get_conn
 from ..errors import Problem
+from ..jobs import create_job, dispatch
 from .datasets import SUMMARY_SQL, check_visibility
 from .id_data import app_person
 
@@ -198,3 +201,162 @@ async def publish_version(slug: str, body: AppVersionIn, person=Depends(app_pers
     await audit(conn, "dataset.version", actor_id=person["sub"], target_type="dataset", target_id=d["id"], slug=slug, app=person["aud"])
     cur = await conn.execute(SUMMARY_SQL + "WHERE d.id = %s", (d["id"],))
     return {"dataset": await cur.fetchone(), **v}
+
+
+# ---------- rasters ----------
+# A raster can be gigabytes, so it does not pass through this API: the app asks for upload addresses, sends the file in
+# parts straight to storage, and says when it is done. Geohub's worker then turns it into a Cloud-Optimised GeoTIFF
+# with its statistics, and the version appears in the Data hub, drawn as map tiles and downloadable as a GeoTIFF.
+#
+#   POST /id/data/rasters                  a new raster dataset, or (with `dataset`) the next version of one: upload parts
+#   POST /id/data/rasters/{id}/complete    the parts are uploaded: convert it
+#   GET  /id/data/rasters/{id}             how it is going: uploading, processing, ready or failed (and why)
+COLORMAPS = {"viridis", "magma", "plasma", "inferno", "cividis", "terrain", "gist_earth", "gray", "greys", "greens", "blues", "reds",
+             "rdylgn", "spectral", "ylgn", "rdylbu", "rdbu", "brbg"}
+
+
+class RasterRender(BaseModel):
+    colormap: str | None = Field(None, pattern=r"^[a-z_]{2,20}$", description=f"A single band is drawn with this colour ramp: one of "
+                                 f"{', '.join(sorted(COLORMAPS))}, or one of them reversed (name_r)")
+    rescale: tuple[float, float] | None = Field(None, description="The values drawn at either end of the ramp (else the band's min and max)")
+    colors: list[str] | None = Field(None, min_length=2, max_length=16, description="The app's own ramp, low to high, as #rrggbb stops: "
+                                     "drawn exactly so, instead of a named colormap")
+
+
+    @field_validator("colormap")
+    @classmethod
+    def _known(cls, v: str | None) -> str | None:
+        if v is not None and v.removesuffix("_r") not in COLORMAPS:
+            raise ValueError(f"not a colour ramp Geohub draws: one of {', '.join(sorted(COLORMAPS))} (or name_r, reversed)")
+        return v
+
+    @field_validator("colors")
+    @classmethod
+    def _hex(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and not all(re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in v):
+            raise ValueError("colours are #rrggbb")
+        return [c.lower() for c in v] if v else v
+
+
+class RasterStartIn(BaseModel):
+    filename: str = Field(min_length=1, max_length=300)
+    size: int = Field(gt=0)
+    dataset: str | None = Field(None, description="The slug of a raster dataset this app published: the upload becomes its next version")
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str = Field("", max_length=5000)
+    license: Literal["ODbL-1.0", "CC-BY-4.0", "CC0-1.0", "Private"] = "CC-BY-4.0"
+    tags: list[str] = Field([], max_length=20)
+    visibility: Literal["private", "organization", "public"] = "private"
+    slug: str | None = Field(None, pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
+    ref: str | None = Field(None, min_length=1, max_length=100)
+    label: str = Field("", max_length=300)
+    render: RasterRender | None = None
+
+
+class PartIn(BaseModel):
+    part_number: int = Field(ge=1, le=10000)
+    etag: str = Field(min_length=1, max_length=200)
+
+
+class RasterCompleteIn(BaseModel):
+    parts: list[PartIn] = Field(min_length=1, max_length=10000)
+
+
+async def _upload(conn, upload_id: uuid.UUID, person: dict) -> dict:
+    cur = await conn.execute("SELECT * FROM dataset_uploads WHERE id = %s AND app = %s AND created_by = %s", (upload_id, person["aud"], person["sub"]))
+    u = await cur.fetchone()
+    if not u:
+        raise Problem(404, "Upload not found.", code="not_found")
+    return u
+
+
+async def _upload_out(conn, u: dict) -> dict:
+    out = {k: u[k] for k in ("id", "status", "version", "error", "error_code", "filename", "size")}
+    out["dataset"] = None
+    if u["dataset_id"]:
+        cur = await conn.execute(SUMMARY_SQL + "WHERE d.id = %s", (u["dataset_id"],))
+        out["dataset"] = await cur.fetchone()
+    return out
+
+
+@router.post("/rasters", status_code=201, summary="Publish a raster: where to upload it, in parts")
+async def start_raster(body: RasterStartIn, person=Depends(app_person), conn=Depends(get_conn)):
+    if not formats.is_raster(body.filename):
+        raise Problem(422, f"That is not a raster file. Accepted: {formats.RASTER_LIST}.", code="unsupported_format", fields={"filename": ["not a raster"]})
+    if body.size > settings.max_imagery_bytes:
+        raise Problem(413, f"Rasters are limited to {settings.max_imagery_bytes // 1024**3} GB.", code="too_large")
+    dataset_id, meta = None, {}
+    if body.dataset:
+        cur = await conn.execute("SELECT d.*, v.geometry_type FROM datasets d LEFT JOIN dataset_versions v ON v.dataset_id = d.id "
+                                 "AND v.version = d.latest_version WHERE d.slug = %s", (body.dataset,))
+        d = await cur.fetchone()
+        if not d or not d["source"] or d["source"].get("app") != person["aud"] or str(d["created_by"]) != str(person["sub"]):
+            raise Problem(404, "Dataset not found.", code="not_found")
+        if (d["geometry_type"] or d["source"].get("kind")) != "raster":
+            raise Problem(422, "That dataset holds features, not a raster: publish the raster as a dataset of its own.", code="validation")
+        dataset_id = d["id"]
+    else:
+        if not body.title or not body.ref:
+            raise Problem(422, "A new dataset needs a title, and what the app published (ref).", code="validation",
+                          fields={k: ["required"] for k in ("title", "ref") if not getattr(body, k)})
+        await check_visibility(conn, _user(person), body.visibility)
+        if body.license == "Private" and body.visibility == "public":
+            raise Problem(422, "A Private licence cannot be published publicly.", code="validation", fields={"license": ["Private datasets must have visibility private"]})
+        if body.slug:
+            cur = await conn.execute("SELECT 1 FROM datasets WHERE slug = %s", (body.slug,))
+            if await cur.fetchone():
+                raise Problem(409, "That address is taken: choose another.", code="slug_taken", fields={"slug": ["already in use"]})
+        meta = body.model_dump(include={"title", "description", "license", "tags", "visibility", "slug", "ref", "label"})
+    if body.render:
+        meta["render"] = body.render.model_dump(exclude_none=True)
+    part_size = max(64 * 1024 * 1024, -(-body.size // 9000))
+    n_parts = -(-body.size // part_size)
+    cur = await conn.execute("INSERT INTO dataset_uploads (app, org_id, created_by, dataset_id, meta, filename, size, source_key) "
+                             "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending') RETURNING id",
+                             (person["aud"], (person.get("org") or {}).get("id"), person["sub"], dataset_id, Jsonb(meta), body.filename[:300], body.size))
+    uid = (await cur.fetchone())["id"]
+    key = f"uploads/rasters/{uid}/source{formats.ext(body.filename)}"
+    mp = await storage.run(storage.internal.create_multipart_upload, Bucket=settings.s3_bucket, Key=key, ContentType=formats.RASTER[formats.ext(body.filename)])
+    await conn.execute("UPDATE dataset_uploads SET source_key = %s, upload_id = %s WHERE id = %s", (key, mp["UploadId"], uid))
+    return {"id": uid, "part_size": part_size,
+            "parts": [{"part_number": i, "url": storage.presign_part(key, mp["UploadId"], i)} for i in range(1, n_parts + 1)]}
+
+
+@router.post("/rasters/{upload_id}/complete", status_code=202, summary="The raster is uploaded: turn it into a dataset version")
+async def complete_raster(upload_id: uuid.UUID, body: RasterCompleteIn, person=Depends(app_person), conn=Depends(get_conn)):
+    u = await _upload(conn, upload_id, person)
+    if u["status"] != "uploading":
+        raise Problem(409, "This upload was already completed.", code="already_completed")
+    parts = [{"PartNumber": p.part_number, "ETag": p.etag} for p in sorted(body.parts, key=lambda p: p.part_number)]
+    try:
+        await storage.run(storage.internal.complete_multipart_upload, Bucket=settings.s3_bucket, Key=u["source_key"],
+                          UploadId=u["upload_id"], MultipartUpload={"Parts": parts})
+    except ClientError as e:
+        raise Problem(422, "Storage rejected the list of parts: check the part numbers and ETags.", code="upload_incomplete",
+                      reason=e.response["Error"].get("Code")) from None
+    dataset_id = u["dataset_id"]
+    if not dataset_id:                                   # a new dataset: made now, with no version until the raster is ready
+        m = u["meta"]
+        slug = m.get("slug") or _slug(m["title"])
+        cur = await conn.execute("SELECT 1 FROM datasets WHERE slug = %s", (slug,))
+        if await cur.fetchone():
+            raise Problem(409, "That address is taken: choose another.", code="slug_taken", fields={"slug": ["already in use"]})
+        source = {"app": u["app"], "name": APP_NAMES.get(u["app"], u["app"]), "ref": m["ref"], "label": (m.get("label") or "").strip(), "kind": "raster"}
+        cur = await conn.execute(
+            "INSERT INTO datasets (slug, org_id, source, title, description, license, tags, visibility, statuses, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '{approved}', %s) RETURNING id",
+            (slug, u["org_id"], Jsonb(source), m["title"].strip(), (m.get("description") or "").strip(), m["license"],
+             [t.lower()[:40] for t in m.get("tags") or []], m["visibility"], person["sub"]))
+        dataset_id = (await cur.fetchone())["id"]
+        await audit(conn, "dataset.publish", actor_id=person["sub"], target_type="dataset", target_id=dataset_id, slug=slug,
+                    visibility=m["visibility"], app=u["app"], kind="raster")
+    job = await create_job(conn, "raster_dataset", {"upload_id": str(upload_id)}, created_by=person["sub"])
+    await conn.execute("UPDATE dataset_uploads SET status = 'processing', upload_id = NULL, dataset_id = %s, job_id = %s WHERE id = %s",
+                       (dataset_id, job["id"], upload_id))
+    await dispatch(conn, job)
+    return await _upload_out(conn, await _upload(conn, upload_id, person))
+
+
+@router.get("/rasters/{upload_id}", summary="How a raster's publishing is going")
+async def raster_status(upload_id: uuid.UUID, person=Depends(app_person), conn=Depends(get_conn)):
+    return await _upload_out(conn, await _upload(conn, upload_id, person))

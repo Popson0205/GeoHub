@@ -1,6 +1,7 @@
 """Tile endpoints. Martin (vector) and TiTiler (imagery) are never exposed publicly: these routes check
 project access and then proxy to them. Access is via the Authorization header, ?access_token=, or a
 short-lived ?sig= token from GET /projects/{id}/layers (handy for MapLibre sources)."""
+import json
 from uuid import UUID
 
 import httpx
@@ -12,6 +13,7 @@ from ..deps import current_user, require_map, require_role, role_in
 from ..errors import Problem
 from ..schemas import LayersOut
 from ..security import decode_token, make_tile_token
+from .datasets import _get_readable
 
 router = APIRouter(tags=["tiles"])
 CACHE = {"Cache-Control": "private, max-age=60"}
@@ -39,7 +41,7 @@ async def _authorise(request: Request, conn, project_id: UUID):
         raise Problem(404, "Project not found.", code="not_found")
 
 
-async def _fetch(request: Request, url: str, params: dict, media_type: str) -> Response:
+async def _fetch(request: Request, url: str, params: dict | list, media_type: str) -> Response:
     try:
         r = await request.app.state.http.get(url, params=params)
     except httpx.HTTPError:
@@ -78,6 +80,52 @@ async def imagery_tile(imagery_id: UUID, z: int, x: int, y: int, request: Reques
     params = {"url": f"s3://{settings.s3_bucket}/{a['storage_key']}"}
     params.update({k: v for k, v in request.query_params.items() if k in TITILER_PASSTHROUGH})
     return await _fetch(request, f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png", params, "image/png")
+
+
+def _lut(stops: list[str]) -> str:
+    """An app's ramp as TiTiler's colormap: 256 colours along its stops, for the values once rescaled to 0–255."""
+    rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in stops]
+    out = {}
+    for v in range(256):
+        t = v / 255 * (len(rgb) - 1)
+        i = min(int(t), len(rgb) - 2)
+        f = t - i
+        out[v] = [round(rgb[i][k] + (rgb[i + 1][k] - rgb[i][k]) * f) for k in range(3)] + [255]
+    return json.dumps(out, separators=(",", ":"))
+
+
+@router.get("/tiles/datasets/{slug}/{version}/{z}/{x}/{y:int}.png")
+async def dataset_tile(slug: str, version: int, z: int, x: int, y: int, request: Request, conn=Depends(get_conn)):
+    """A raster dataset's map tiles. A public dataset's tiles are open to anyone; any other's need a sign-in or the
+    short `sig` token that GET /datasets/{slug} puts in its tiles_url."""
+    cur = await conn.execute("SELECT d.id, d.visibility, v.raster, v.snapshot_key FROM datasets d JOIN dataset_versions v "
+                             "ON v.dataset_id = d.id AND v.version = %s WHERE d.slug = %s AND v.geometry_type = 'raster'", (version, slug))
+    r = await cur.fetchone()
+    if not r:
+        raise Problem(404, "Dataset not found.", code="not_found")
+    if r["visibility"] != "public":
+        user_id = _tile_user(request, r["id"])
+        await _get_readable(conn, slug, {"id": UUID(str(user_id))})
+    if not 0 <= z <= 24:
+        raise Problem(422, "Zoom must be between 0 and 24.", code="validation")
+    render = (r["raster"] or {}).get("render") or {}
+    params: list[tuple[str, str]] = [("url", f"s3://{settings.s3_bucket}/{r['snapshot_key']}")]
+    if render.get("kind") == "rgb":
+        params += [("bidx", str(b)) for b in render.get("bands", [1, 2, 3])]
+    else:
+        params.append(("bidx", str(render.get("band", 1))))
+        if render.get("rescale"):
+            params.append(("rescale", f"{render['rescale'][0]},{render['rescale'][1]}"))
+        if render.get("colors"):
+            params.append(("colormap", _lut(render["colors"])))
+        else:
+            params.append(("colormap_name", render.get("colormap") or "viridis"))
+    asked = {k: v for k, v in request.query_params.items() if k in TITILER_PASSTHROUGH}
+    params = [(k, v) for k, v in params if k not in asked] + list(asked.items())
+    resp = await _fetch(request, f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png", params, "image/png")
+    if r["visibility"] == "public":
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @router.get("/projects/{project_id}/layers", response_model=LayersOut)

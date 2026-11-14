@@ -78,6 +78,16 @@ kit: `gid.token_for(access_token, "land")`.
 
 Publishing works the other way: `gid.send(access_token, "datasets", {...})` puts a layer in Geohub's Data hub.
 
+A raster (an elevation model, an orthophoto, an analysis result) can be gigabytes, so it does not pass through
+Geohub's API: `gid.upload(access_token, "rasters", {"title", "ref", "visibility", …}, "/path/to/raster.tif")` asks
+for upload addresses, sends the file in parts straight to storage, and says when it is done. Geohub's worker makes it a
+Cloud-Optimised GeoTIFF with its statistics; ask how it is going with `gid.data(access_token, f"rasters/{id}")`
+(`processing`, then `ready` or `failed` with the reason). `{"dataset": "<slug>"}` instead of a title publishes the next
+version of a raster dataset the app published before. `render` says how a single band is drawn on the Data hub's
+map: the values at either end (`"rescale": [250, 520]`), and the app's own ramp as `#rrggbb` stops (`"colors"`, drawn
+exactly) or a named one (`"colormap": "terrain"`, or `"spectral_r"` reversed). Three bands of bytes are drawn as a photo. In the Data hub
+the dataset shows on a map (tiles behind the dataset's own visibility) and downloads as a GeoTIFF.
+
 ## Endpoints
 
 | | |

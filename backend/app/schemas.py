@@ -416,7 +416,7 @@ class LayersOut(BaseModel):
 # ---------- jobs ----------
 class JobOut(BaseModel):
     id: UUID
-    kind: Literal["imagery_convert", "export", "snapshot", "import"]
+    kind: Literal["imagery_convert", "export", "snapshot", "import", "raster_dataset"]
     status: Literal["queued", "running", "done", "failed"]
     progress: int
     result: dict[str, Any] | None = Field(None, description="Exports include a signed download_url when done")
@@ -467,7 +467,7 @@ class DatasetSummary(BaseModel):
     license: str
     tags: list[str]
     visibility: Literal["private", "organization", "public"]
-    geometry_type: GeometryType
+    geometry_type: Literal["point", "line", "area", "raster"]
     latest_version: int
     feature_count: int
     bbox: list[float] | None
@@ -488,6 +488,9 @@ class DatasetOut(DatasetSummary):
     fields: list[FieldDef]
     versions: list[DatasetVersionOut]
     formats: list[str]
+    raster: dict | None = Field(None, description="A raster's latest version: bands (min, max, mean), width, height, crs, "
+                                                  "resolution, nodata, data_type, size, and how it is drawn (render)")
+    tiles_url: str | None = Field(None, description="A raster's map tiles (PNG, Web Mercator), for a map library's raster source")
 
 
 class DatasetCreated(BaseModel):
@@ -503,7 +506,7 @@ class ProjectExportIn(BaseModel):
 
 
 class ExportIn(BaseModel):
-    format: Literal["geojson", "gpkg", "shp", "csv"]
+    format: Literal["geojson", "gpkg", "shp", "csv", "tif"] = Field(description="tif: a raster dataset's GeoTIFF; the others: a vector dataset's")
     version: int | None = Field(None, ge=1, description="Defaults to the latest version")
 
 

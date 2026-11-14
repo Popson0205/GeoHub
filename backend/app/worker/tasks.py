@@ -1,6 +1,6 @@
 """Background work, run by `rq worker default` (or inline when JOBS_INLINE=true).
 
-Job kinds: imagery_convert, snapshot, export, import. Plus process_photo (no job row)."""
+Job kinds: imagery_convert, snapshot, export, import, raster_dataset. Plus process_photo (no job row)."""
 import csv
 import io
 import json
@@ -120,6 +120,90 @@ def imagery_convert(conn, job) -> dict:
         conn.commit()
         if not isinstance(e, JobFailed):
             log.exception("imagery conversion failed")
+            raise JobFailed(msg, code)
+        raise
+
+
+# ======================================================================== raster datasets
+def _render(info: dict, asked: dict | None) -> dict:
+    """How the raster is drawn on the Data hub's map: three or four bands of bytes as a photo, else the first band
+    stretched over a colour ramp between its minimum and maximum (or what the app asked for)."""
+    bands = info.get("bands") or []
+    if len(bands) >= 3 and all(b.get("type") == "Byte" for b in bands[:3]):
+        return {"kind": "rgb", "bands": [1, 2, 3]}
+    b = bands[0] if bands else {}
+    lo, hi = b.get("minimum"), b.get("maximum")
+    asked = asked or {}
+    rescale = asked.get("rescale") or ([lo, hi] if lo is not None and hi is not None and hi > lo else None)
+    out = {"kind": "single", "band": 1, "colormap": asked.get("colormap") or "viridis", "rescale": rescale}
+    if asked.get("colors"):
+        out["colors"] = asked["colors"]                    # the app's own ramp, drawn exactly
+    return out
+
+
+def raster_dataset(conn, job) -> dict:
+    """An uploaded raster becomes a dataset's next version: checked, made a Cloud-Optimised GeoTIFF with its statistics,
+    and its footprint kept as the version's one feature (for search by place and the catalogue's thumbnails)."""
+    uid = job["params"]["upload_id"]
+    u = conn.execute("SELECT * FROM dataset_uploads WHERE id = %s", (uid,)).fetchone()
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            src, out = Path(d) / f"source{Path(u['source_key']).suffix or '.tif'}", Path(d) / "cog.tif"
+            storage.internal.download_file(B, u["source_key"], str(src))
+            _progress(conn, job["id"], 15)
+            try:
+                info = json.loads(_run(["gdalinfo", "-json", "-stats", str(src)]))
+            except RuntimeError:
+                raise JobFailed("This file could not be read as a raster. Check that it is not damaged, and that it is one of: "
+                                + formats.RASTER_LIST + ".", "not_a_raster")
+            if not (info.get("coordinateSystem") or {}).get("wkt"):
+                raise JobFailed("This raster has no coordinate system, so it cannot be placed on a map. Export it as a GeoTIFF "
+                                "with its coordinates and publish it again.", "no_georeference")
+            ring = info.get("wgs84Extent", {}).get("coordinates", [[]])[0]
+            if not ring:
+                raise JobFailed("The raster's footprint could not be worked out from its coordinates.", "bad_extent")
+            bounds = [min(p[0] for p in ring), min(p[1] for p in ring), max(p[0] for p in ring), max(p[1] for p in ring)]
+            wkt = info["coordinateSystem"]["wkt"]
+            epsg = (info.get("stac") or {}).get("proj:epsg")
+            m = re.match(r'\s*(?:PROJCRS|GEOGCRS|PROJCS|GEOGCS)\["([^"]+)"', wkt)
+            crs = f"EPSG:{epsg}" if epsg else (m.group(1) if m else "unknown")
+            _run(["gdal_translate", "-of", "COG", "-co", "COMPRESS=DEFLATE", "-co", "OVERVIEWS=AUTO", "-co", "BIGTIFF=IF_SAFER",
+                  "-co", "NUM_THREADS=ALL_CPUS", str(src), str(out)])
+            _progress(conn, job["id"], 70)
+            ds = conn.execute("SELECT * FROM datasets WHERE id = %s FOR UPDATE", (u["dataset_id"],)).fetchone()
+            version = ds["latest_version"] + 1
+            key = f"datasets/{ds['id']}/v{version}.tif"
+            storage.internal.upload_file(str(out), B, key, ExtraArgs={"ContentType": "image/tiff"})
+            size = out.stat().st_size
+        bands = [{"name": b.get("description") or f"Band {b['band']}", "min": b.get("minimum"), "max": b.get("maximum"),
+                  "mean": b.get("mean"), "nodata": b.get("noDataValue")} for b in info.get("bands", [])]
+        raster = {"bands": bands, "width": info["size"][0], "height": info["size"][1], "crs": crs,
+                  "resolution": abs(info["geoTransform"][1]), "data_type": (info.get("bands") or [{}])[0].get("type"),
+                  "size": size, "render": _render(info, (u["meta"] or {}).get("render"))}
+        conn.execute("INSERT INTO dataset_versions (dataset_id, version, fields, geometry_type, snapshot_key, feature_count, bbox, raster, published_by) "
+                     "VALUES (%s, %s, '[]', 'raster', %s, 0, %s, %s, %s)", (ds["id"], version, key, bounds, Jsonb(raster), u["created_by"]))
+        conn.execute("INSERT INTO dataset_features (dataset_id, version, feature_id, geom, properties) "
+                     "VALUES (%s, %s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), %s)",
+                     (ds["id"], version, uuid4(), json.dumps({"type": "Polygon", "coordinates": [ring]}),
+                      Jsonb({"footprint": True, "bands": len(bands), "crs": crs})))
+        conn.execute("UPDATE datasets SET latest_version = %s, updated_at = now() WHERE id = %s", (version, ds["id"]))
+        conn.execute("UPDATE dataset_uploads SET status = 'ready', version = %s, error = NULL, error_code = NULL WHERE id = %s", (version, uid))
+        conn.commit()
+        storage.delete_keys(u["source_key"])
+        return {"upload_id": str(uid), "dataset_id": str(ds["id"]), "version": version, "bounds": bounds}
+    except Exception as e:
+        conn.rollback()
+        msg, code = (str(e), e.code) if isinstance(e, JobFailed) else ("The raster could not be converted. Please publish it again.", "convert_failed")
+        conn.execute("UPDATE dataset_uploads SET status = 'failed', error = %s, error_code = %s WHERE id = %s", (msg, code, uid))
+        # a new dataset whose first raster failed is removed again; an earlier version of one published before stays
+        fresh = conn.execute("SELECT latest_version FROM datasets WHERE id = %s", (u["dataset_id"],)).fetchone()
+        if fresh and fresh["latest_version"] == 0:
+            conn.execute("UPDATE dataset_uploads SET dataset_id = NULL WHERE id = %s", (uid,))
+            conn.execute("DELETE FROM datasets WHERE id = %s", (u["dataset_id"],))
+        conn.commit()
+        storage.delete_keys(u["source_key"])
+        if not isinstance(e, JobFailed):
+            log.exception("raster dataset conversion failed")
             raise JobFailed(msg, code)
         raise
 
@@ -620,4 +704,5 @@ def process_photo(media_id: str):
         conn.commit()
 
 
-HANDLERS = {"imagery_convert": imagery_convert, "snapshot": snapshot, "export": export, "import": import_features}
+HANDLERS = {"imagery_convert": imagery_convert, "snapshot": snapshot, "export": export, "import": import_features,
+            "raster_dataset": raster_dataset}

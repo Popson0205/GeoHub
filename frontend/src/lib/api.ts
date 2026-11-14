@@ -324,11 +324,12 @@ const toContributor = (c: Wire) => ({ ...c, first_at: c.first_at ?? undefined, l
 const toDataset = (d: Wire): Dataset => ({
   slug: d.slug, project_id: d.project_id ?? "", title: d.title, description: d.description,
   license: LICENSE_FROM_API[d.license as keyof typeof LICENSE_FROM_API] ?? (d.license as License),
-  tags: d.tags ?? [], kind: "vector",
+  tags: d.tags ?? [], kind: d.geometry_type === "raster" ? "raster" : "vector",
   bbox: d.bbox && d.bbox.length === 4 ? d.bbox : undefined,
   feature_count: d.feature_count, latest_version: d.latest_version, updated_at: d.published_at,
   formats: (d.formats ?? ALL_FORMATS) as ExportFormat[],
   visibility: d.visibility, map_id: d.map_id ?? undefined, contributors: d.contributors?.length ? d.contributors : undefined,
+  source: d.source ?? null, raster: d.raster ?? null, tiles_url: d.tiles_url ?? null,
 });
 const toJob = (j: Wire): Job => ({
   id: j.id, kind: j.kind, status: j.status, progress: j.progress,
