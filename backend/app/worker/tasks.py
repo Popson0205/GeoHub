@@ -141,6 +141,15 @@ def _render(info: dict, asked: dict | None) -> dict:
     return out
 
 
+def _forget(key: str) -> None:
+    """The uploaded original, no longer needed. Some storage services refuse a batch delete; a file left behind is only
+    logged (a lifecycle rule on uploads/ clears it), never a failure."""
+    try:
+        storage.internal.delete_object(Bucket=B, Key=key)
+    except Exception:  # noqa: BLE001
+        log.warning("could not delete the uploaded raster %s", key, exc_info=True)
+
+
 def raster_dataset(conn, job) -> dict:
     """An uploaded raster becomes a dataset's next version: checked, made a Cloud-Optimised GeoTIFF with its statistics,
     and its footprint kept as the version's one feature (for search by place and the catalogue's thumbnails)."""
@@ -189,7 +198,7 @@ def raster_dataset(conn, job) -> dict:
         conn.execute("UPDATE datasets SET latest_version = %s, updated_at = now() WHERE id = %s", (version, ds["id"]))
         conn.execute("UPDATE dataset_uploads SET status = 'ready', version = %s, error = NULL, error_code = NULL WHERE id = %s", (version, uid))
         conn.commit()
-        storage.delete_keys(u["source_key"])
+        _forget(u["source_key"])                          # the version is published: tidying up must not undo that
         return {"upload_id": str(uid), "dataset_id": str(ds["id"]), "version": version, "bounds": bounds}
     except Exception as e:
         conn.rollback()
@@ -201,7 +210,7 @@ def raster_dataset(conn, job) -> dict:
             conn.execute("UPDATE dataset_uploads SET dataset_id = NULL WHERE id = %s", (uid,))
             conn.execute("DELETE FROM datasets WHERE id = %s", (u["dataset_id"],))
         conn.commit()
-        storage.delete_keys(u["source_key"])
+        _forget(u["source_key"])
         if not isinstance(e, JobFailed):
             log.exception("raster dataset conversion failed")
             raise JobFailed(msg, code)

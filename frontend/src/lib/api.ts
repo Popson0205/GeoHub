@@ -321,6 +321,12 @@ const toGeo = (f: Wire): GeoFeature => ({
 });
 const toMember = (m: Wire): MapMember => ({ user_id: m.user_id, name: m.name, email: m.email ?? undefined, role: m.role, joined_at: m.joined_at ?? undefined });
 const toContributor = (c: Wire) => ({ ...c, first_at: c.first_at ?? undefined, last_at: c.last_at ?? undefined });
+/** A tile address on this app's own API address, as the other tiles are made: the server's PUBLIC_BASE_URL may not be set. */
+const onApi = (url: string | null | undefined) => {
+  if (!url) return null;
+  const i = url.indexOf("/tiles/");
+  return i < 0 ? url : `${config.apiUrl}${url.slice(i)}`;
+};
 const toDataset = (d: Wire): Dataset => ({
   slug: d.slug, project_id: d.project_id ?? "", title: d.title, description: d.description,
   license: LICENSE_FROM_API[d.license as keyof typeof LICENSE_FROM_API] ?? (d.license as License),
@@ -329,7 +335,7 @@ const toDataset = (d: Wire): Dataset => ({
   feature_count: d.feature_count, latest_version: d.latest_version, updated_at: d.published_at,
   formats: (d.formats ?? ALL_FORMATS) as ExportFormat[],
   visibility: d.visibility, map_id: d.map_id ?? undefined, contributors: d.contributors?.length ? d.contributors : undefined,
-  source: d.source ?? null, raster: d.raster ?? null, tiles_url: d.tiles_url ?? null,
+  source: d.source ?? null, raster: d.raster ?? null, tiles_url: onApi(d.tiles_url),
 });
 const toJob = (j: Wire): Job => ({
   id: j.id, kind: j.kind, status: j.status, progress: j.progress,
