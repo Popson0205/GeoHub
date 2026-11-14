@@ -4,7 +4,7 @@ import uuid
 import httpx
 
 from conftest import pt
-from test_media_imagery_tiles import make_tif
+from test_media_imagery_tiles import colours, make_tif, tile_of
 
 XYZ = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
 
@@ -109,9 +109,10 @@ def test_uploaded_imagery_belongs_to_the_map(actor, tmp_path, tile_calls):
     assert [i["id"] for i in a.get(f"/maps/{m['id']}/imagery").json()["items"]] == [up["id"]]
     layers = a.get(f"/maps/{m['id']}/layers").json()
     assert len(layers["imagery"]) == 1
-    url = layers["imagery"][0]["tiles_url"].replace("{z}", "3").replace("{x}", "4").replace("{y}", "5")
+    x, y = tile_of(3.35, 6.55, 12)
+    url = layers["imagery"][0]["tiles_url"].replace("{z}", "12").replace("{x}", str(x)).replace("{y}", str(y))
     tile = a.c.get(url.replace("http://testserver", ""))                         # the signed URL works without a header
-    assert tile.status_code == 200
+    assert tile.status_code == 200 and colours(tile.content) == {(120, 120, 120, 255)}
     bad = a.c.get(f"/tiles/imagery/{up['id']}/3/4/5.png")                        # but never anonymously
     assert bad.status_code == 401
     assert b.get(f"/tiles/imagery/{up['id']}/3/4/5.png").status_code == 404

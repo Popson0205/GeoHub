@@ -1,5 +1,5 @@
 """Raster dataset tiles, drawn by the API itself with rio-tiler (the library TiTiler is built on), so a deployment
-needs no TiTiler service for the Data hub. Each tile is read straight from the version's Cloud-Optimised GeoTIFF in
+needs no TiTiler service, for the Data hub and for project and map imagery alike. Each tile is read straight from the version's Cloud-Optimised GeoTIFF in
 storage, over HTTPS by a signed address (so any S3-compatible service works, whatever its endpoint looks like), and
 drawn as a PNG: a photo (three bands), a band along a colour ramp, or classes each in its own colour."""
 import threading
@@ -71,3 +71,57 @@ def render(key: str, z: int, x: int, y: int, how: dict) -> bytes | None:
         cm = ramp(how["colors"]) if how.get("colors") else cmap.get(how.get("colormap") or "viridis")
         return img.render(img_format="PNG", colormap=cm)
 
+
+
+_stretch: dict[str, tuple[float, float]] = {}
+
+
+def _auto_range(key: str, src, indexes) -> tuple[float, float]:
+    """For imagery that is not plain bytes (a DEM, 16-bit satellite bands): the 2nd to 98th percentile of a small
+    preview, kept per file so every tile is stretched the same way."""
+    k = f"{key}|{indexes}"
+    if k in _stretch:
+        return _stretch[k]
+    prev = src.preview(indexes=indexes, max_size=512)
+    vals = np.ma.masked_array(prev.array).compressed()
+    vals = vals[np.isfinite(vals)]
+    lo, hi = (float(np.percentile(vals, 2)), float(np.percentile(vals, 98))) if vals.size else (0.0, 255.0)
+    if len(_stretch) > 500:
+        _stretch.clear()
+    _stretch[k] = (lo, hi if hi > lo else lo + 1)
+    return _stretch[k]
+
+
+def _floats(v: str) -> list[float]:
+    return [float(x) for x in v.split(",") if x.strip()]
+
+
+def render_imagery(key: str, z: int, x: int, y: int, q: dict) -> bytes | None:
+    """An imagery tile, as TiTiler drew it: three or more bands as a photo, one band in grey (or a named colour ramp).
+    Bytes are shown as they are; anything else is stretched, by `rescale` if given, else over most of its values.
+    Takes TiTiler's options: bidx, rescale, colormap_name, nodata, resampling, color_formula."""
+    opts = {}
+    if q.get("nodata") not in (None, ""):
+        opts["nodata"] = float(q["nodata"]) if q["nodata"].lower() != "nan" else float("nan")
+    with rasterio.Env(**GDAL), Reader(_url(key), options=opts) as src:
+        bidx = tuple(int(b) for b in _floats(q["bidx"])) if q.get("bidx") else None
+        indexes = bidx or ((1, 2, 3) if src.dataset.count >= 3 else (1,))
+        try:
+            img = src.tile(x, y, z, indexes=indexes, resampling_method=q.get("resampling") or "nearest")
+        except TileOutsideBounds:
+            return None
+        if q.get("rescale"):
+            r = _floats(q["rescale"])
+            img.rescale(in_range=tuple((r[0], r[1]) for _ in indexes))
+        elif img.data.dtype != np.uint8:
+            lo, hi = _auto_range(key, src, indexes)
+            img.rescale(in_range=tuple((lo, hi) for _ in indexes))
+        if q.get("color_formula"):
+            img.apply_color_formula(q["color_formula"])
+        cm = None
+        if len(indexes) == 1 and q.get("colormap_name"):
+            try:
+                cm = cmap.get(q["colormap_name"])
+            except Exception:  # noqa: BLE001 - an unknown name draws in grey rather than failing the tile
+                cm = None
+        return img.render(img_format="PNG", colormap=cm)
