@@ -158,3 +158,15 @@ def test_raster_publishing_is_checked(client, boss, publisher, apps, tmp_path):
     assert client.get(f"/id/data/rasters/{bad['id']}", headers=h).status_code == 200
     assert client.get(f"/id/data/rasters/{bad['id']}", headers=oh).status_code == 404
     assert client.post(f"/id/data/rasters/{bad['id']}/complete", headers=h, json={"parts": [{"part_number": 1, "etag": "x"}]}).status_code == 409
+
+
+def test_a_storage_that_will_not_delete_does_not_fail_a_published_raster(client, publisher, apps, tmp_path, monkeypatch):
+    """Deleting the uploaded original is tidying up: when the storage service refuses it, the raster is still ready."""
+    from app import storage
+
+    def refuse(**kw):
+        raise RuntimeError("NotImplemented: DeleteObject")
+    monkeypatch.setattr(storage.internal, "delete_object", refuse)
+    at = token(apps, publisher)
+    out = apps.upload(at, "rasters", {**NEW, "title": "Kept anyway", "ref": "layer-keep"}, str(dem(tmp_path, "keep.tif")))
+    assert out["status"] == "ready" and out["version"] == 1 and out["error"] is None, out
