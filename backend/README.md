@@ -5,7 +5,7 @@
 API for the web editor, mobile collector and public data hub. Implements the
 [Backend API Contract and Data Model](docs/CONTRACT_NOTES.md) handoff.
 
-**FastAPI · Supabase (PostgreSQL + PostGIS) · Redis + RQ workers · S3-compatible storage · Martin (vector tiles) · TiTiler (imagery) · GDAL**
+**FastAPI · Supabase (PostgreSQL + PostGIS) · Redis + RQ workers · S3-compatible storage · GDAL · rio-tiler (map tiles drawn in the API)**
 
 `openapi.json` (OpenAPI 3.1) is the frontend's source of truth. It is regenerated from the code:
 `python -c "import json; from app.main import app; json.dump(app.openapi(), open('openapi.json','w'), indent=2)"`
@@ -28,7 +28,6 @@ Supabase Auth, the Data API or the client libraries, and keeps its own users and
    are closed too. Belt and braces: both layers should be on.
 5. Connection budget: the API uses up to `DB_POOL_MAX` connections (default 10), the worker and backup job one each.
    Stay below your plan's limit.
-6. Martin (vector tiles) connects to the same database through `DATABASE_URL`; docker-compose passes it through.
 
 Offline or on a plane: `docker compose -f docker-compose.yml -f docker-compose.localdb.yml up --build` swaps in a
 throwaway local PostGIS.
@@ -46,8 +45,8 @@ docker compose up --build
 | http://localhost:9001 | MinIO console (`minio` / `minio12345`), bucket `hub` is created for you |
 | http://localhost:8000/health/ready | Checks database, Redis and storage |
 
-Migrations in `migrations/` apply automatically when the API starts. Martin and TiTiler are internal:
-the browser only ever talks to the API (see [Tiles](#tiles)). With `JOBS_INLINE=true` jobs run inside the API
+Migrations in `migrations/` apply automatically when the API starts. Every map tile is drawn by the API
+itself, so the browser only ever talks to the API (see [Tiles](#tiles)). With `JOBS_INLINE=true` jobs run inside the API
 process, so you can develop without the worker container.
 
 ## Running the tests
@@ -72,10 +71,8 @@ Any host that runs Docker works. Typical setup (for example Railway or Render):
 |---|---|
 | **api** | this repo's `Dockerfile`; it honours `$PORT` and runs migrations at startup |
 | **worker** | same image, start command `rq worker default --url $REDIS_URL` |
-| **Database** | your Supabase project (see above). Set `DATABASE_URL` on api, worker, backup and Martin |
+| **Database** | your Supabase project (see above). Set `DATABASE_URL` on api, worker and backup |
 | **Redis** | any Redis 7 |
-| **Martin** | `ghcr.io/maplibre/martin` with `martin/martin.yaml` (set the connection string). Private network only |
-| **TiTiler** | `ghcr.io/developmentseed/titiler` with the S3 credentials as env vars. Private network only. Only project and map imagery uses it: the Data hub draws raster datasets itself |
 | **Object storage** | S3, Cloudflare R2, Backblaze B2 or MinIO. **Turn on bucket versioning** |
 | **backup** | a daily scheduled job running `python -m app.ops.backup` |
 
@@ -138,7 +135,10 @@ until commit, so commits are serialised per project and a cursor can never skip 
 Roles are per project. Non-members get `404`, so the existence of a project is not revealed.
 
 ### Tiles
-Martin and TiTiler are never exposed. `GET /projects/{id}/layers` lists the project's map layers with stable tile
+The API draws every tile itself: feature tiles by PostGIS (`feature_tiles()`, a function a Martin server
+could also serve) and imagery and raster tiles by rio-tiler from the Cloud-Optimised GeoTIFFs in storage, so no
+Martin or TiTiler service is needed. Imagery tiles accept TiTiler's options `bidx`, `rescale`, `colormap_name`,
+`nodata`, `resampling` and `color_formula`. `GET /projects/{id}/layers` lists the project's map layers with stable tile
 URLs; each carries a short-lived `?sig=` token (1 hour, bound to the project) so MapLibre can load tiles without
 custom headers. Tile routes also accept `Authorization: Bearer` or `?access_token=`. Vector tiles have one layer,
 `features`, with attributes `id`, `status`, `version` and `props` (JSON text). Tiles are sent with

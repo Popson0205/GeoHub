@@ -1,4 +1,5 @@
 import io
+import math
 import subprocess
 import uuid
 
@@ -60,6 +61,18 @@ def test_photo_limits_and_ordering_rules(project):
 
 
 # ---------------------------------------------------------------- imagery
+def tile_of(lon, lat, z):
+    """The web map tile (x, y) holding a point."""
+    n = 2 ** z
+    return int((lon + 180) / 360 * n), int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
+
+
+def colours(png: bytes) -> set:
+    """The colours a PNG tile holds, leaving out clear pixels."""
+    img = Image.open(io.BytesIO(png)).convert("RGBA")
+    return {c for _, c in img.getcolors(1 << 20) if c[3]}
+
+
 def make_tif(path, georef=True):
     cmd = ["gdal_create", "-of", "GTiff", "-outsize", "64", "64", "-bands", "3", "-ot", "Byte", "-burn", "120"]
     if georef:
@@ -119,14 +132,22 @@ def test_tiles_require_project_access(project, actor, client, tile_calls, tmp_pa
     url = f"/tiles/features/{project.id}/{project.form_id}/5/16/15.pbf"
     assert client.get(url).status_code == 401
     assert stranger.get(url).status_code == 404
+    assert o.get(url).status_code == 204                                        # nothing collected there yet
+    fid = str(uuid.uuid4())
+    assert o.post(f"/projects/{project.id}/features", json={"id": fid, "form_id": project.form_id,
+                  "geometry": {"type": "Point", "coordinates": [3.39, 6.52]}, "properties": {"type": "Clinic"}}).status_code == 201
+    x, y = tile_of(3.39, 6.52, 12)
+    here = f"/tiles/features/{project.id}/{project.form_id}/12/{x}/{y}.pbf"
     tile_calls.clear()
-    r = o.get(url)
-    assert r.status_code == 200 and r.content == b"MVT-BYTES" and r.headers["content-type"] == "application/x-protobuf"
-    up = tile_calls[-1].url
-    assert up.path == "/feature_tiles/5/16/15" and up.params["project_id"] == project.id   # Martin is called internally
+    r = o.get(here)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/x-protobuf"
+    assert b"features" in r.content and fid.encode() in r.content             # drawn by PostGIS itself
+    assert not tile_calls                                                       # no Martin needed
+    assert o.get(f"/tiles/features/{project.id}/{project.form_id}/12/{x + 5}/{y}.pbf").status_code == 204
+    assert o.get(f"/tiles/features/{project.id}/{project.form_id}/2/9/0.pbf").status_code == 422
     # query-string token works too, for map libraries that cannot set headers
     tok = o.h["Authorization"].split()[1]
-    assert client.get(url, params={"access_token": tok}).status_code == 200
+    assert client.get(here, params={"access_token": tok}).status_code == 200
 
 
 def test_signed_layer_urls_and_imagery_tiles(project, actor, client, tile_calls, tmp_path):
@@ -136,13 +157,17 @@ def test_signed_layer_urls_and_imagery_tiles(project, actor, client, tile_calls,
     assert layers["expires_in"] == 3600 and layers["vector"][0]["form_id"] == project.form_id
     vurl = layers["vector"][0]["tiles_url"].replace("http://testserver", "").replace("{z}", "3").replace("{x}", "4").replace("{y}", "5")
     iurl = layers["imagery"][0]["tiles_url"].replace("http://testserver", "").replace("{z}", "3").replace("{x}", "4").replace("{y}", "5")
-    assert "sig=" in vurl and client.get(vurl).status_code == 200            # no Authorization header needed
+    assert "sig=" in vurl and client.get(vurl).status_code in (200, 204)     # no Authorization header needed
+    assert client.get(iurl).status_code == 204                               # far from the image: nothing drawn
+    x, y = tile_of(3.35, 6.55, 12)
+    here = iurl.replace("/3/4/5.png", f"/12/{x}/{y}.png")
     tile_calls.clear()
-    r = client.get(iurl + "&rescale=0,255&evil=1")
-    assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
-    q = tile_calls[-1].url
-    assert q.path == "/cog/tiles/WebMercatorQuad/3/4/5.png" and q.params["url"].startswith("s3://hub-test/imagery/")
-    assert q.params["rescale"] == "0,255" and "evil" not in q.params         # only whitelisted options pass through
+    r = client.get(here + "&evil=1")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png" and not tile_calls   # no TiTiler needed
+    assert colours(r.content) == {(120, 120, 120, 255)}                        # the drone image's grey, as uploaded
+    dark = client.get(here + "&rescale=0,510")                                   # TiTiler's options still work
+    assert colours(dark.content) == {(60, 60, 60, 255)}
+    assert client.get(here + "&rescale=abc").status_code == 422
     # a signature minted for another project is refused for this one
     other = actor("Other")
     p2 = other.post("/projects", json={"name": "Other"}).json()["id"]
@@ -154,7 +179,7 @@ def test_signed_layer_urls_and_imagery_tiles(project, actor, client, tile_calls,
     viewer = project.add("viewer")
     vsig = viewer.get(f"/projects/{project.id}/layers").json()["vector"][0]["tiles_url"].split("sig=")[1]
     ok = f"/tiles/features/{project.id}/{project.form_id}/1/0/0.pbf"
-    assert client.get(ok, params={"sig": vsig}).status_code == 200
+    assert client.get(ok, params={"sig": vsig}).status_code in (200, 204)       # allowed (an empty tile here)
     o.delete(f"/projects/{project.id}/members/{viewer.id}")
     assert client.get(ok, params={"sig": vsig}).status_code == 404
 
@@ -203,3 +228,24 @@ def test_imagery_accepts_many_extensions_and_points_vectors_to_import(project):
         assert r.status_code == 422 and r.json()["code"] == "unsupported_format", name
     bad = o.post(f"/projects/{project.id}/imagery", json={"name": "x", "filename": "a.jpg", "size": 10, "bounds": [5, 1, 4, 2]})
     assert bad.status_code == 422 and "bounds" in bad.json()["fields"]
+
+
+def test_elevation_imagery_is_stretched_and_takes_a_colour_ramp(project, client, tmp_path):
+    """One band of decimals (a drone DEM): drawn in grey from low to high, or along a named ramp, with no TiTiler."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_bounds
+    path = tmp_path / "dem.tif"
+    data = np.tile(np.linspace(10.0, 90.0, 64, dtype="float32"), (64, 1))      # rising from west to east
+    with rasterio.open(path, "w", driver="GTiff", width=64, height=64, count=1, dtype="float32", crs="EPSG:4326",
+                       transform=from_bounds(3.3, 6.5, 3.4, 6.6, 64, 64)) as dst:
+        dst.write(data, 1)
+    o = project.owner
+    up, _ = upload_imagery(o, project, path.read_bytes(), name="DEM", filename="dem.tif")
+    assert o.get(f"/imagery/{up['id']}").json()["status"] == "ready"
+    x, y = tile_of(3.35, 6.55, 12)
+    url = f"/tiles/imagery/{up['id']}/12/{x}/{y}.png"
+    grey = colours(o.get(url).content)
+    assert len(grey) > 20 and all(r == g == b for r, g, b, _ in grey)           # a spread of greys, not one flat colour
+    ramp = colours(o.get(url, params={"colormap_name": "viridis"}).content)
+    assert len(ramp) > 20 and any(not (r == g == b) for r, g, b, _ in ramp)     # in colour now

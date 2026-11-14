@@ -12,7 +12,7 @@ A spatial data platform made of three separate tools that share one login:
 | Folder | What | Stack |
 |---|---|---|
 | [`frontend/`](frontend) | Web editor, mobile collector (Android via Capacitor) and public data hub | React, TypeScript, Vite, MapLibre GL |
-| [`backend/`](backend) | REST API, background jobs, tiles, exports | FastAPI, Supabase (PostgreSQL + PostGIS), Redis + RQ, S3-compatible storage, Martin, TiTiler |
+| [`backend/`](backend) | REST API, background jobs, tiles, exports | FastAPI, Supabase (PostgreSQL + PostGIS), Redis + RQ, S3-compatible storage, rio-tiler |
 
 ## Run everything locally
 

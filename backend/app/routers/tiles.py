@@ -1,10 +1,11 @@
-"""Tile endpoints. Martin (vector) and TiTiler (imagery) are never exposed publicly: these routes check
-project access and then proxy to them. Access is via the Authorization header, ?access_token=, or a
+"""Tile endpoints, all drawn by the API itself: feature tiles by PostGIS (the same `feature_tiles` function a Martin
+server would call) and imagery and raster tiles by rio-tiler, so a deployment needs neither Martin nor TiTiler. Every
+route checks access first. Access is via the Authorization header, ?access_token=, or a
 short-lived ?sig= token from GET /projects/{id}/layers (handy for MapLibre sources)."""
+import json
 from uuid import UUID
 
 import anyio
-import httpx
 from fastapi import APIRouter, Depends, Request, Response
 
 from .. import raster_tiles
@@ -18,7 +19,7 @@ from .datasets import _get_readable
 
 router = APIRouter(tags=["tiles"])
 CACHE = {"Cache-Control": "private, max-age=60"}
-TITILER_PASSTHROUGH = ("rescale", "bidx", "color_formula", "nodata", "resampling", "colormap_name")
+IMAGERY_OPTIONS = ("rescale", "bidx", "color_formula", "nodata", "resampling", "colormap_name")
 
 
 def _tile_user(request: Request, scope_id: UUID) -> str:
@@ -42,18 +43,6 @@ async def _authorise(request: Request, conn, project_id: UUID):
         raise Problem(404, "Project not found.", code="not_found")
 
 
-async def _fetch(request: Request, url: str, params: dict | list, media_type: str) -> Response:
-    try:
-        r = await request.app.state.http.get(url, params=params)
-    except httpx.HTTPError:
-        raise Problem(502, "The tile service is unavailable.", code="tile_service_unavailable")
-    if r.status_code in (204, 404):
-        return Response(status_code=204, headers=CACHE)        # empty or outside the raster: nothing to draw
-    if r.status_code >= 400:
-        raise Problem(502, "The tile service returned an error.", code="tile_service_error")
-    return Response(r.content, media_type=media_type, headers=CACHE)
-
-
 @router.get("/tiles/features/{project_id}/{form_id}/{z}/{x}/{y:int}.pbf", include_in_schema=True)
 async def feature_tile(project_id: UUID, form_id: UUID, z: int, x: int, y: int, request: Request,
                        conn=Depends(get_conn)):
@@ -61,8 +50,14 @@ async def feature_tile(project_id: UUID, form_id: UUID, z: int, x: int, y: int, 
     await _authorise(request, conn, project_id)
     if not 0 <= z <= 22:
         raise Problem(422, "Zoom must be between 0 and 22.", code="validation")
-    return await _fetch(request, f"{settings.martin_url}/feature_tiles/{z}/{x}/{y}",
-                        {"project_id": str(project_id), "form_id": str(form_id)}, "application/x-protobuf")
+    if not (0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        raise Problem(422, "That tile is outside the map.", code="validation")
+    cur = await conn.execute("SELECT feature_tiles(%s, %s, %s, %s::json) AS mvt",
+                             (z, x, y, json.dumps({"project_id": str(project_id), "form_id": str(form_id)})))
+    mvt = (await cur.fetchone())["mvt"]
+    if not mvt:
+        return Response(status_code=204, headers=CACHE)        # no features here: nothing to draw
+    return Response(bytes(mvt), media_type="application/x-protobuf", headers=CACHE)
 
 
 @router.get("/tiles/imagery/{imagery_id}/{z}/{x}/{y:int}.png")
@@ -78,9 +73,16 @@ async def imagery_tile(imagery_id: UUID, z: int, x: int, y: int, request: Reques
         await require_map(conn, a["map_id"], _tile_user(request, a["map_id"]))
     if a["status"] != "ready":
         raise Problem(409, "This imagery is not ready yet.", code="not_ready")
-    params = {"url": f"s3://{settings.s3_bucket}/{a['storage_key']}"}
-    params.update({k: v for k, v in request.query_params.items() if k in TITILER_PASSTHROUGH})
-    return await _fetch(request, f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png", params, "image/png")
+    if not 0 <= z <= 24:
+        raise Problem(422, "Zoom must be between 0 and 24.", code="validation")
+    q = {k: v for k, v in request.query_params.items() if k in IMAGERY_OPTIONS}
+    try:
+        png = await anyio.to_thread.run_sync(raster_tiles.render_imagery, a["storage_key"], z, x, y, q)
+    except ValueError:
+        raise Problem(422, "One of the drawing options is not valid.", code="validation")
+    if png is None:
+        return Response(status_code=204, headers=CACHE)        # outside the image: nothing to draw
+    return Response(png, media_type="image/png", headers=CACHE)
 
 
 @router.get("/tiles/datasets/{slug}/{version}/{z}/{x}/{y:int}.png")
