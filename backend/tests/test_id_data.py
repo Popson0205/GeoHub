@@ -136,3 +136,26 @@ def test_forms_from_the_polygis_tracking_templates(client, boss, outbox):
     assert add(chk, {"callsign": "Alpha 2", "patrol_status": "Emergency", "support_needed": ["Medical evacuation"], "casualties": 2}).status_code == 201
     assert add(sig, {"sighted": "Vehicle", "identity": "Hostile", "size": 3, "observed_at": "2026-11-15T16:00:00Z"}).status_code == 201
     assert add(sig, {"sighted": "Vehicle", "identity": "Who knows", "observed_at": "2026-11-15T16:00:00Z"}).status_code == 422
+
+
+def test_apps_read_with_a_geohub_api_key(client, boss, outbox):
+    """An app working on its own (PolyGIS following a form overnight) reads Geohub's data with a read-only API key:
+    as the person who made it, only reading, and not once the key is revoked."""
+    owner = Actor(client, "Ops Admin")
+    pid = owner.post("/projects", json={"name": "Night ops"}).json()["id"]
+    form = owner.post(f"/projects/{pid}/forms", json={"name": "Check-in", "template": "patrol_checkin"}).json()
+    assert owner.post(f"/forms/{form['id']}/publish").status_code == 200
+    owner.post(f"/projects/{pid}/features", json={"id": str(uuid.uuid4()), "form_id": form["id"], "geometry": {"type": "Point", "coordinates": [7.4, 9.0]},
+                                                "properties": {"callsign": "Alpha 2", "patrol_status": "On task"}})
+    k = owner.post("/org/api-keys", json={"name": "PolyGIS tracking", "access": "read"}).json()
+    h = {"Authorization": f"Bearer {k['key']}"}
+    assert any(f["id"] == form["id"] for p in client.get("/id/data/projects", headers=h).json() for f in p["forms"])
+    page = client.get(f"/id/data/forms/{form['id']}/features", headers=h).json()
+    assert [f["properties"]["callsign"] for f in page["features"]] == ["Alpha 2"] and page["features"][0]["created_by_name"] == "Ops Admin"
+    # someone else's key sees only their own organization
+    other = Actor(client, "Elsewhere")
+    ok = other.post("/org/api-keys", json={"name": "x", "access": "read"}).json()
+    assert client.get(f"/id/data/forms/{form['id']}/features", headers={"Authorization": f"Bearer {ok['key']}"}).status_code == 404
+    # revoked: no more
+    assert owner.delete(f"/org/api-keys/{k['id']}").status_code == 204
+    assert client.get("/id/data/projects", headers=h).status_code == 401

@@ -3,6 +3,8 @@
 Land Registry reads enumeration (the parcels a field team mapped with a Geohub form) through this; LandCheck and
 FarmScan can read field data the same way. What an app sees is exactly what the person may see in Geohub: projects
 of their own organization in which they have a role, and nothing they could not open themselves.
+An app working on its own, with no one signed in (PolyGIS following a form overnight), reads with a Geohub API key
+instead (Bearer ghk_…): as the person who made the key, only reading.
 
   GET /id/data/projects                       the person's projects, each with its published forms
   GET /id/data/forms/{form_id}/features       a form's features (paged by seq), optionally by review status and shape
@@ -12,6 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from .. import apikeys
 from .. import geoestate_id as gid
 from ..db import get_conn
 from ..deps import require_role, role_in
@@ -26,6 +29,13 @@ async def app_person(request: Request, conn=Depends(get_conn)) -> dict:
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         raise Problem(401, "Send the access token as a Bearer token.", code="unauthenticated", headers={"WWW-Authenticate": "Bearer"})
+    if auth[7:].strip().startswith(apikeys.PREFIX):
+        # an app working on its own (e.g. PolyGIS following a form when no one has it open) reads with a Geohub API key:
+        # as the person who made the key, with exactly what they may see, and only reading
+        if request.method != "GET":
+            raise Problem(403, "API keys only read Geohub's data here.", code="api_key_not_allowed")
+        row = await apikeys.user_for(conn, auth[7:].strip())
+        return {"sub": str(row["id"]), "org": {"id": str(row["api_key_org_id"])}, "name": row["name"], "api_key": True}
     claims = gid.verify(auth[7:].strip())
     if not claims.get("aud") or claims["aud"] not in gid.clients():
         raise Problem(401, "That token is for an app Geohub no longer knows.", code="invalid_token")
