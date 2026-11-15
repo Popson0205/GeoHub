@@ -21,7 +21,7 @@ def new_key() -> tuple[str, str, str]:
 
 async def user_for(conn, raw: str) -> dict:
     cur = await conn.execute(
-        "SELECT k.id AS api_key_id, k.access AS api_key_access, k.revoked_at, (k.expires_at < now()) AS expired, "
+        "SELECT k.id AS api_key_id, k.access AS api_key_access, k.org_id AS api_key_org_id, k.revoked_at, (k.expires_at < now()) AS expired, "
         "  (k.last_used_at IS NULL OR k.last_used_at < now() - interval '1 minute') AS stale, "
         "  u.id, u.email, u.name, u.created_at, u.must_change_password, (u.totp_enabled_at IS NOT NULL) AS mfa_enabled, "
         "  (o.require_mfa AND u.totp_enabled_at IS NULL) AS mfa_setup_required, (om.user_id IS NOT NULL) AS in_org, "
