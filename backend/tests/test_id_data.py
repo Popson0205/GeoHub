@@ -118,3 +118,21 @@ def test_forms_from_the_farm_templates(client, boss, outbox):
     assert add(scout, pt, {**task, "visited": "Yes"}).status_code == 422                     # what is wrong, when reached
     assert add(scout, pt, {**task, "visited": "Yes", "causes": ["Weeds"], "severity": "Moderate"}).status_code == 201
     assert add(scout, pt, {**task, "visited": "Could not reach it"}).status_code == 201
+
+
+def test_forms_from_the_polygis_tracking_templates(client, boss, outbox):
+    owner = Actor(client, "Patrol Template User")
+    ts = {t["id"]: t for t in owner.get("/form-templates").json()}
+    assert ts["patrol_checkin"]["product"] == "gis" and ts["sighting_report"]["geometry_type"] == "point"
+    pid = owner.post("/projects", json={"name": "Patrols"}).json()["id"]
+    chk = owner.post(f"/projects/{pid}/forms", json={"name": "Check-in", "template": "patrol_checkin"}).json()
+    sig = owner.post(f"/projects/{pid}/forms", json={"name": "Sightings", "template": "sighting_report"}).json()
+    for f in (chk, sig):
+        assert owner.post(f"/forms/{f['id']}/publish").status_code == 200, f
+    pt = {"type": "Point", "coordinates": [7.45, 9.05]}
+    add = lambda form, props: owner.post(f"/projects/{pid}/features", json={"id": str(uuid.uuid4()), "form_id": form["id"], "geometry": pt, "properties": props})  # noqa: E731
+    assert add(chk, {"callsign": "Alpha 2", "patrol_status": "On task"}).status_code == 201
+    assert add(chk, {"callsign": "Alpha 2", "patrol_status": "Emergency"}).status_code == 422                    # what is needed, then
+    assert add(chk, {"callsign": "Alpha 2", "patrol_status": "Emergency", "support_needed": ["Medical evacuation"], "casualties": 2}).status_code == 201
+    assert add(sig, {"sighted": "Vehicle", "identity": "Hostile", "size": 3, "observed_at": "2026-11-15T16:00:00Z"}).status_code == 201
+    assert add(sig, {"sighted": "Vehicle", "identity": "Who knows", "observed_at": "2026-11-15T16:00:00Z"}).status_code == 422

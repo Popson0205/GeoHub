@@ -11,6 +11,11 @@ FARM_CROPS = ["Maize", "Rice", "Cassava", "Yam", "Sorghum", "Millet", "Soybean",
               "Oil palm", "Cashew", "Plantain or banana", "Tomato", "Pepper", "Leafy vegetables", "Other"]
 SCOUT_CAUSES = ["Pests", "Disease", "Weeds", "Waterlogging", "Drought or water stress", "Nutrient deficiency", "Poor emergence or gaps",
                 "Lodging", "Animals or grazing", "Fire", "Already harvested", "Other", "Nothing wrong found"]
+UNIT_TYPES = ["Infantry", "Mechanised infantry", "Reconnaissance", "Armour", "Engineer", "Military police", "Medical", "Supply or transport",
+              "Signal", "Special forces", "Police", "Civil defence or NGO", "Other"]
+PATROL_STATUS = ["On task", "Halted", "Returning to base", "Need support", "Emergency"]
+SIGHTED = ["Armed group", "Person", "Vehicle", "Armoured vehicle", "Motorcycle", "Boat", "Aircraft or drone", "Camp or hideout",
+           "Checkpoint or roadblock", "Weapon or cache", "Explosive device (IED)", "Fire or explosion", "Other"]
 when = lambda field, value: {"field": field, "op": "eq", "value": value}  # noqa: E731
 
 TEMPLATES: dict[str, dict] = {
@@ -122,6 +127,54 @@ TEMPLATES: dict[str, dict] = {
                 {"id": "photos", "label": "Photos", "type": "photo", "max_items": 4},
                 {"id": "notes", "label": "Notes and what to do", "type": "text", "appearance": "multiline"},
             ]},
+        ],
+    },
+    "patrol_checkin": {
+        "name": "Patrol check-in",
+        "product": "gis",
+        "description": "A patrol or team reports where it is and how it is doing. Connects to PolyGIS tracking as it is: each "
+                       "call sign becomes a device on the live map, with its trail and unit symbol; \"Need support\" and "
+                       "\"Emergency\" raise an alert (and a WhatsApp message, if the tracker sends them).",
+        "geometry_type": "point",
+        "fields": [
+            {"id": "callsign", "label": "Call sign", "type": "text", "required": True, "placeholder": "e.g. Alpha 2",
+             "hint": "The same every time: it is how PolyGIS follows this patrol."},
+            {"id": "unit_type", "label": "Unit", "type": "choice", "choices": UNIT_TYPES, "default": "Infantry", "appearance": "dropdown"},
+            {"id": "patrol_status", "label": "Status", "type": "choice", "required": True, "choices": PATROL_STATUS, "default": "On task",
+             "appearance": "buttons"},
+            {"id": "personnel", "label": "Personnel", "type": "number", "integer": True, "min": 0, "max": 10000},
+            {"id": "support_needed", "label": "What is needed", "type": "multi_choice",
+             "choices": ["Medical evacuation", "Reinforcement", "Fire support", "Vehicle recovery", "Supplies", "Communications", "Other"],
+             "visible": {"field": "patrol_status", "op": "in", "value": ["Need support", "Emergency"]},
+             "required_if": {"field": "patrol_status", "op": "in", "value": ["Need support", "Emergency"]}},
+            {"id": "casualties", "label": "Casualties", "type": "number", "integer": True, "min": 0, "max": 1000,
+             "visible": {"field": "patrol_status", "op": "in", "value": ["Need support", "Emergency"]}},
+            {"id": "photos", "label": "Photos", "type": "photo", "max_items": 3},
+            {"id": "remarks", "label": "Remarks", "type": "text", "appearance": "multiline"},
+        ],
+    },
+    "sighting_report": {
+        "name": "Sighting report (SALUTE)",
+        "product": "gis",
+        "description": "What was seen, where and when: size, activity, location, unit, time and equipment. Connects to PolyGIS "
+                       "tracking as it is: each report is a symbol on the live map, coloured by who it is, and hostile or "
+                       "suspect sightings raise an alert (and a WhatsApp message, if the tracker sends them).",
+        "geometry_type": "point",
+        "fields": [
+            {"id": "sighted", "label": "What was seen", "type": "choice", "required": True, "choices": SIGHTED, "appearance": "dropdown"},
+            {"id": "identity", "label": "Who they are", "type": "choice", "required": True, "default": "Unknown", "appearance": "buttons",
+             "choices": ["Hostile", "Suspect", "Unknown", "Neutral", "Friendly"]},
+            {"id": "size", "label": "Size (how many)", "type": "number", "integer": True, "min": 0, "max": 100000},
+            {"id": "activity", "label": "Activity", "type": "choice", "appearance": "dropdown",
+             "choices": ["Moving", "Stationary", "Attacking", "Digging in or building", "Gathering", "Checking people or vehicles",
+                         "Kidnapping", "Looting or burning", "Observing", "Other"]},
+            {"id": "direction", "label": "Moving towards", "type": "choice", "visible": when("activity", "Moving"), "appearance": "buttons",
+             "choices": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]},
+            {"id": "unit", "label": "Unit, group or markings", "type": "text", "hint": "Uniforms, flags, vehicle markings, names heard."},
+            {"id": "observed_at", "label": "Time seen", "type": "datetime", "default": "$today", "required": True},
+            {"id": "equipment", "label": "Equipment and weapons", "type": "text", "appearance": "multiline"},
+            {"id": "photos", "label": "Photos", "type": "photo", "max_items": 4},
+            {"id": "remarks", "label": "Remarks", "type": "text", "appearance": "multiline"},
         ],
     },
 }
