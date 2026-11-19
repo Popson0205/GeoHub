@@ -8,6 +8,7 @@ import { Loading } from "./ui";
 import QuickSearch from "./QuickSearch";
 import AppSwitcher from "./AppSwitcher";
 import ErrorBoundary from "./ErrorBoundary";
+import { BRAND } from "../brand";
 
 export function BrandMark({ size = 28 }: { size?: number }) {
   return (
@@ -44,7 +45,7 @@ export default function Shell() {
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
-        <Link className="brand" to="/"><BrandMark />Geohub</Link>
+        <Link className="brand" to="/">{BRAND.id === "geoestate" ? <BrandMark /> : <img className="brand-mark" src={BRAND.logo} alt="" width={28} height={28} />}{BRAND.id === "geoestate" ? "Geohub" : BRAND.suite}</Link>
         {user?.org?.brand?.logo_url && <span className="brand-org"><img src={user.org.brand.logo_url} alt={user.org.name} /></span>}
         <nav id="main-nav" className={`topnav${navOpen ? " is-open" : ""}`} aria-label="Main">
           {user && <NavLink to="/maps"><Icon name="navMap" size={18} />Web mapping</NavLink>}
