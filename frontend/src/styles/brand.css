@@ -1,0 +1,12 @@
+/* Per-brand colour overrides, chosen at build time with VITE_BRAND and applied as data-brand in main.tsx. The default
+   (GeoEstate green) needs nothing here. Scoped to light theme so dark mode keeps its own tuned greens. */
+
+/* Osun State Land Information System — the state's website green (#088B4E), deep forest for the dark chrome/top bar,
+   and the seal's heritage gold. */
+:root[data-brand="osun"]:not([data-theme="dark"]) {
+  --green-50:#E6F2EB; --green-100:#CBE7D7; --green-200:#A6D4BE; --green-300:#6FBF9B;
+  --green-400:#2FA26F; --green-500:#0AA05E; --green-600:#088B4E; --green-700:#064E30;
+  --green-800:#053D26; --green-900:#042E1D;
+  --chrome-950:#042A1C; --chrome-900:#063A27; --chrome-800:#0A4E36;
+  --brand-gold:#C7A233; --brand-gold-deep:#9E7F1E;
+}
