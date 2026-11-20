@@ -1,0 +1,29 @@
+{
+  "name": "oslis-demo-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Osun State Land Information System — offline demo (Field Data)",
+  "author": "GeoEstate",
+  "repository": { "type": "git", "url": "https://github.com/Popson0205/GeoHub.git" },
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.geoestate.oslis.demo",
+    "productName": "Osun State Land Information System (Demo)",
+    "copyright": "© 2026 GeoEstate",
+    "files": ["main.js", "assets/**", "app/**"],
+    "directories": { "output": "release", "buildResources": "assets" },
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "assets/icon.ico" },
+    "nsis": {
+      "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "OSLIS Demo"
+    }
+  }
+}

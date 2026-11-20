@@ -1,0 +1,53 @@
+name: OSLIS Demo (Windows installer)
+
+# Builds the offline Osun State Land Information System demo installer (.exe): the Osun-branded Geohub (Field Data)
+# build packaged into a self-contained desktop app that serves the site locally — no internet, no backend. Run it from
+# the Actions tab (Run workflow), or push an "osun-demo-v1.0.0" tag to attach the installer to a Release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["osun-demo-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build demo .exe (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+
+      - name: Build the Osun demo site
+        working-directory: frontend
+        run: npm ci && npm run build
+        env:
+          VITE_BRAND: osun
+
+      - name: Bundle the site into the app
+        shell: bash
+        run: mkdir -p demo-desktop/app && cp -r frontend/dist/* demo-desktop/app/
+
+      - name: Build installer
+        working-directory: demo-desktop
+        run: npm ci && npm run dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OSLIS-Demo-Windows-installer
+          path: demo-desktop/release/*.exe
+          if-no-files-found: error
+
+      - name: Publish rolling "latest" demo installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: osun-demo-latest
+          name: OSLIS Demo (latest)
+          body: Offline Osun State Land Information System demo (Field Data). Windows SmartScreen may warn on first run (More info → Run anyway) until the app is code-signed.
+          prerelease: true
+          make_latest: false
+          files: demo-desktop/release/*.exe

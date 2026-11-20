@@ -32,7 +32,19 @@
   var me = document.currentScript || {};
   var ds = me.dataset || {};
   var product = ds.product || document.title.split(/[–|-]/)[0].trim() || "GeoEstate";
-  var accent = ds.accent || "#3aa335";
+  var brand = ds.brand || "";
+  var THEME = brand === "osun" ? {
+    accent: "#15a862",
+    bg: "radial-gradient(1200px 700px at 50% 42%,#0c5a3e 0%,#07301f 55%,#041a11 100%)",
+    card: "linear-gradient(160deg,#0d4a35 0%,#0a3826 48%,#07301f 100%)",
+    suite: "OSUN STATE", logo: ds.logo || "/brand/osun-seal.png"
+  } : {
+    accent: ds.accent || "#3aa335",
+    bg: "radial-gradient(1200px 700px at 50% 42%,#13284a 0%,#0b1830 55%,#060e1e 100%)",
+    card: "linear-gradient(160deg,#162d52 0%,#0f2142 48%,#0b1a35 100%)",
+    suite: "GeoEstate", logo: ds.logo || "/logo.png"
+  };
+  var accent = THEME.accent;
   var key = "ge-splash:" + product;
   var warm = false;
   try { warm = sessionStorage.getItem(key) === "1"; sessionStorage.setItem(key, "1"); } catch (e) { /* private window */ }
@@ -46,7 +58,7 @@
 
   var css = [
     ".ges{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;overflow:hidden;font-family:Inter,'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;",
-    "background:radial-gradient(1200px 700px at 50% 42%,#13284a 0%,#0b1830 55%,#060e1e 100%);color:#e8eef8;-webkit-font-smoothing:antialiased;",
+    "background:var(--ges-bg);color:#e8eef8;-webkit-font-smoothing:antialiased;",
     "transition:opacity .38s ease,visibility .38s;}",
     ".ges.is-out{opacity:0;visibility:hidden;}",
     // the application's own styles (headings, paragraphs, images) must not reach in
@@ -57,7 +69,7 @@
     "background-size:56px 56px;transform:perspective(900px) rotateX(58deg) translateY(18%);animation:ges-drift 18s linear infinite;mask-image:radial-gradient(circle at 50% 40%,#000 0,transparent 70%);-webkit-mask-image:radial-gradient(circle at 50% 40%,#000 0,transparent 70%);}",
     "@keyframes ges-drift{to{background-position:0 560px,560px 0;}}",
     ".ges-win{position:relative;width:min(640px,calc(100vw - 32px));border-radius:14px;overflow:hidden;",
-    "background:linear-gradient(160deg,#162d52 0%,#0f2142 48%,#0b1a35 100%);border:1px solid rgba(160,190,240,.16);",
+    "background:var(--ges-card);border:1px solid rgba(160,190,240,.16);",
     "box-shadow:0 30px 80px rgba(0,0,0,.55),0 2px 0 rgba(255,255,255,.04) inset;animation:ges-in .55s cubic-bezier(.2,.8,.2,1) both;}",
     ".ges.is-warm .ges-win{animation-duration:.2s;}",
     "@keyframes ges-in{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:none;}}",
@@ -139,6 +151,8 @@
   var root = document.createElement("div");
   root.className = "ges" + (warm ? " is-warm" : "") + (still ? " is-still" : "");
   root.style.setProperty("--ges-a", accent);
+  root.style.setProperty("--ges-bg", THEME.bg);
+  root.style.setProperty("--ges-card", THEME.card);
   root.setAttribute("role", "status");
   root.setAttribute("aria-live", "polite");
   root.setAttribute("aria-busy", "true");
@@ -146,7 +160,7 @@
   root.innerHTML =
     '<div class="ges-grid"></div>' +
     '<div class="ges-win"><div class="ges-body"><div class="ges-art">' + art + '</div>' +
-    '<div class="ges-txt"><div class="ges-brand"><img src="' + esc(ds.logo || "/logo.png") + '" alt=""><span>GeoEstate</span></div>' +
+    '<div class="ges-txt"><div class="ges-brand"><img src="' + esc(THEME.logo) + '" alt=""><span>' + esc(THEME.suite) + '</span></div>' +
     '<h1 class="ges-name">' + name + '</h1>' +
     (ds.tagline ? '<p class="ges-tag">' + esc(ds.tagline) + "</p>" : "") +
     '<span class="ges-ed">' + esc(ds.edition || "") + "</span></div></div>" +
