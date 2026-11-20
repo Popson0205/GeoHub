@@ -16,7 +16,8 @@ const ASK = "geoestate.ng@gmail.com";
 
 /** The GeoEstate products: the organization's own one click away, and the others it could add. */
 export default function AppSwitcher() {
-  const { user, identity } = useAuth();
+  const { user } = useAuth();
+  const suite = user?.org?.brand?.name?.trim() || "GeoEstate";
   const [apps, setApps] = useState<ProductLicence[]>([]);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -37,12 +38,12 @@ export default function AppSwitcher() {
 
   return (
     <div className="menu app-switcher" ref={ref}>
-      <button type="button" className="icon-btn app-switcher-btn" aria-label={`${identity.name} apps`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="icon-btn app-switcher-btn" aria-label={`${suite} apps`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <Icon name="apps" size={20} />
       </button>
       {open && (
-        <div className="menu-pop app-switcher-pop" role="menu" aria-label={`${identity.name} apps`}>
-          <div className="menu-head"><strong>{identity.name} apps</strong><span>One sign-in for all of them</span></div>
+        <div className="menu-pop app-switcher-pop" role="menu" aria-label={`${suite} apps`}>
+          <div className="menu-head"><strong>{suite} apps</strong><span>One sign-in for all of them</span></div>
           {apps.map((a) => {
             const here = a.product === "hub";
             const body = <>
