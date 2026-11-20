@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from . import orgs, products, staff
+from . import branding, orgs, products, staff
 from .config import settings
 from .errors import Problem
 from .security import hash_token
@@ -158,7 +158,8 @@ async def claims_for(conn, user_id, c: dict) -> dict:
         lic = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in product.items() if k != "url"}
         lic["id"] = lic.pop("product")
     return {"sub": str(u["id"]), "aud": c["id"], "email": u["email"], "name": u["name"], "mfa": u["mfa_enabled"],
-            "org": {"id": str(m["org_id"]), "name": m["name"], "slug": m["slug"], "role": m["role"]} if m else None,
+            "org": {"id": str(m["org_id"]), "name": m["name"], "slug": m["slug"], "role": m["role"],
+                    "brand": branding.brief(m)} if m else None,
             "product": lic, "staff_role": role}
 
 
