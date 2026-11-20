@@ -35,6 +35,8 @@ class RefreshIn(BaseModel):
 class OrgBrand(BaseModel):
     color: str | None = Field(None, description="Main colour, #rrggbb, readable with white text")
     logo_url: str | None = None
+    name: str | None = Field(None, description="The suite/wordmark shown in place of 'Geohub' (white-label); set at org setup")
+    seal_url: str | None = Field(None, description="URL of a square seal/crest for the sign-in screen")
 
 
 class OrgBrief(BaseModel):
@@ -1057,6 +1059,9 @@ class AdminOrgOut(BaseModel):
     grace_ends: date | None = Field(None, description="The last day of the grace period after the end date")
     suspended_at: datetime | None = None
     suspended_reason: str | None = None
+    brand_name: str | None = Field(None, description="White-label suite/wordmark shown in place of 'Geohub'")
+    brand_color: str | None = Field(None, description="Brand colour, #rrggbb")
+    brand_seal_url: str | None = Field(None, description="URL of a square seal/crest for the sign-in screen")
     last_active: datetime | None = Field(None, description="When anyone in the organization last used Geohub")
 
 
@@ -1197,6 +1202,9 @@ class AdminOrgIn(BaseModel):
     request_id: UUID | None = Field(None, description="The website request this answers; it is marked set up")
     invoice_ref: str | None = Field(None, max_length=80)
     note: str | None = Field(None, max_length=1000)
+    brand_name: str | None = Field(None, max_length=120, description="White-label suite/wordmark shown in place of 'Geohub'")
+    brand_color: str | None = Field(None, description="Brand colour #rrggbb")
+    brand_seal_url: str | None = Field(None, max_length=500, description="URL of a square seal/crest for the sign-in screen")
 
 
 class AdminOrgPatch(BaseModel):
@@ -1210,6 +1218,9 @@ class AdminOrgPatch(BaseModel):
         None, description="Replaces the one-off caps; {} goes back to the plan's numbers")
     invoice_ref: str | None = Field(None, max_length=80, description="The invoice this change answers, kept in the licence history")
     note: str | None = Field(None, max_length=1000, description="Why, kept in the licence history")
+    brand_name: str | None = Field(None, max_length=120, description="White-label suite/wordmark; empty string clears it (back to 'Geohub')")
+    brand_color: str | None = Field(None, description="Brand colour #rrggbb; empty string clears it")
+    brand_seal_url: str | None = Field(None, max_length=500, description="URL of a square seal/crest for the sign-in screen; empty string clears it")
 
 
 class SuspendIn(BaseModel):

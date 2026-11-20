@@ -1,5 +1,5 @@
-import { applyBrand } from "./brand";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { applyIdentity, identityFor, installDefault, loadInstallDefault, type Identity } from "./identity";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ApiError, loadApi, MFA_SETUP_EVENT, tokens } from "./api";
 import type { Session, User } from "./types";
@@ -8,6 +8,8 @@ import { SuspendedPage } from "../components/LicenceBanner";
 
 interface AuthState {
   user: User | null; ready: boolean;
+  /** The resolved look of the app: the signed-in org's brand over this deployment's install default. */
+  identity: Identity;
   login(email: string, password: string): Promise<void>;
   register(name: string, email: string, password: string, organization?: string): Promise<void>;
   logout(): Promise<void>;
@@ -16,7 +18,7 @@ interface AuthState {
   /** Start a session someone else signed in for us (setting a password from an emailed link). */
   adopt(s: Session): void;
 }
-const Ctx = createContext<AuthState>({ user: null, ready: false, login: async () => {}, register: async () => {}, logout: async () => {}, refresh: async () => {}, adopt: () => {} });
+const Ctx = createContext<AuthState>({ user: null, ready: false, identity: installDefault(), login: async () => {}, register: async () => {}, logout: async () => {}, refresh: async () => {}, adopt: () => {} });
 export const useAuth = () => useContext(Ctx);
 
 // The signed-in person is remembered on the device so the app still opens with no connection.
@@ -30,8 +32,12 @@ const splash = (window as unknown as { GeoEstateSplash?: { step: (t: string, p?:
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+  // This deployment's install default (public/brand.json or an injected global); the GeoEstate look until it loads.
+  const [installBrand, setInstallBrand] = useState<Identity>(installDefault);
 
   useEffect(() => { if (ready) splash?.done(); }, [ready]);
+
+  useEffect(() => { void loadInstallDefault().then(setInstallBrand); }, []);
 
   useEffect(() => {
     (async () => {
@@ -72,10 +78,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener(MFA_SETUP_EVENT, again);
     return () => window.removeEventListener(MFA_SETUP_EVENT, again);
   }, []);
-  // the organization's colour, for everyone in it
-  const brandColor = user?.org?.brand?.color ?? null;
-  useEffect(() => { applyBrand(brandColor ? { color: brandColor, logo_url: null } : null); }, [brandColor]);
-  return <Ctx.Provider value={{ user, ready, login, register, logout, refresh, adopt }}>{children}</Ctx.Provider>;
+  // The app's look: the signed-in organization's brand (set by GeoEstate at org setup) over this deployment's
+  // install default. One build; the look comes from data, applied at runtime.
+  const identity = useMemo(() => identityFor(user?.org, installBrand), [user?.org, installBrand]);
+  useEffect(() => { applyIdentity(identity); }, [identity]);
+  return <Ctx.Provider value={{ user, ready, identity, login, register, logout, refresh, adopt }}>{children}</Ctx.Provider>;
 }
 
 export const SECURITY_PATH = "/settings/security";

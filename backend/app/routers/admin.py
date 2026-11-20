@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from psycopg.types.json import Jsonb
 
-from .. import domains, licence_keys, licences, orgs, passwords, products, ratelimit, staff
+from .. import branding, domains, licence_keys, licences, orgs, passwords, products, ratelimit, staff
 from ..audit import audit
 from ..config import settings
 from ..db import get_conn
@@ -21,7 +21,7 @@ router = APIRouter(tags=["staff console"])
 
 ORG_SQL = (
     "SELECT o.id, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, o.created_at, "
-    "  o.licence_kind, o.suspended_at, o.suspended_reason, "
+    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_url, "
     f"  {licences.STATUS_SQL} AS status, "
     "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email, "
     "  (SELECT max(u.last_sign_in_at) FROM org_members m JOIN users u ON u.id = m.user_id WHERE m.org_id = o.id) AS last_active, "
@@ -212,6 +212,16 @@ async def setup_org(conn, body: AdminOrgIn, actor_id=None, note_suffix: str = ""
     org = await orgs.create_org(conn, body.name, uid, plan=plan)
     await conn.execute("UPDATE organizations SET subscription_starts = %s, subscription_ends = %s, limits = %s, licence_kind = %s "
                        "WHERE id = %s", (starts, ends, Jsonb(body.limits), body.licence_kind, org["id"]))
+    # White-label identity, customized as the customer is set up: one build, the look comes from the org record.
+    bsets, bparams = [], []
+    if body.brand_name:
+        bsets.append("brand_name = %s"); bparams.append(body.brand_name.strip())
+    if body.brand_color:
+        bsets.append("brand_color = %s"); bparams.append(branding.normalize_color(body.brand_color))
+    if body.brand_seal_url:
+        bsets.append("brand_seal_url = %s"); bparams.append(body.brand_seal_url.strip())
+    if bsets:
+        await conn.execute(f"UPDATE organizations SET {', '.join(bsets)} WHERE id = %s", (*bparams, org["id"]))
     if body.request_id:
         await conn.execute("UPDATE org_requests SET status = 'set_up', org_id = %s, updated_at = now() WHERE id = %s",
                            (org["id"], body.request_id))
@@ -255,9 +265,18 @@ async def update_org(org_id: UUID, body: AdminOrgPatch, request: Request, user=D
             sets.append("subscription_ends = %s"); params.append(body.subscription_ends)
     if body.limits is not None:
         sets.append("limits = %s"); params.append(Jsonb(body.limits))
+    # White-label identity, set when the customer is set up (empty string clears a field, back to the Geohub look).
+    if body.brand_name is not None:
+        sets.append("brand_name = %s"); params.append(body.brand_name.strip() or None)
+    if body.brand_color is not None:
+        sets.append("brand_color = %s"); params.append(branding.normalize_color(body.brand_color) if body.brand_color.strip() else None)
+    if body.brand_seal_url is not None:
+        sets.append("brand_seal_url = %s"); params.append(body.brand_seal_url.strip() or None)
     if sets:
         await conn.execute(f"UPDATE organizations SET {', '.join(sets)} WHERE id = %s", (*params, org_id))
-        licence_change = body.model_dump(exclude_none=True, exclude={"name", "invoice_ref", "note"}, exclude_defaults=True)
+        licence_change = body.model_dump(exclude_none=True,
+                                         exclude={"name", "invoice_ref", "note", "brand_name", "brand_color", "brand_seal_url"},
+                                         exclude_defaults=True)
         if licence_change:
             renewed = bool(body.subscription_ends and now["subscription_ends"] and body.subscription_ends > now["subscription_ends"])
             await licences.record(conn, org_id, "renew" if renewed else "change", user["id"], body.invoice_ref, body.note)

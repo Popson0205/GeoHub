@@ -22,7 +22,7 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 
 /** Top bar + page area, used by every screen except the mobile collector. */
 export default function Shell() {
-  const { user, logout } = useAuth();
+  const { user, logout, identity } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
   const [navOpen, setNavOpen] = useState(false);     // phone menu
@@ -44,8 +44,10 @@ export default function Shell() {
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
-        <Link className="brand" to="/"><BrandMark />Geohub</Link>
-        {user?.org?.brand?.logo_url && <span className="brand-org"><img src={user.org.brand.logo_url} alt={user.org.name} /></span>}
+        <Link className="brand" to="/">
+          {identity.logo_url ? <img className="brand-logo" src={identity.logo_url} alt="" /> : <BrandMark />}
+          {identity.name}
+        </Link>
         <nav id="main-nav" className={`topnav${navOpen ? " is-open" : ""}`} aria-label="Main">
           {user && <NavLink to="/maps"><Icon name="navMap" size={18} />Web mapping</NavLink>}
           {user && <NavLink to="/collect"><Icon name="navCollect" size={18} />Data collection</NavLink>}

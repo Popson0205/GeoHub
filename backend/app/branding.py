@@ -73,10 +73,16 @@ def logo_url(org_id, updated_at) -> str | None:
 
 
 def brief(row: dict) -> dict | None:
-    """The brand the app shows to the organization's people, from a row with org_id/id, plan and the brand columns."""
-    if row.get("plan") == "individual" or not (row.get("brand_color") or row.get("logo_updated_at")):
+    """The brand the app shows to the organization's people, from a row with org_id/id, plan and the brand columns.
+    Applied at runtime, so one build serves every client: the colour, logo, white-label name and sign-in seal all
+    come from the organization record (set by GeoEstate staff at org setup)."""
+    if row.get("plan") == "individual" or not (
+        row.get("brand_color") or row.get("logo_updated_at") or row.get("brand_name") or row.get("brand_seal_url")
+    ):
         return None
-    return {"color": row.get("brand_color"), "logo_url": logo_url(row.get("org_id") or row.get("id"), row.get("logo_updated_at"))}
+    return {"color": row.get("brand_color"),
+            "logo_url": logo_url(row.get("org_id") or row.get("id"), row.get("logo_updated_at")),
+            "name": row.get("brand_name"), "seal_url": row.get("brand_seal_url")}
 
 
 async def for_email(conn, org_id) -> dict | None:

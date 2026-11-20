@@ -66,7 +66,7 @@ async def membership(conn, user_id) -> dict | None:
     """The person's organization and their role in it: {org_id, role, name, slug, plan, limits}."""
     cur = await conn.execute(
         "SELECT om.org_id, om.role, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, "
-        "  o.brand_color, o.logo_updated_at, o.email_sender_name, o.email_reply_to, o.require_mfa, o.licence_kind, o.suspended_at "
+        "  o.brand_color, o.logo_updated_at, o.brand_name, o.brand_seal_url, o.email_sender_name, o.email_reply_to, o.require_mfa, o.licence_kind, o.suspended_at "
         "FROM org_members om "
         "JOIN organizations o ON o.id = om.org_id WHERE om.user_id = %s", (user_id,))
     return await cur.fetchone()

@@ -1,0 +1,8 @@
+{
+  "_comment": "Install-time default brand for this deployment. Copy to brand.json (same folder as the built app) and edit to white-label a dedicated/on-prem box WITHOUT rebuilding. It sets the look before anyone signs in (sign-in screen, page title, theme colour) and is the fallback when a signed-in organization has no brand of its own. On a hosted, multi-tenant deployment leave brand.json absent: each organization's own brand (set by GeoEstate at org setup) is applied after sign-in. Any field may be omitted.",
+  "name": "Osun State Land Information System",
+  "tagline": "Cadastral mapping, land registry and field data for Osun State",
+  "color": "#088B4E",
+  "logo_url": "/brand/osun-icon.svg",
+  "seal_url": "/brand/osun-seal.png"
+}
