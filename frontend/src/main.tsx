@@ -17,13 +17,10 @@ import "@fontsource/ibm-plex-mono/500.css";
 // imported here rather than with the map component, where it would arrive later and win.
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles/app.css";
-import "./styles/brand.css";
-import { applyBrand } from "./brand";
 
 installErrorHandlers();
 initPwa();
 applyTheme(getTheme());   // before the first paint, so the page never flashes the wrong theme
-applyBrand();             // white-label (VITE_BRAND): colours, title, favicon
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -100,7 +100,8 @@ export class MockApi implements Api {
     const role = members.find((m) => m.user_id === DEMO_USER.id)?.role ?? "member";
     // the demo account also plays GeoEstate staff, so the platform admin page can be tried
     const b = org.branding;
-    const brand = org.plan !== "individual" && (b?.color || b?.logo_url) ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null } : null;
+    const brand = org.plan !== "individual" && (b?.color || b?.logo_url || b?.name || b?.seal_url)
+      ? { color: b?.color ?? null, logo_url: b?.logo_url ?? null, name: b?.name ?? null, seal_url: b?.seal_url ?? null } : null;
     const mfaOn = !!this.s.mfa?.enabled_at;
     const ends = org.subscription_ends ?? null;
     const today = new Date().toISOString().slice(0, 10);

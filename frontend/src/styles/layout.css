@@ -695,9 +695,8 @@ body.is-dnd * { cursor: grabbing !important; }
 .admin-domains ul { margin: 0; padding-left: 1.2em; font-size: var(--fs-sm); }
 .admin-domains p { margin: 0; font-size: var(--fs-sm); }
 /* an organization's logo beside the Geohub mark, on a light chip so dark logos show on the dark bar */
-.brand-org { display: inline-flex; align-items: center; height: 32px; max-width: 160px; margin: 0 var(--s-4) 0 calc(-1 * var(--s-2)); padding: 3px 8px; border-radius: var(--r-md); background: #fff; flex: none; }
-.brand-org img { display: block; max-height: 26px; max-width: 144px; object-fit: contain; }
-@media (max-width: 700px) { .brand-org { display: none; } }
+/* A client logo stands in for the GeoEstate mark inside the brand link (white-label). */
+.topbar .brand .brand-logo { height: 28px; max-width: 150px; object-fit: contain; display: block; flex: none; }
 .org-branding { display: flex; flex-direction: column; gap: var(--s-4); }
 .org-branding > p { margin: 0; }
 .org-brand-logo { display: flex; gap: var(--s-4); align-items: center; flex-wrap: wrap; }

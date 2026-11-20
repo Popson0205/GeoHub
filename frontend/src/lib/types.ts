@@ -17,7 +17,7 @@ export type AddableRole = Exclude<OrgRole, "owner">;
 export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
 /** An organization's look (Organization plans): its colour and logo, shown to all its people. */
-export interface OrgBrand { color: string | null; logo_url: string | null }
+export interface OrgBrand { color: string | null; logo_url: string | null; name?: string | null; seal_url?: string | null }
 export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null;
   /** Where its licence stands; none on the free Individual plan. */
   licence?: OrgLicence | null }
@@ -53,7 +53,9 @@ export interface Org extends OrgBrief {
   /** Everyone must use two-step sign-in. */
   require_mfa?: boolean;
 }
-export interface OrgBranding { color: string | null; logo_url: string | null; sender_name: string | null; reply_to: string | null }
+export interface OrgBranding { color: string | null; logo_url: string | null; sender_name: string | null; reply_to: string | null;
+  /** White-label identity set by GeoEstate staff at org setup: the suite/wordmark name and a square seal. */
+  name?: string | null; seal_url?: string | null }
 /** Who can see a Data hub dataset: anyone, the organization's people (Organization plans), or the project's / map's people. */
 export type DatasetVisibility = "public" | "organization" | "private";
 export interface AccountInput { name: string; email: string; role: AddableRole; delivery: "email" | "temporary"; projects?: { project_id: string; role?: "admin" | "collector" | "viewer" }[] }

@@ -39,6 +39,9 @@
     repeating-radial-gradient(circle at 95% 5%, transparent 0 38px, rgba(143, 190, 165, .10) 38px 39px); }
 .auth-side > * { position: relative; }
 .auth-side .brand-line { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: #fff; }
+/* A client crest or logo on the sign-in panel (white-label); the seal sits on a light chip so it reads on the dark panel. */
+.auth-side .brand-line .auth-seal { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; background: #fff; padding: 3px; flex: none; }
+.auth-side .brand-line .brand-logo { height: 34px; max-width: 180px; object-fit: contain; flex: none; }
 .auth-side h2 { max-width: 14ch; color: #fff; font-size: 34px; line-height: 1.1; font-weight: 600; letter-spacing: -0.03em; }
 .auth-side p { max-width: 38ch; margin: var(--s-4) 0 0; color: #b7cbc1; font-size: var(--fs-lg); line-height: 1.55; }
 .auth-main { display: grid; place-items: center; padding: var(--s-8) var(--s-6); background: var(--paper); }
