@@ -590,7 +590,8 @@ export class MockApi implements Api {
     const o = this.fill({ id: uuid(), name: input.name.trim(), slug: input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), plan: input.plan,
       plan_name: "", caps: PLAN_CAPS.individual, limits: input.limits ?? {}, usage: { seats: 1, collectors: 0, viewers: 0, projects: 0, records: 0 },
       subscription_starts: input.subscription_starts ?? null, subscription_ends: input.subscription_ends ?? null, days_left: null,
-      owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString(), licence_kind: demo ? "demo" : "paid", last_active: null });
+      owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString(), licence_kind: demo ? "demo" : "paid", last_active: null,
+      brand_name: input.brand_name?.trim() || null, brand_color: input.brand_color?.trim() || null, brand_seal_url: input.brand_seal_url?.trim() || null });
     orgs.unshift(o);
     this.logLicence(o, demo ? "demo" : "create", input.invoice_ref, input.note);
     this.logStaff("org_create", o.id, { plan: o.plan, kind: o.licence_kind });
@@ -607,6 +608,9 @@ export class MockApi implements Api {
     const o = orgs[i];
     const next = { ...o, ...(patch.name != null && { name: patch.name.trim() }), ...(patch.plan && { plan: patch.plan }), ...(patch.licence_kind && { licence_kind: patch.licence_kind }),
       ...(patch.limits && { limits: patch.limits }),
+      ...(patch.brand_name !== undefined && { brand_name: patch.brand_name.trim() || null }),
+      ...(patch.brand_color !== undefined && { brand_color: patch.brand_color.trim() || null }),
+      ...(patch.brand_seal_url !== undefined && { brand_seal_url: patch.brand_seal_url.trim() || null }),
       ...(patch.clear_dates ? { subscription_starts: null, subscription_ends: null } : {
         subscription_starts: patch.subscription_starts ?? o.subscription_starts, subscription_ends: patch.subscription_ends ?? o.subscription_ends }) };
     this.checkDates(next.subscription_starts, next.subscription_ends);

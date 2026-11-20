@@ -91,6 +91,8 @@ export interface AdminOrg {
   /** The last day of the 14-day grace period after the end date. */
   grace_ends?: string | null;
   suspended_at?: string | null; suspended_reason?: string | null;
+  /** White-label identity, set by GeoEstate at setup and applied at runtime across the apps. */
+  brand_name?: string | null; brand_color?: string | null; brand_seal_url?: string | null;
   /** When anyone in the organization last used Geohub. */
   last_active?: string | null;
 }
@@ -118,9 +120,9 @@ export interface ProductInput {
 export type LicenceStatus = "free" | "demo" | "active" | "grace" | "expired" | "suspended";
 export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string; licence_kind?: LicenceKind;
   subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string;
-  invoice_ref?: string; note?: string }
+  invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string; brand_seal_url?: string }
 export interface AdminOrgPatch { name?: string; plan?: PlanId; licence_kind?: LicenceKind; subscription_starts?: string | null; subscription_ends?: string | null;
-  clear_dates?: boolean; limits?: OrgLimits; invoice_ref?: string; note?: string }
+  clear_dates?: boolean; limits?: OrgLimits; invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string; brand_seal_url?: string }
 export type StaffRole = "super_admin" | "account_manager" | "support" | "finance";
 export type StaffPerm = "customers.view" | "audit.view" | "customers.support" | "licences.edit" | "requests.edit" | "staff.manage";
 export interface StaffMe { role: StaffRole; role_name: string; perms: StaffPerm[]; mfa_ok: boolean }

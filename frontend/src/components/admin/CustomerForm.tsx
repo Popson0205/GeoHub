@@ -5,16 +5,19 @@ import { DEMO_DAYS, KINDS, PLAN_CAPS, PLANS, dayAfter, demoEnd, today, yearFrom 
 import type { AdminOrg, LicenceKind, OrgLimits, PeopleKind, PlanId } from "../../lib/types";
 
 export interface Draft { name: string; kind: LicenceKind; plan: PlanId; owner_name: string; owner_email: string; starts: string; ends: string;
-  limits: Record<PeopleKind, string>; invoice_ref: string; note: string; request_id?: string }
+  limits: Record<PeopleKind, string>; invoice_ref: string; note: string; request_id?: string;
+  brand_name: string; brand_color: string; brand_seal_url: string }
 
 export const blankDraft = (kind: LicenceKind = "paid"): Draft => {
   const starts = today();
   return { name: "", kind, plan: kind === "demo" ? "advanced" : "standard", owner_name: "", owner_email: "", starts,
-    ends: kind === "demo" ? demoEnd(starts) : yearFrom(starts), limits: { seats: "", collectors: "", viewers: "" }, invoice_ref: "", note: "" };
+    ends: kind === "demo" ? demoEnd(starts) : yearFrom(starts), limits: { seats: "", collectors: "", viewers: "" }, invoice_ref: "", note: "",
+    brand_name: "", brand_color: "", brand_seal_url: "" };
 };
 export const draftFrom = (o: AdminOrg): Draft => ({ name: o.name, kind: o.licence_kind ?? "paid", plan: o.plan as PlanId, owner_name: o.owner_name ?? "",
   owner_email: o.owner_email ?? "", starts: o.subscription_starts ?? "", ends: o.subscription_ends ?? "", invoice_ref: "", note: "",
-  limits: { seats: o.limits.seats?.toString() ?? "", collectors: o.limits.collectors?.toString() ?? "", viewers: o.limits.viewers?.toString() ?? "" } });
+  limits: { seats: o.limits.seats?.toString() ?? "", collectors: o.limits.collectors?.toString() ?? "", viewers: o.limits.viewers?.toString() ?? "" },
+  brand_name: o.brand_name ?? "", brand_color: o.brand_color ?? "", brand_seal_url: o.brand_seal_url ?? "" });
 /** The next year after the current end date, as a renewal. */
 export const renewalDraft = (o: AdminOrg): Draft => {
   const d = draftFrom(o);
@@ -55,10 +58,12 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
     try {
       const api = await loadApi();
       const extra = { invoice_ref: d.invoice_ref.trim() || undefined, note: d.note.trim() || undefined };
+      // White-label identity: on setup, empty fields are ignored; on edit, an empty field clears it (back to the Geohub look).
+      const brand = { brand_name: d.brand_name.trim(), brand_color: d.brand_color.trim(), brand_seal_url: d.brand_seal_url.trim() };
       const o = isNew
         ? await api.adminCreateOrg({ name: d.name.trim(), plan: d.plan, licence_kind: d.kind, owner_name: d.owner_name.trim(), owner_email: d.owner_email.trim(),
-            subscription_starts: d.starts || null, subscription_ends: d.ends || null, limits: limitsOf(d), request_id: d.request_id, ...extra })
-        : await api.adminUpdateOrg(orgId, { name: d.name.trim(), plan: d.plan, licence_kind: d.kind, limits: limitsOf(d), ...extra,
+            subscription_starts: d.starts || null, subscription_ends: d.ends || null, limits: limitsOf(d), request_id: d.request_id, ...extra, ...brand })
+        : await api.adminUpdateOrg(orgId, { name: d.name.trim(), plan: d.plan, licence_kind: d.kind, limits: limitsOf(d), ...extra, ...brand,
             ...(d.starts || d.ends ? { subscription_starts: d.starts || null, subscription_ends: d.ends || null } : { clear_dates: true }) });
       onSaved(o);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); } finally { setBusy(false); }
@@ -122,6 +127,27 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
         <div className="field"><label htmlFor="ao-note">Note <span className="muted">(optional)</span></label>
           <input id="ao-note" maxLength={1000} placeholder="Why, for the licence history" value={d.note} onChange={(e) => set("note", e.target.value)} /></div>
       </div>
+      <fieldset className="admin-brand">
+        <legend>Branding <span className="muted">(optional · white-label; applied across Geohub, PolyGIS and Land Registry)</span></legend>
+        <div className="field"><label htmlFor="ao-brand-name">Display name</label>
+          <input id="ao-brand-name" maxLength={120} placeholder="e.g. Osun State Land Information System" value={d.brand_name}
+            onChange={(e) => set("brand_name", e.target.value)} aria-describedby="ao-brand-name-hint" />
+          <span id="ao-brand-name-hint" className="field-hint">Shown in place of "Geohub". Leave empty to keep the GeoEstate look.</span></div>
+        <div className="org-add-row">
+          <div className="field"><label htmlFor="ao-brand-color">Brand colour</label>
+            <div className="brand-colour-row">
+              <input id="ao-brand-color" type="color" value={/^#[0-9a-fA-F]{6}$/.test(d.brand_color) ? d.brand_color : "#088b4e"}
+                onChange={(e) => set("brand_color", e.target.value)} aria-label="Pick the brand colour" />
+              <input type="text" maxLength={7} placeholder="#088B4E" value={d.brand_color}
+                onChange={(e) => set("brand_color", e.target.value)} aria-label="Brand colour hex" />
+            </div>
+            <span className="field-hint">The accent across the apps (greens, violet, navy) is derived from this and contrast-checked.</span></div>
+          <div className="field"><label htmlFor="ao-brand-seal">Seal / crest URL</label>
+            <input id="ao-brand-seal" type="url" maxLength={500} placeholder="https://… .png" value={d.brand_seal_url}
+              onChange={(e) => set("brand_seal_url", e.target.value)} />
+            <span className="field-hint">A square seal shown on the sign-in screen.</span></div>
+        </div>
+      </fieldset>
       {error && <div className="field-error" role="alert">{error}</div>}
       <div className="admin-form-actions">
         <Button type="submit" variant="primary" busy={busy}>{isNew ? (d.kind === "demo" ? "Start the demo and email the owner" : "Set up and email the owner") : "Save changes"}</Button>
