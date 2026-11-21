@@ -92,7 +92,7 @@ export interface AdminOrg {
   grace_ends?: string | null;
   suspended_at?: string | null; suspended_reason?: string | null;
   /** White-label identity, set by GeoEstate at setup and applied at runtime across the apps. */
-  brand_name?: string | null; brand_color?: string | null; brand_seal_url?: string | null;
+  brand_name?: string | null; brand_color?: string | null; logo_url?: string | null; brand_seal_url?: string | null;
   /** When anyone in the organization last used Geohub. */
   last_active?: string | null;
 }

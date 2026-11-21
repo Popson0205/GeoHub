@@ -21,7 +21,7 @@ router = APIRouter(tags=["staff console"])
 
 ORG_SQL = (
     "SELECT o.id, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, o.created_at, "
-    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_updated_at, "
+    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_updated_at, o.logo_updated_at, "
     f"  {licences.STATUS_SQL} AS status, "
     "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email, "
     "  (SELECT max(u.last_sign_in_at) FROM org_members m JOIN users u ON u.id = m.user_id WHERE m.org_id = o.id) AS last_active, "
@@ -35,7 +35,8 @@ ORG_SQL = (
 async def _org(conn, row) -> dict:
     return {**row, "plan_name": orgs.PLAN_NAMES.get(row["plan"], row["plan"]), "caps": orgs.caps(row["plan"], row["limits"]),
             "limits": {k: int(v) for k, v in (row["limits"] or {}).items() if v is not None},
-            # The seal is served like the logo; expose its URL (null when none) so the staff form can preview it.
+            # The logo and seal are served images; expose their URLs (null when none) so the staff form can preview them.
+            "logo_url": branding.logo_url(row["id"], row.get("logo_updated_at")),
             "brand_seal_url": branding.seal_url(row["id"], row.get("brand_seal_updated_at")),
             "usage": await orgs.usage(conn, row["id"]), "grace_ends": licences.grace_ends(row)}
 
@@ -360,6 +361,25 @@ async def upload_seal(org_id: UUID, request: Request, file: UploadFile = File(..
     png = branding.clean_image(await file.read(branding.MAX_LOGO_BYTES + 1), "seal")
     await conn.execute("UPDATE organizations SET brand_seal = %s, brand_seal_updated_at = now() WHERE id = %s", (png, org_id))
     await _staff_audit(conn, "org_seal", user, request, org_id, bytes=len(png))
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.put("/admin/orgs/{org_id}/logo", response_model=AdminOrgOut, summary="Upload a customer's logo (top bar)")
+async def upload_logo(org_id: UUID, request: Request, file: UploadFile = File(...),
+                      user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    """PNG, JPEG or WebP up to 1 MB; stored as a PNG of at most 512 px. Shown in the top bar in place of 'Geohub'."""
+    await _one(conn, org_id)
+    png = branding.clean_image(await file.read(branding.MAX_LOGO_BYTES + 1), "logo")
+    await conn.execute("UPDATE organizations SET logo = %s, logo_updated_at = now() WHERE id = %s", (png, org_id))
+    await _staff_audit(conn, "org_logo", user, request, org_id, bytes=len(png))
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.delete("/admin/orgs/{org_id}/logo", response_model=AdminOrgOut, summary="Remove a customer's logo")
+async def remove_logo(org_id: UUID, request: Request, user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    await _one(conn, org_id)
+    await conn.execute("UPDATE organizations SET logo = NULL, logo_updated_at = NULL WHERE id = %s", (org_id,))
+    await _staff_audit(conn, "org_logo", user, request, org_id, removed=True)
     return await _org(conn, await _one(conn, org_id))
 
 
