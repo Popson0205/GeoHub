@@ -47,18 +47,18 @@ def normalize_color(raw: str) -> str:
     return readable(c)
 
 
-def clean_logo(data: bytes) -> bytes:
-    """Any PNG, JPEG, WebP or GIF, as a PNG of at most 512 px; refuses anything else."""
+def clean_image(data: bytes, what: str = "logo") -> bytes:
+    """Any PNG, JPEG, WebP or GIF, as a PNG of at most 512 px; refuses anything else. Used for the logo and the seal."""
     from PIL import Image, UnidentifiedImageError
     if len(data) > MAX_LOGO_BYTES:
-        raise Problem(413, "The logo is larger than 1 MB. Use a smaller image.", code="too_large")
+        raise Problem(413, f"The {what} is larger than 1 MB. Use a smaller image.", code="too_large")
     try:
         im = Image.open(io.BytesIO(data))
         if im.format not in ("PNG", "JPEG", "WEBP", "GIF"):
             raise UnidentifiedImageError()
         im.load()
     except Exception:  # noqa: BLE001
-        raise Problem(422, "Use a PNG, JPEG or WebP image for the logo.", code="validation", fields={"logo": ["not an image"]})
+        raise Problem(422, f"Use a PNG, JPEG or WebP image for the {what}.", code="validation", fields={what: ["not an image"]})
     im = im.convert("RGBA")
     im.thumbnail((LOGO_PX, LOGO_PX))
     out = io.BytesIO()
@@ -66,10 +66,23 @@ def clean_logo(data: bytes) -> bytes:
     return out.getvalue()
 
 
-def logo_url(org_id, updated_at) -> str | None:
+def clean_logo(data: bytes) -> bytes:
+    return clean_image(data, "logo")
+
+
+def _asset_url(org_id, updated_at, kind: str) -> str | None:
     if not updated_at:
         return None
-    return f"{settings.app_url.rstrip('/')}{settings.api_prefix.rstrip('/')}/orgs/{org_id}/logo?v={int(updated_at.timestamp())}"
+    return f"{settings.app_url.rstrip('/')}{settings.api_prefix.rstrip('/')}/orgs/{org_id}/{kind}?v={int(updated_at.timestamp())}"
+
+
+def logo_url(org_id, updated_at) -> str | None:
+    return _asset_url(org_id, updated_at, "logo")
+
+
+def seal_url(org_id, updated_at) -> str | None:
+    """The sign-in seal is an uploaded image, served like the logo with a cache-busting ?v=<upload time>."""
+    return _asset_url(org_id, updated_at, "seal")
 
 
 def brief(row: dict) -> dict | None:
@@ -77,12 +90,13 @@ def brief(row: dict) -> dict | None:
     Applied at runtime, so one build serves every client: the colour, logo, white-label name and sign-in seal all
     come from the organization record (set by GeoEstate staff at org setup)."""
     if row.get("plan") == "individual" or not (
-        row.get("brand_color") or row.get("logo_updated_at") or row.get("brand_name") or row.get("brand_seal_url")
+        row.get("brand_color") or row.get("logo_updated_at") or row.get("brand_name") or row.get("brand_seal_updated_at")
     ):
         return None
+    oid = row.get("org_id") or row.get("id")
     return {"color": row.get("brand_color"),
-            "logo_url": logo_url(row.get("org_id") or row.get("id"), row.get("logo_updated_at")),
-            "name": row.get("brand_name"), "seal_url": row.get("brand_seal_url")}
+            "logo_url": logo_url(oid, row.get("logo_updated_at")),
+            "name": row.get("brand_name"), "seal_url": seal_url(oid, row.get("brand_seal_updated_at"))}
 
 
 async def for_email(conn, org_id) -> dict | None:

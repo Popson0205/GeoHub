@@ -2,7 +2,7 @@
 public "Request an organization" form. Who may do what: app/staff.py."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from psycopg.types.json import Jsonb
 
 from .. import branding, domains, licence_keys, licences, orgs, passwords, products, ratelimit, staff
@@ -21,7 +21,7 @@ router = APIRouter(tags=["staff console"])
 
 ORG_SQL = (
     "SELECT o.id, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, o.created_at, "
-    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_url, "
+    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_updated_at, "
     f"  {licences.STATUS_SQL} AS status, "
     "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email, "
     "  (SELECT max(u.last_sign_in_at) FROM org_members m JOIN users u ON u.id = m.user_id WHERE m.org_id = o.id) AS last_active, "
@@ -35,6 +35,8 @@ ORG_SQL = (
 async def _org(conn, row) -> dict:
     return {**row, "plan_name": orgs.PLAN_NAMES.get(row["plan"], row["plan"]), "caps": orgs.caps(row["plan"], row["limits"]),
             "limits": {k: int(v) for k, v in (row["limits"] or {}).items() if v is not None},
+            # The seal is served like the logo; expose its URL (null when none) so the staff form can preview it.
+            "brand_seal_url": branding.seal_url(row["id"], row.get("brand_seal_updated_at")),
             "usage": await orgs.usage(conn, row["id"]), "grace_ends": licences.grace_ends(row)}
 
 
@@ -218,8 +220,6 @@ async def setup_org(conn, body: AdminOrgIn, actor_id=None, note_suffix: str = ""
         bsets.append("brand_name = %s"); bparams.append(body.brand_name.strip())
     if body.brand_color:
         bsets.append("brand_color = %s"); bparams.append(branding.normalize_color(body.brand_color))
-    if body.brand_seal_url:
-        bsets.append("brand_seal_url = %s"); bparams.append(body.brand_seal_url.strip())
     if bsets:
         await conn.execute(f"UPDATE organizations SET {', '.join(bsets)} WHERE id = %s", (*bparams, org["id"]))
     if body.request_id:
@@ -270,12 +270,10 @@ async def update_org(org_id: UUID, body: AdminOrgPatch, request: Request, user=D
         sets.append("brand_name = %s"); params.append(body.brand_name.strip() or None)
     if body.brand_color is not None:
         sets.append("brand_color = %s"); params.append(branding.normalize_color(body.brand_color) if body.brand_color.strip() else None)
-    if body.brand_seal_url is not None:
-        sets.append("brand_seal_url = %s"); params.append(body.brand_seal_url.strip() or None)
     if sets:
         await conn.execute(f"UPDATE organizations SET {', '.join(sets)} WHERE id = %s", (*params, org_id))
         licence_change = body.model_dump(exclude_none=True,
-                                         exclude={"name", "invoice_ref", "note", "brand_name", "brand_color", "brand_seal_url"},
+                                         exclude={"name", "invoice_ref", "note", "brand_name", "brand_color"},
                                          exclude_defaults=True)
         if licence_change:
             renewed = bool(body.subscription_ends and now["subscription_ends"] and body.subscription_ends > now["subscription_ends"])
@@ -352,6 +350,34 @@ async def reactivate(org_id: UUID, request: Request, user=Depends(staff.staff("l
     await licences.record(conn, org_id, "reactivate", user["id"])
     await _staff_audit(conn, "org_reactivate", user, request, org_id)
     return await _org(conn, await _one(conn, org_id))
+
+
+@router.put("/admin/orgs/{org_id}/seal", response_model=AdminOrgOut, summary="Upload a customer's sign-in seal/crest")
+async def upload_seal(org_id: UUID, request: Request, file: UploadFile = File(...),
+                      user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    """PNG, JPEG or WebP up to 1 MB; stored as a PNG of at most 512 px. A square crest on a clear background looks best."""
+    await _one(conn, org_id)
+    png = branding.clean_image(await file.read(branding.MAX_LOGO_BYTES + 1), "seal")
+    await conn.execute("UPDATE organizations SET brand_seal = %s, brand_seal_updated_at = now() WHERE id = %s", (png, org_id))
+    await _staff_audit(conn, "org_seal", user, request, org_id, bytes=len(png))
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.delete("/admin/orgs/{org_id}/seal", response_model=AdminOrgOut, summary="Remove a customer's sign-in seal")
+async def remove_seal(org_id: UUID, request: Request, user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    await _one(conn, org_id)
+    await conn.execute("UPDATE organizations SET brand_seal = NULL, brand_seal_updated_at = NULL WHERE id = %s", (org_id,))
+    await _staff_audit(conn, "org_seal", user, request, org_id, removed=True)
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.delete("/admin/orgs/{org_id}", status_code=204, summary="Delete a customer and all its data (super admins)")
+async def delete_org(org_id: UUID, request: Request, user=Depends(staff.staff("customers.delete")), conn=Depends(get_conn)):
+    """Permanent: removes the organization, its people's membership, projects and data. Used for a customer set up in
+    error or one that has left. The licence history is written to the staff activity log before the row is removed."""
+    o = await _one(conn, org_id)
+    await _staff_audit(conn, "org_delete", user, request, org_id, name=o["name"], plan=o["plan"])
+    await conn.execute("DELETE FROM organizations WHERE id = %s", (org_id,))
 
 
 @router.post("/admin/orgs/{org_id}/domains", response_model=OrgDomainOut, status_code=201,

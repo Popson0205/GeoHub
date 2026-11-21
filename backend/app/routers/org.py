@@ -592,3 +592,15 @@ async def logo(org_id: UUID, conn=Depends(get_conn)):
     return Response(bytes(row["logo"]), media_type="image/png",
                     headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
                              "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+
+@public_router.get("/orgs/{org_id}/seal", summary="An organization's sign-in seal/crest (public: it appears on the sign-in screen)")
+async def seal(org_id: UUID, conn=Depends(get_conn)):
+    cur = await conn.execute("SELECT brand_seal FROM organizations WHERE id = %s AND brand_seal IS NOT NULL", (org_id,))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "No seal.", code="not_found")
+    # the URL carries ?v=<time of upload>, so a new seal is a new URL and this one can be kept a long time
+    return Response(bytes(row["brand_seal"]), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+                             "Content-Security-Policy": "default-src 'none'; sandbox"})
