@@ -17,6 +17,7 @@ PERMS = {
     "audit.view": ROLES,
     "customers.support": ("super_admin", "account_manager", "support"),     # resend links, reset 2-step, notes
     "licences.edit": ("super_admin", "account_manager"),                    # set up, renew, change, suspend
+    "customers.delete": ("super_admin",),                                   # delete a customer and all its data
     "requests.edit": ("super_admin", "account_manager"),
     "staff.manage": ("super_admin",),
 }

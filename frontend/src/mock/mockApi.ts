@@ -424,7 +424,7 @@ export class MockApi implements Api {
   }
   async adminMe(): Promise<StaffMe> {
     await wait(40); this.staff();
-    return { role: "super_admin", role_name: "Super admin", perms: ["customers.view", "audit.view", "customers.support", "licences.edit", "requests.edit", "staff.manage"], mfa_ok: true };
+    return { role: "super_admin", role_name: "Super admin", perms: ["customers.view", "audit.view", "customers.support", "licences.edit", "customers.delete", "requests.edit", "staff.manage"], mfa_ok: true };
   }
   async adminListCustomers(filter: { q?: string; status?: LicenceStatus | "due" } = {}) {
     const all = (await this.adminListOrgs(filter.q)).map((o) => this.fill(o));
@@ -490,6 +490,25 @@ export class MockApi implements Api {
     Object.assign(o, { suspended_at: null, suspended_reason: null });
     const f = this.fill(o); Object.assign(o, f); this.logLicence(o, "reactivate"); this.logStaff("org_reactivate", id); this.save();
     return f;
+  }
+  async adminUploadSeal(id: string, file: File) {
+    await wait(); this.staff();
+    const o = this.customer(id);
+    const data: string = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(file); });
+    Object.assign(o, { brand_seal_url: data }); this.logStaff("org_seal", id); this.save();
+    return this.adminGetOrg(id);
+  }
+  async adminRemoveSeal(id: string) {
+    await wait(); this.staff();
+    Object.assign(this.customer(id), { brand_seal_url: null }); this.logStaff("org_seal", id, { removed: true }); this.save();
+    return this.adminGetOrg(id);
+  }
+  async adminDeleteOrg(id: string) {
+    await wait(); this.staff();
+    const { orgs } = this.adminState;
+    const i = orgs.findIndex((o) => o.id === id);
+    if (i < 0) throw new ApiError(404, "Organization not found.");
+    const [o] = orgs.splice(i, 1); this.logStaff("org_delete", id, { name: o.name, plan: o.plan }); this.save();
   }
   async adminAddNote(orgId: string, body: string) {
     await wait(); this.staff(); this.customer(orgId);
@@ -591,7 +610,7 @@ export class MockApi implements Api {
       plan_name: "", caps: PLAN_CAPS.individual, limits: input.limits ?? {}, usage: { seats: 1, collectors: 0, viewers: 0, projects: 0, records: 0 },
       subscription_starts: input.subscription_starts ?? null, subscription_ends: input.subscription_ends ?? null, days_left: null,
       owner_name: input.owner_name.trim(), owner_email: email, created_at: new Date().toISOString(), licence_kind: demo ? "demo" : "paid", last_active: null,
-      brand_name: input.brand_name?.trim() || null, brand_color: input.brand_color?.trim() || null, brand_seal_url: input.brand_seal_url?.trim() || null });
+      brand_name: input.brand_name?.trim() || null, brand_color: input.brand_color?.trim() || null, brand_seal_url: null });
     orgs.unshift(o);
     this.logLicence(o, demo ? "demo" : "create", input.invoice_ref, input.note);
     this.logStaff("org_create", o.id, { plan: o.plan, kind: o.licence_kind });
@@ -610,7 +629,6 @@ export class MockApi implements Api {
       ...(patch.limits && { limits: patch.limits }),
       ...(patch.brand_name !== undefined && { brand_name: patch.brand_name.trim() || null }),
       ...(patch.brand_color !== undefined && { brand_color: patch.brand_color.trim() || null }),
-      ...(patch.brand_seal_url !== undefined && { brand_seal_url: patch.brand_seal_url.trim() || null }),
       ...(patch.clear_dates ? { subscription_starts: null, subscription_ends: null } : {
         subscription_starts: patch.subscription_starts ?? o.subscription_starts, subscription_ends: patch.subscription_ends ?? o.subscription_ends }) };
     this.checkDates(next.subscription_starts, next.subscription_ends);

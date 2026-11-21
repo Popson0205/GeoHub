@@ -120,11 +120,11 @@ export interface ProductInput {
 export type LicenceStatus = "free" | "demo" | "active" | "grace" | "expired" | "suspended";
 export interface AdminOrgInput { name: string; plan: PlanId; owner_name: string; owner_email: string; licence_kind?: LicenceKind;
   subscription_starts?: string | null; subscription_ends?: string | null; limits?: OrgLimits; request_id?: string;
-  invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string; brand_seal_url?: string }
+  invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string }
 export interface AdminOrgPatch { name?: string; plan?: PlanId; licence_kind?: LicenceKind; subscription_starts?: string | null; subscription_ends?: string | null;
-  clear_dates?: boolean; limits?: OrgLimits; invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string; brand_seal_url?: string }
+  clear_dates?: boolean; limits?: OrgLimits; invoice_ref?: string; note?: string; brand_name?: string; brand_color?: string }
 export type StaffRole = "super_admin" | "account_manager" | "support" | "finance";
-export type StaffPerm = "customers.view" | "audit.view" | "customers.support" | "licences.edit" | "requests.edit" | "staff.manage";
+export type StaffPerm = "customers.view" | "audit.view" | "customers.support" | "licences.edit" | "customers.delete" | "requests.edit" | "staff.manage";
 export interface StaffMe { role: StaffRole; role_name: string; perms: StaffPerm[]; mfa_ok: boolean }
 export interface StaffMember { user_id: string | null; name: string | null; email: string; role: StaffRole; mfa_enabled: boolean;
   /** Listed in PLATFORM_ADMINS on the server: always a super admin, changed only there. */

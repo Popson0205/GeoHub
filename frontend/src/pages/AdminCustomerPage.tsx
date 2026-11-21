@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import CustomerForm, { draftFrom, renewalDraft, type Draft } from "../components/admin/CustomerForm";
 import ProductsCard, { PRODUCT_NAMES } from "../components/admin/ProductsCard";
 import LicenceKeysCard from "../components/admin/LicenceKeysCard";
@@ -16,6 +16,7 @@ const ROLE: Record<OrgRole, string> = { owner: "Owner", admin: "Administrator", 
 /** One customer, for GeoEstate staff: its licence and history, its people, notes, domains and what happened. */
 export default function AdminCustomerPage() {
   const { orgId = "" } = useParams();
+  const nav = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -48,6 +49,7 @@ export default function AdminCustomerPage() {
   if (error != null) return <div className="container"><ErrorState error={error} onRetry={() => void load()} /></div>;
   if (!o || !me) return <div className="container"><Loading label="Loading customer…" /></div>;
   const editLicence = can(me.perms, "licences.edit"), support = can(me.perms, "customers.support");
+  const canDelete = can(me.perms, "customers.delete");
   const st = LICENCE[o.status ?? "active"];
   const r = renewal(o.days_left);
 
@@ -60,6 +62,13 @@ export default function AdminCustomerPage() {
     e.preventDefault();
     await act("suspend", async () => (await loadApi()).adminSuspend(o!.id, reason.trim()), `${o!.name} is suspended.`);
     setSuspending(false); setReason("");
+  }
+  async function deleteCustomer() {
+    if (!(await confirm({ title: `Delete ${o!.name}?`, confirmLabel: "Delete permanently", danger: true,
+      message: `This permanently removes ${o!.name}, its people's membership, projects and all its data. This cannot be undone.` }))) return;
+    setBusy("delete");
+    try { await (await loadApi()).adminDeleteOrg(o!.id); toast(`${o!.name} was deleted.`, "success"); nav("/admin"); }
+    catch (e) { toast(e instanceof Error ? e.message : "Could not delete the customer.", "error"); setBusy(null); }
   }
   async function makeOwner(p: AdminPerson) {
     if (!(await confirm({ title: `Make ${p.name} the owner?`, confirmLabel: "Make owner",
@@ -133,6 +142,12 @@ export default function AdminCustomerPage() {
                   <input id="c-reason" required maxLength={500} placeholder="e.g. Invoice GE-2026-0004 unpaid" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
                 <Button type="submit" variant="danger" busy={busy === "suspend"}>Suspend {o.name}</Button>
               </form>
+            )}
+            {canDelete && (
+              <div className="customer-danger">
+                <div><strong>Delete customer</strong><p className="field-hint">Permanently removes {o.name} and all its data. For a customer set up in error, or one that has left.</p></div>
+                <Button variant="danger" busy={busy === "delete"} onClick={() => void deleteCustomer()}>Delete…</Button>
+              </div>
             )}
           </section>
 

@@ -6,18 +6,21 @@ import type { AdminOrg, LicenceKind, OrgLimits, PeopleKind, PlanId } from "../..
 
 export interface Draft { name: string; kind: LicenceKind; plan: PlanId; owner_name: string; owner_email: string; starts: string; ends: string;
   limits: Record<PeopleKind, string>; invoice_ref: string; note: string; request_id?: string;
-  brand_name: string; brand_color: string; brand_seal_url: string }
+  brand_name: string; brand_color: string;
+  // The seal is an uploaded image: seal_current is the served URL already on the org (for preview), seal_file a newly
+  // chosen file to upload on save, seal_remove a request to clear the existing one.
+  seal_current: string; seal_file: File | null; seal_remove: boolean }
 
 export const blankDraft = (kind: LicenceKind = "paid"): Draft => {
   const starts = today();
   return { name: "", kind, plan: kind === "demo" ? "advanced" : "standard", owner_name: "", owner_email: "", starts,
     ends: kind === "demo" ? demoEnd(starts) : yearFrom(starts), limits: { seats: "", collectors: "", viewers: "" }, invoice_ref: "", note: "",
-    brand_name: "", brand_color: "", brand_seal_url: "" };
+    brand_name: "", brand_color: "", seal_current: "", seal_file: null, seal_remove: false };
 };
 export const draftFrom = (o: AdminOrg): Draft => ({ name: o.name, kind: o.licence_kind ?? "paid", plan: o.plan as PlanId, owner_name: o.owner_name ?? "",
   owner_email: o.owner_email ?? "", starts: o.subscription_starts ?? "", ends: o.subscription_ends ?? "", invoice_ref: "", note: "",
   limits: { seats: o.limits.seats?.toString() ?? "", collectors: o.limits.collectors?.toString() ?? "", viewers: o.limits.viewers?.toString() ?? "" },
-  brand_name: o.brand_name ?? "", brand_color: o.brand_color ?? "", brand_seal_url: o.brand_seal_url ?? "" });
+  brand_name: o.brand_name ?? "", brand_color: o.brand_color ?? "", seal_current: o.brand_seal_url ?? "", seal_file: null, seal_remove: false });
 /** The next year after the current end date, as a renewal. */
 export const renewalDraft = (o: AdminOrg): Draft => {
   const d = draftFrom(o);
@@ -59,12 +62,15 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
       const api = await loadApi();
       const extra = { invoice_ref: d.invoice_ref.trim() || undefined, note: d.note.trim() || undefined };
       // White-label identity: on setup, empty fields are ignored; on edit, an empty field clears it (back to the Geohub look).
-      const brand = { brand_name: d.brand_name.trim(), brand_color: d.brand_color.trim(), brand_seal_url: d.brand_seal_url.trim() };
+      const brand = { brand_name: d.brand_name.trim(), brand_color: d.brand_color.trim() };
       const o = isNew
         ? await api.adminCreateOrg({ name: d.name.trim(), plan: d.plan, licence_kind: d.kind, owner_name: d.owner_name.trim(), owner_email: d.owner_email.trim(),
             subscription_starts: d.starts || null, subscription_ends: d.ends || null, limits: limitsOf(d), request_id: d.request_id, ...extra, ...brand })
         : await api.adminUpdateOrg(orgId, { name: d.name.trim(), plan: d.plan, licence_kind: d.kind, limits: limitsOf(d), ...extra, ...brand,
             ...(d.starts || d.ends ? { subscription_starts: d.starts || null, subscription_ends: d.ends || null } : { clear_dates: true }) });
+      // The seal is an image, uploaded (or cleared) after the org exists.
+      if (d.seal_file) await api.adminUploadSeal(o.id, d.seal_file);
+      else if (!isNew && d.seal_remove && d.seal_current) await api.adminRemoveSeal(o.id);
       onSaved(o);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); } finally { setBusy(false); }
   }
@@ -142,10 +148,19 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
                 onChange={(e) => set("brand_color", e.target.value)} aria-label="Brand colour hex" />
             </div>
             <span className="field-hint">The accent across the apps (greens, violet, navy) is derived from this and contrast-checked.</span></div>
-          <div className="field"><label htmlFor="ao-brand-seal">Seal / crest URL</label>
-            <input id="ao-brand-seal" type="url" maxLength={500} placeholder="https://… .png" value={d.brand_seal_url}
-              onChange={(e) => set("brand_seal_url", e.target.value)} />
-            <span className="field-hint">A square seal shown on the sign-in screen.</span></div>
+          <div className="field"><label htmlFor="ao-brand-seal">Seal / crest</label>
+            <div className="brand-seal-row">
+              {d.seal_file
+                ? <span className="brand-seal-chosen" title={d.seal_file.name}>{d.seal_file.name}</span>
+                : d.seal_current && !d.seal_remove
+                  ? <img className="brand-seal-preview" src={d.seal_current} alt="Current seal" />
+                  : <span className="brand-seal-none muted">No seal</span>}
+              <input id="ao-brand-seal" type="file" accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => { const f = e.target.files?.[0] ?? null; setD((p) => ({ ...p, seal_file: f, seal_remove: false })); }} />
+              {(d.seal_file || (d.seal_current && !d.seal_remove)) &&
+                <Button type="button" small variant="ghost" onClick={() => setD((p) => ({ ...p, seal_file: null, seal_remove: true }))}>Remove</Button>}
+            </div>
+            <span className="field-hint">A square PNG, JPEG or WebP up to 1 MB, shown on the sign-in screen.</span></div>
         </div>
       </fieldset>
       {error && <div className="field-error" role="alert">{error}</div>}
