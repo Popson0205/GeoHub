@@ -44,9 +44,9 @@ export default function Shell() {
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="topbar">
-        <Link className="brand" to="/">
+        <Link className="brand" to="/" title={identity.name}>
           {identity.logo_url ? <img className="brand-logo" src={identity.logo_url} alt="" /> : <BrandMark />}
-          {identity.name}
+          <span className="brand-name">{identity.name}</span>
         </Link>
         <nav id="main-nav" className={`topnav${navOpen ? " is-open" : ""}`} aria-label="Main">
           {user && <NavLink to="/maps"><Icon name="navMap" size={18} />Web mapping</NavLink>}

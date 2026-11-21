@@ -31,18 +31,14 @@
   if (window.GeoEstateSplash) return;
   var me = document.currentScript || {};
   var ds = me.dataset || {};
-  var product = ds.product || document.title.split(/[–|-]/)[0].trim() || "GeoEstate";
-  var brand = ds.brand || "";
-  var THEME = brand === "osun" ? {
-    accent: "#15a862",
-    bg: "radial-gradient(1200px 700px at 50% 42%,#0c5a3e 0%,#07301f 55%,#041a11 100%)",
-    card: "linear-gradient(160deg,#0d4a35 0%,#0a3826 48%,#07301f 100%)",
-    suite: "OSUN STATE", logo: ds.logo || "/brand/osun-seal.png"
-  } : {
-    accent: ds.accent || "#3aa335",
+  // The remembered client brand (written after sign-in), so a returning customer's launch screen is their own.
+  var cached = null; try { cached = JSON.parse(localStorage.getItem("ge-brand") || "null"); } catch (e) { cached = null; }
+  var product = (cached && cached.name) || ds.product || document.title.split(/[–|-]/)[0].trim() || "GeoEstate";
+  var THEME = {
+    accent: (cached && cached.color) || ds.accent || "#3aa335",
     bg: "radial-gradient(1200px 700px at 50% 42%,#13284a 0%,#0b1830 55%,#060e1e 100%)",
     card: "linear-gradient(160deg,#162d52 0%,#0f2142 48%,#0b1a35 100%)",
-    suite: "GeoEstate", logo: ds.logo || "/logo.png"
+    suite: cached && cached.name ? "" : "GeoEstate", logo: (cached && cached.logo_url) || ds.logo || "/logo.png"
   };
   var accent = THEME.accent;
   var key = "ge-splash:" + product;

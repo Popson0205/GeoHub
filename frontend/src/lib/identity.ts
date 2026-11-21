@@ -112,4 +112,11 @@ export function applyIdentity(id: Identity): void {
   }
   meta.id = THEME_META_ID;
   meta.content = themeColor;
+  // Remember a real client brand so the launch splash (which runs before sign-in, before the org is known) can show
+  // it next time. The plain GeoEstate default does not overwrite a remembered brand.
+  try {
+    if (id.color || id.name !== GEOESTATE.name) {
+      localStorage.setItem("ge-brand", JSON.stringify({ name: id.name, color: id.color, logo_url: id.logo_url }));
+    }
+  } catch { /* storage unavailable */ }
 }

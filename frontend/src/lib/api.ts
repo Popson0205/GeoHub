@@ -91,6 +91,8 @@ export interface Api {
   adminGetOrg(id: string): Promise<AdminOrgDetail>;
   adminSuspend(id: string, reason: string): Promise<AdminOrg>;
   adminReactivate(id: string): Promise<AdminOrg>;
+  adminUploadLogo(id: string, file: File): Promise<AdminOrgDetail>;
+  adminRemoveLogo(id: string): Promise<AdminOrgDetail>;
   adminUploadSeal(id: string, file: File): Promise<AdminOrgDetail>;
   adminRemoveSeal(id: string): Promise<AdminOrgDetail>;
   adminDeleteOrg(id: string): Promise<void>;
@@ -840,6 +842,8 @@ class HttpApi implements Api {
   listSupportVisits() { return this.req<SupportVisit[]>("GET", "/org/support-visits"); }
   adminSuspend(id: string, reason: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/suspend`, { reason }); }
   adminReactivate(id: string) { return this.req<AdminOrg>("POST", `/admin/orgs/${id}/reactivate`); }
+  adminUploadLogo(id: string, file: File) { const fd = new FormData(); fd.append("file", file); return this.req<AdminOrgDetail>("PUT", `/admin/orgs/${id}/logo`, fd); }
+  adminRemoveLogo(id: string) { return this.req<AdminOrgDetail>("DELETE", `/admin/orgs/${id}/logo`); }
   adminUploadSeal(id: string, file: File) { const fd = new FormData(); fd.append("file", file); return this.req<AdminOrgDetail>("PUT", `/admin/orgs/${id}/seal`, fd); }
   adminRemoveSeal(id: string) { return this.req<AdminOrgDetail>("DELETE", `/admin/orgs/${id}/seal`); }
   adminDeleteOrg(id: string) { return this.req<void>("DELETE", `/admin/orgs/${id}`); }

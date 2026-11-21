@@ -1061,6 +1061,7 @@ class AdminOrgOut(BaseModel):
     suspended_reason: str | None = None
     brand_name: str | None = Field(None, description="White-label suite/wordmark shown in place of 'Geohub'")
     brand_color: str | None = Field(None, description="Brand colour, #rrggbb")
+    logo_url: str | None = Field(None, description="URL of the top-bar logo")
     brand_seal_url: str | None = Field(None, description="URL of a square seal/crest for the sign-in screen")
     last_active: datetime | None = Field(None, description="When anyone in the organization last used Geohub")
 
