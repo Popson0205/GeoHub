@@ -23,6 +23,8 @@ export interface Identity {
   logo_url: string | null;
   /** A square seal or crest for the sign-in screen. */
   seal_url: string | null;
+  /** A wide background image for the welcome/home page (ArcGIS-style org banner). */
+  home_image_url: string | null;
 }
 
 /** The product's own look, used when no client brand is set. */
@@ -32,6 +34,7 @@ export const GEOESTATE: Identity = {
   color: null,
   logo_url: null,
   seal_url: null,
+  home_image_url: null,
 };
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -45,6 +48,7 @@ export function readBrand(raw: unknown): Identity {
     color: str(o.color),
     logo_url: str(o.logo_url),
     seal_url: str(o.seal_url),
+    home_image_url: str(o.home_image_url),
   };
 }
 
@@ -90,6 +94,7 @@ export function identityFor(
     color: str(b.color) ?? base.color,
     logo_url: str(b.logo_url) ?? base.logo_url,
     seal_url: str(b.seal_url) ?? base.seal_url,
+    home_image_url: str(b.home_image_url) ?? base.home_image_url,
   };
 }
 

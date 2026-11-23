@@ -29,7 +29,7 @@ const ago = (iso: string) => {
  * People come back to continue something, so the page leads with that rather than with what Geohub is.
  */
 export default function HomePage() {
-  const { user } = useAuth();
+  const { user, identity } = useAuth();
   const projects = useAsync((api) => api.listProjects(), []);
   const maps = useAsync((api) => api.listMaps(), []);
   const loading = (projects.loading && !projects.data) || (maps.loading && !maps.data);
@@ -57,7 +57,10 @@ export default function HomePage() {
 
   return (
     <div className="container home" style={{ width: "100%" }}>
-      <header className="home-head">
+      <header className={`home-head${identity.home_image_url ? " home-head--banner" : ""}`}
+        style={identity.home_image_url
+          ? { backgroundImage: `linear-gradient(to top, rgba(6,16,12,0.82), rgba(6,16,12,0.42)), url(${JSON.stringify(identity.home_image_url)})` }
+          : undefined}>
         <div>
           <p className="home-greeting">{greeting()}{first ? `, ${first}` : ""}</p>
           <h1>{empty || showGuide ? "Let's get you started" : "Pick up where you left off"}</h1>

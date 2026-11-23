@@ -95,6 +95,8 @@ export interface Api {
   adminRemoveLogo(id: string): Promise<AdminOrgDetail>;
   adminUploadSeal(id: string, file: File): Promise<AdminOrgDetail>;
   adminRemoveSeal(id: string): Promise<AdminOrgDetail>;
+  adminUploadHomeImage(id: string, file: File): Promise<AdminOrgDetail>;
+  adminRemoveHomeImage(id: string): Promise<AdminOrgDetail>;
   adminDeleteOrg(id: string): Promise<void>;
   /** Give a customer another product (Land Registry, LandCheck, FarmScan), or change it. */
   adminPutProduct(orgId: string, product: ProductId, input: ProductInput): Promise<ProductLicence[]>;
@@ -846,6 +848,8 @@ class HttpApi implements Api {
   adminRemoveLogo(id: string) { return this.req<AdminOrgDetail>("DELETE", `/admin/orgs/${id}/logo`); }
   adminUploadSeal(id: string, file: File) { const fd = new FormData(); fd.append("file", file); return this.req<AdminOrgDetail>("PUT", `/admin/orgs/${id}/seal`, fd); }
   adminRemoveSeal(id: string) { return this.req<AdminOrgDetail>("DELETE", `/admin/orgs/${id}/seal`); }
+  adminUploadHomeImage(id: string, file: File) { const fd = new FormData(); fd.append("file", file); return this.req<AdminOrgDetail>("PUT", `/admin/orgs/${id}/home-image`, fd); }
+  adminRemoveHomeImage(id: string) { return this.req<AdminOrgDetail>("DELETE", `/admin/orgs/${id}/home-image`); }
   adminDeleteOrg(id: string) { return this.req<void>("DELETE", `/admin/orgs/${id}`); }
   adminPutProduct(orgId: string, product: ProductId, input: ProductInput) { return this.req<ProductLicence[]>("PUT", `/admin/orgs/${orgId}/products/${product}`, input); }
   adminRemoveProduct(orgId: string, product: ProductId, note: string) { return this.req<ProductLicence[]>("POST", `/admin/orgs/${orgId}/products/${product}/remove`, { note }); }

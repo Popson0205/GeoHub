@@ -21,7 +21,7 @@ router = APIRouter(tags=["staff console"])
 
 ORG_SQL = (
     "SELECT o.id, o.name, o.slug, o.plan, o.limits, o.subscription_starts, o.subscription_ends, o.created_at, "
-    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_updated_at, o.logo_updated_at, "
+    "  o.licence_kind, o.suspended_at, o.suspended_reason, o.brand_name, o.brand_color, o.brand_seal_updated_at, o.brand_home_image_updated_at, o.logo_updated_at, "
     f"  {licences.STATUS_SQL} AS status, "
     "  (o.subscription_ends - current_date) AS days_left, ou.name AS owner_name, ou.email AS owner_email, "
     "  (SELECT max(u.last_sign_in_at) FROM org_members m JOIN users u ON u.id = m.user_id WHERE m.org_id = o.id) AS last_active, "
@@ -35,9 +35,10 @@ ORG_SQL = (
 async def _org(conn, row) -> dict:
     return {**row, "plan_name": orgs.PLAN_NAMES.get(row["plan"], row["plan"]), "caps": orgs.caps(row["plan"], row["limits"]),
             "limits": {k: int(v) for k, v in (row["limits"] or {}).items() if v is not None},
-            # The logo and seal are served images; expose their URLs (null when none) so the staff form can preview them.
+            # The logo, seal and welcome background are served images; expose their URLs (null when none) for preview.
             "logo_url": branding.logo_url(row["id"], row.get("logo_updated_at")),
             "brand_seal_url": branding.seal_url(row["id"], row.get("brand_seal_updated_at")),
+            "home_image_url": branding.home_image_url(row["id"], row.get("brand_home_image_updated_at")),
             "usage": await orgs.usage(conn, row["id"]), "grace_ends": licences.grace_ends(row)}
 
 
@@ -380,6 +381,25 @@ async def remove_logo(org_id: UUID, request: Request, user=Depends(staff.staff("
     await _one(conn, org_id)
     await conn.execute("UPDATE organizations SET logo = NULL, logo_updated_at = NULL WHERE id = %s", (org_id,))
     await _staff_audit(conn, "org_logo", user, request, org_id, removed=True)
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.put("/admin/orgs/{org_id}/home-image", response_model=AdminOrgOut, summary="Upload a customer's welcome-page background")
+async def upload_home_image(org_id: UUID, request: Request, file: UploadFile = File(...),
+                            user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    """A wide PNG/JPEG/WebP up to 6 MB; stored as a JPEG of at most 2048 px. Shown behind the welcome header, ArcGIS-style."""
+    await _one(conn, org_id)
+    jpg = branding.clean_banner(await file.read(branding.MAX_BANNER_BYTES + 1))
+    await conn.execute("UPDATE organizations SET brand_home_image = %s, brand_home_image_updated_at = now() WHERE id = %s", (jpg, org_id))
+    await _staff_audit(conn, "org_home_image", user, request, org_id, bytes=len(jpg))
+    return await _org(conn, await _one(conn, org_id))
+
+
+@router.delete("/admin/orgs/{org_id}/home-image", response_model=AdminOrgOut, summary="Remove a customer's welcome-page background")
+async def remove_home_image(org_id: UUID, request: Request, user=Depends(staff.staff("licences.edit")), conn=Depends(get_conn)):
+    await _one(conn, org_id)
+    await conn.execute("UPDATE organizations SET brand_home_image = NULL, brand_home_image_updated_at = NULL WHERE id = %s", (org_id,))
+    await _staff_audit(conn, "org_home_image", user, request, org_id, removed=True)
     return await _org(conn, await _one(conn, org_id))
 
 

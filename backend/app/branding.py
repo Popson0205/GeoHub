@@ -10,6 +10,8 @@ from .errors import Problem
 
 MAX_LOGO_BYTES = 1_000_000
 LOGO_PX = 512
+MAX_BANNER_BYTES = 6_000_000
+BANNER_PX = 2048
 
 
 def _lin(c: float) -> float:
@@ -70,6 +72,30 @@ def clean_logo(data: bytes) -> bytes:
     return clean_image(data, "logo")
 
 
+def clean_banner(data: bytes) -> bytes:
+    """A wide welcome-page background: any PNG/JPEG/WebP, as a JPEG of at most 2048 px on its longest side."""
+    from PIL import Image, UnidentifiedImageError
+    if len(data) > MAX_BANNER_BYTES:
+        raise Problem(413, "The image is larger than 6 MB. Use a smaller image.", code="too_large")
+    try:
+        im = Image.open(io.BytesIO(data))
+        if im.format not in ("PNG", "JPEG", "WEBP"):
+            raise UnidentifiedImageError()
+        im.load()
+    except Exception:  # noqa: BLE001
+        raise Problem(422, "Use a PNG, JPEG or WebP image for the background.", code="validation", fields={"home_image": ["not an image"]})
+    if im.mode in ("RGBA", "P", "LA"):
+        bg = Image.new("RGB", im.size, (12, 20, 16))
+        bg.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[-1])
+        im = bg
+    else:
+        im = im.convert("RGB")
+    im.thumbnail((BANNER_PX, BANNER_PX))
+    out = io.BytesIO()
+    im.save(out, format="JPEG", quality=82, optimize=True)
+    return out.getvalue()
+
+
 def _asset_url(org_id, updated_at, kind: str) -> str | None:
     if not updated_at:
         return None
@@ -85,18 +111,25 @@ def seal_url(org_id, updated_at) -> str | None:
     return _asset_url(org_id, updated_at, "seal")
 
 
+def home_image_url(org_id, updated_at) -> str | None:
+    """The welcome-page background, served like the logo with a cache-busting ?v=<upload time>."""
+    return _asset_url(org_id, updated_at, "home-image")
+
+
 def brief(row: dict) -> dict | None:
     """The brand the app shows to the organization's people, from a row with org_id/id, plan and the brand columns.
     Applied at runtime, so one build serves every client: the colour, logo, white-label name and sign-in seal all
     come from the organization record (set by GeoEstate staff at org setup)."""
     if row.get("plan") == "individual" or not (
-        row.get("brand_color") or row.get("logo_updated_at") or row.get("brand_name") or row.get("brand_seal_updated_at")
+        row.get("brand_color") or row.get("logo_updated_at") or row.get("brand_name")
+        or row.get("brand_seal_updated_at") or row.get("brand_home_image_updated_at")
     ):
         return None
     oid = row.get("org_id") or row.get("id")
     return {"color": row.get("brand_color"),
             "logo_url": logo_url(oid, row.get("logo_updated_at")),
-            "name": row.get("brand_name"), "seal_url": seal_url(oid, row.get("brand_seal_updated_at"))}
+            "name": row.get("brand_name"), "seal_url": seal_url(oid, row.get("brand_seal_updated_at")),
+            "home_image_url": home_image_url(oid, row.get("brand_home_image_updated_at"))}
 
 
 async def for_email(conn, org_id) -> dict | None:
