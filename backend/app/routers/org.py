@@ -604,3 +604,14 @@ async def seal(org_id: UUID, conn=Depends(get_conn)):
     return Response(bytes(row["brand_seal"]), media_type="image/png",
                     headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
                              "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+
+@public_router.get("/orgs/{org_id}/home-image", summary="An organization's welcome-page background (public)")
+async def home_image(org_id: UUID, conn=Depends(get_conn)):
+    cur = await conn.execute("SELECT brand_home_image FROM organizations WHERE id = %s AND brand_home_image IS NOT NULL", (org_id,))
+    row = await cur.fetchone()
+    if not row:
+        raise Problem(404, "No background.", code="not_found")
+    return Response(bytes(row["brand_home_image"]), media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+                             "Content-Security-Policy": "default-src 'none'; sandbox"})

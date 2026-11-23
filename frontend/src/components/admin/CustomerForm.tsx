@@ -10,19 +10,22 @@ export interface Draft { name: string; kind: LicenceKind; plan: PlanId; owner_na
   // The logo (top bar) and seal (sign-in) are uploaded images: *_current is the served URL already on the org (for
   // preview), *_file a newly chosen file to upload on save, *_remove a request to clear the existing one.
   logo_current: string; logo_file: File | null; logo_remove: boolean;
-  seal_current: string; seal_file: File | null; seal_remove: boolean }
+  seal_current: string; seal_file: File | null; seal_remove: boolean;
+  home_current: string; home_file: File | null; home_remove: boolean }
 
 export const blankDraft = (kind: LicenceKind = "paid"): Draft => {
   const starts = today();
   return { name: "", kind, plan: kind === "demo" ? "advanced" : "standard", owner_name: "", owner_email: "", starts,
     ends: kind === "demo" ? demoEnd(starts) : yearFrom(starts), limits: { seats: "", collectors: "", viewers: "" }, invoice_ref: "", note: "",
-    brand_name: "", brand_color: "", logo_current: "", logo_file: null, logo_remove: false, seal_current: "", seal_file: null, seal_remove: false };
+    brand_name: "", brand_color: "", logo_current: "", logo_file: null, logo_remove: false, seal_current: "", seal_file: null, seal_remove: false,
+    home_current: "", home_file: null, home_remove: false };
 };
 export const draftFrom = (o: AdminOrg): Draft => ({ name: o.name, kind: o.licence_kind ?? "paid", plan: o.plan as PlanId, owner_name: o.owner_name ?? "",
   owner_email: o.owner_email ?? "", starts: o.subscription_starts ?? "", ends: o.subscription_ends ?? "", invoice_ref: "", note: "",
   limits: { seats: o.limits.seats?.toString() ?? "", collectors: o.limits.collectors?.toString() ?? "", viewers: o.limits.viewers?.toString() ?? "" },
   brand_name: o.brand_name ?? "", brand_color: o.brand_color ?? "",
-  logo_current: o.logo_url ?? "", logo_file: null, logo_remove: false, seal_current: o.brand_seal_url ?? "", seal_file: null, seal_remove: false });
+  logo_current: o.logo_url ?? "", logo_file: null, logo_remove: false, seal_current: o.brand_seal_url ?? "", seal_file: null, seal_remove: false,
+  home_current: o.home_image_url ?? "", home_file: null, home_remove: false });
 /** The next year after the current end date, as a renewal. */
 export const renewalDraft = (o: AdminOrg): Draft => {
   const d = draftFrom(o);
@@ -75,6 +78,8 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
       else if (!isNew && d.logo_remove && d.logo_current) await api.adminRemoveLogo(o.id);
       if (d.seal_file) await api.adminUploadSeal(o.id, d.seal_file);
       else if (!isNew && d.seal_remove && d.seal_current) await api.adminRemoveSeal(o.id);
+      if (d.home_file) await api.adminUploadHomeImage(o.id, d.home_file);
+      else if (!isNew && d.home_remove && d.home_current) await api.adminRemoveHomeImage(o.id);
       onSaved(o);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); } finally { setBusy(false); }
   }
@@ -179,6 +184,19 @@ export default function CustomerForm({ orgId, initial, title, onSaved, onCancel 
             </div>
             <span className="field-hint">A square PNG, JPEG or WebP up to 1 MB, shown on the sign-in screen.</span></div>
         </div>
+        <div className="field"><label htmlFor="ao-brand-home">Welcome background</label>
+          <div className="brand-seal-row">
+            {d.home_file
+              ? <span className="brand-seal-chosen" title={d.home_file.name}>{d.home_file.name}</span>
+              : d.home_current && !d.home_remove
+                ? <img className="brand-home-preview" src={d.home_current} alt="Current welcome background" />
+                : <span className="brand-seal-none muted">No background</span>}
+            <input id="ao-brand-home" type="file" accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => { const f = e.target.files?.[0] ?? null; setD((p) => ({ ...p, home_file: f, home_remove: false })); }} />
+            {(d.home_file || (d.home_current && !d.home_remove)) &&
+              <Button type="button" small variant="ghost" onClick={() => setD((p) => ({ ...p, home_file: null, home_remove: true }))}>Remove</Button>}
+          </div>
+          <span className="field-hint">A wide landscape image behind the welcome header (ArcGIS-style). PNG, JPEG or WebP up to 6 MB.</span></div>
       </fieldset>
       {error && <div className="field-error" role="alert">{error}</div>}
       <div className="admin-form-actions">

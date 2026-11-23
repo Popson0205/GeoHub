@@ -17,7 +17,7 @@ export type AddableRole = Exclude<OrgRole, "owner">;
 export type PlanId = "individual" | "standard" | "advanced" | "custom";
 /** The organization a person belongs to (everyone belongs to exactly one) and their role in it. */
 /** An organization's look (Organization plans): its colour and logo, shown to all its people. */
-export interface OrgBrand { color: string | null; logo_url: string | null; name?: string | null; seal_url?: string | null }
+export interface OrgBrand { color: string | null; logo_url: string | null; name?: string | null; seal_url?: string | null; home_image_url?: string | null }
 export interface OrgBrief { id: string; name: string; slug: string; role: OrgRole; plan?: PlanId | string; brand?: OrgBrand | null;
   /** Where its licence stands; none on the free Individual plan. */
   licence?: OrgLicence | null }
@@ -92,7 +92,7 @@ export interface AdminOrg {
   grace_ends?: string | null;
   suspended_at?: string | null; suspended_reason?: string | null;
   /** White-label identity, set by GeoEstate at setup and applied at runtime across the apps. */
-  brand_name?: string | null; brand_color?: string | null; logo_url?: string | null; brand_seal_url?: string | null;
+  brand_name?: string | null; brand_color?: string | null; logo_url?: string | null; brand_seal_url?: string | null; home_image_url?: string | null;
   /** When anyone in the organization last used Geohub. */
   last_active?: string | null;
 }

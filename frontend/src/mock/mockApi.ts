@@ -515,6 +515,18 @@ export class MockApi implements Api {
     Object.assign(this.customer(id), { brand_seal_url: null }); this.logStaff("org_seal", id, { removed: true }); this.save();
     return this.adminGetOrg(id);
   }
+  async adminUploadHomeImage(id: string, file: File) {
+    await wait(); this.staff();
+    const o = this.customer(id);
+    const data: string = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(file); });
+    Object.assign(o, { home_image_url: data }); this.logStaff("org_home_image", id); this.save();
+    return this.adminGetOrg(id);
+  }
+  async adminRemoveHomeImage(id: string) {
+    await wait(); this.staff();
+    Object.assign(this.customer(id), { home_image_url: null }); this.logStaff("org_home_image", id, { removed: true }); this.save();
+    return this.adminGetOrg(id);
+  }
   async adminDeleteOrg(id: string) {
     await wait(); this.staff();
     const { orgs } = this.adminState;

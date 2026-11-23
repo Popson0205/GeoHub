@@ -68,7 +68,7 @@ def test_branding_for_organization_plans(client, outbox):
 
     # everyone in the organization gets the brand with their session
     me = client.get("/me", headers=boss.h).json()
-    assert me["org"]["brand"] == {"color": "#0b5cad", "logo_url": url, "name": None, "seal_url": None}
+    assert me["org"]["brand"] == {"color": "#0b5cad", "logo_url": url, "name": None, "seal_url": None, "home_image_url": None}
     # and emails sent for the organization carry it
     boss.post("/org/accounts", json={"name": "New Person", "email": f"{uid()}@example.com", "role": "collector"})
     b = outbox[-1]["brand"]

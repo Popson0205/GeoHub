@@ -37,6 +37,7 @@ class OrgBrand(BaseModel):
     logo_url: str | None = None
     name: str | None = Field(None, description="The suite/wordmark shown in place of 'Geohub' (white-label); set at org setup")
     seal_url: str | None = Field(None, description="URL of a square seal/crest for the sign-in screen")
+    home_image_url: str | None = Field(None, description="URL of the welcome-page background image")
 
 
 class OrgBrief(BaseModel):
@@ -1063,6 +1064,7 @@ class AdminOrgOut(BaseModel):
     brand_color: str | None = Field(None, description="Brand colour, #rrggbb")
     logo_url: str | None = Field(None, description="URL of the top-bar logo")
     brand_seal_url: str | None = Field(None, description="URL of a square seal/crest for the sign-in screen")
+    home_image_url: str | None = Field(None, description="URL of the welcome-page background image")
     last_active: datetime | None = Field(None, description="When anyone in the organization last used Geohub")
 
 
