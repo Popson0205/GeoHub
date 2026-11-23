@@ -89,12 +89,14 @@
 .home { display: flex; flex-direction: column; gap: var(--s-8); }
 .home-head { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--s-4); }
 /* ArcGIS-style welcome banner: the org's background image behind the greeting, with a dark gradient for legibility. */
-.home-head--banner { position: relative; padding: var(--s-7) var(--s-6); border-radius: var(--r-lg); overflow: hidden; background-size: cover; background-position: center; box-shadow: var(--shadow-sm); }
+.home-head--banner { position: relative; min-height: 190px; padding: var(--s-6); border-radius: var(--r-lg); overflow: hidden; background-size: cover; background-position: center; box-shadow: var(--shadow-sm); align-items: flex-end; }
+.home-head--banner > div:first-child { align-self: flex-end; }
 .home-head--banner .home-greeting { color: rgba(255,255,255,0.92); }
 .home-head--banner h1 { color: #fff; }
-.home-head--banner .btn:not(.btn-primary) { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.28); color: #fff; backdrop-filter: blur(4px); }
-.home-head--banner .btn:not(.btn-primary):hover { background: rgba(255,255,255,0.22); }
-@media (max-width: 700px) { .home-head--banner { padding: var(--s-5) var(--s-4); } }
+.home-head--banner .page-header-actions { align-self: flex-start; }
+.home-head--banner .btn:not(.btn-primary) { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.30); color: #fff; backdrop-filter: blur(4px); }
+.home-head--banner .btn:not(.btn-primary):hover { background: rgba(255,255,255,0.24); }
+@media (max-width: 700px) { .home-head--banner { min-height: 150px; padding: var(--s-5) var(--s-4); } }
 .home-greeting { color: var(--green-700); font-weight: 600; font-size: var(--fs-md); margin-bottom: 4px; }
 .home-head h1 { font-size: var(--fs-3xl); text-wrap: balance; }
 .home-section { display: flex; flex-direction: column; gap: var(--s-3); }
