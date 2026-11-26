@@ -111,9 +111,13 @@ def test_polygis_is_a_product(client, boss, outbox, crm):
     r = crm.post(f"/crm-link/orgs/{o['id']}/licence", json=body)
     assert r.status_code == 200, r.text
     gis = next(p for p in r.json()["products"] if p["product"] == "gis")
-    assert gis["status"] == "active" and gis["plan_name"] == "PolyGIS Standard"
-    assert set(gis["features"]) == {"maps", "editing", "export"}
+    assert gis["status"] == "active" and gis["plan_name"] == "PolyGIS Basic"
+    # Basic is every tool except the two Advanced ones.
+    assert set(gis["features"]) == {"maps", "editing", "export", "geoprocessing", "raster", "layouts", "dxf_import"}
+    assert "poly_earth" not in gis["features"] and "defence" not in gis["features"]
     up = boss.put(f"/admin/orgs/{o['id']}/products/gis", json={"plan": "advanced"})
     assert up.status_code == 200, up.text
     adv = next(p for p in up.json() if p["product"] == "gis")
-    assert adv["plan_name"] == "PolyGIS Advanced" and {"geoprocessing", "raster", "layouts"} <= set(adv["features"])
+    # Advanced adds Poly Earth and Defence on top of Basic.
+    assert adv["plan_name"] == "PolyGIS Advanced" and {"poly_earth", "defence"} <= set(adv["features"])
+    assert {"geoprocessing", "raster", "layouts"} <= set(adv["features"])
