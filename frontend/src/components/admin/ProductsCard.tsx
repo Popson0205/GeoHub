@@ -15,6 +15,8 @@ const FEATURE: Record<string, string> = {
   batch: "Batch checks", ai_briefing: "AI briefing", title_status: "Title status", monitoring: "Monitoring", zones: "Zones",
   suitability: "Suitability", drone: "Drone imagery", plant_count: "Plant counts", prescriptions: "Prescriptions",
   alerts: "Weekly alerts", verification: "Verification reports",
+  maps: "Maps and layers", editing: "Editing", export: "Export", geoprocessing: "Geoprocessing",
+  raster: "Raster analysis", layouts: "Print layouts", poly_earth: "Poly Earth", defence: "Defence",
 };
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const yearFrom = (start: string) => { const d = new Date(`${start}T00:00:00Z`); d.setUTCFullYear(d.getUTCFullYear() + 1); d.setUTCDate(d.getUTCDate() - 1); return iso(d); };

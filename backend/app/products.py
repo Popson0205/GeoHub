@@ -18,6 +18,8 @@ PRODUCTS = {"hub": "Geohub", "land": "Land Registry", "check": "LandCheck", "far
 OTHER = ("land", "check", "farm", "gis")                     # licensed in org_products
 PLANS = ("standard", "advanced", "custom")
 PLAN_WORDS = {"standard": "Standard", "advanced": "Advanced", "custom": "Custom"}
+# PolyGIS presents its two tiers as Basic / Advanced (the 'standard' key is the Basic tier).
+GIS_PLAN_WORDS = {"standard": "Basic", "advanced": "Advanced", "custom": "Custom"}
 
 # What each plan switches on. Custom = everything; anything else is set per organization.
 FEATURES = {
@@ -27,8 +29,11 @@ FEATURES = {
     "check": {"standard": ("reports",), "advanced": ("reports", "batch", "ai_briefing", "title_status")},
     "farm": {"standard": ("monitoring", "zones", "suitability", "alerts"),
              "advanced": ("monitoring", "zones", "suitability", "alerts", "prescriptions", "verification")},
-    "gis": {"standard": ("maps", "editing", "export"),
-            "advanced": ("maps", "editing", "export", "geoprocessing", "raster", "layouts")},
+    # PolyGIS editions: Basic ('standard' key) is every tool except the two Advanced ones;
+    # Advanced adds Poly Earth and Defence. Pricing/seats live on the invoice, not here.
+    "gis": {"standard": ("maps", "editing", "export", "geoprocessing", "raster", "layouts", "dxf_import"),
+            "advanced": ("maps", "editing", "export", "geoprocessing", "raster", "layouts", "dxf_import",
+                         "poly_earth", "defence")},
 }
 FEATURE_NAMES = {
     "parcels": "Parcels", "titles": "Titles and owners", "transactions": "Transfers and transactions",
@@ -39,7 +44,7 @@ FEATURE_NAMES = {
     "drone": "Drone imagery", "plant_count": "Plant counts", "prescriptions": "Variable-rate prescriptions",
     "alerts": "Weekly farm alerts", "verification": "Farm verification reports",
     "maps": "Maps and layers", "editing": "Editing", "export": "Export", "geoprocessing": "Geoprocessing tools",
-    "raster": "Raster analysis", "layouts": "Print layouts",
+    "raster": "Raster analysis", "layouts": "Print layouts", "poly_earth": "Poly Earth", "defence": "Defence",
 }
 # Default caps per plan (None = unlimited); an organization's `limits` change them.
 LIMITS = {
@@ -53,6 +58,8 @@ LIMITS = {
 def plan_name(product: str, plan: str) -> str:
     if product == "hub":
         return orgs.PLAN_NAMES.get(plan, plan)
+    if product == "gis":
+        return f"PolyGIS {GIS_PLAN_WORDS.get(plan, plan)}"
     return f"{PRODUCTS[product]} {PLAN_WORDS.get(plan, plan)}"
 
 
